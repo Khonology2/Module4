@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../models/project.dart';
 import '../services/sprint_database_service.dart';
+import '../services/auth_service.dart';
 
 class CreateSprintScreen extends StatefulWidget {
   final String? projectId;
@@ -32,9 +32,9 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
   final TextEditingController _plannedPointsController = TextEditingController();
   
   // Project selection
-  final List<Project> _projects = [];
-  Project? _selectedProject;
-  final bool _isLoadingProjects = false;
+  List<Map<String, dynamic>> _projects = [];
+  Map<String, dynamic>? _selectedProject;
+  bool _isLoadingProjects = false;
   String? _selectedProjectId;
   final TextEditingController _committedPointsController = TextEditingController();
   final TextEditingController _completedPointsController = TextEditingController();
@@ -66,11 +66,142 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureCanOpen();
+    });
     _fetchProjectDates();
     _checkActiveSprints();
+    _loadProjects(); // Load projects for dropdown
     if (_isEditing) {
       _fillSprintData();
     }
+  }
+
+  Future<void> _ensureCanOpen() async {
+    final auth = AuthService();
+    if (auth.hasPermission('create_sprint')) return;
+    if (!_isEditing) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Only Delivery Leads, System Admins, or Project Owners can create sprints.')),
+      );
+      Navigator.of(context).pop(false);
+      return;
+    }
+
+    final currentUserId = auth.currentUser?.id.toString();
+    if (currentUserId == null || currentUserId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You do not have permission to edit this sprint.')),
+      );
+      Navigator.of(context).pop(false);
+      return;
+    }
+
+    final sprintProjectId = (widget.projectId ??
+            widget.sprint?['project_id']?.toString() ??
+            widget.sprint?['projectId']?.toString())
+        ?.toString();
+    if (sprintProjectId == null || sprintProjectId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Missing project context for sprint.')),
+      );
+      Navigator.of(context).pop(false);
+      return;
+    }
+
+    try {
+      final projects = await _sprintService.getProjects();
+      final project = projects.firstWhere(
+        (p) => p['id']?.toString() == sprintProjectId || p['key']?.toString() == sprintProjectId,
+        orElse: () => <String, dynamic>{},
+      );
+      final ownerId = (project['owner_id'] ?? project['ownerId'])?.toString() ??
+          (project['owner'] is Map ? project['owner']['id']?.toString() : null);
+      final isOwner = ownerId != null && ownerId.isNotEmpty && ownerId == currentUserId;
+      if (!isOwner) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Only the Project Owner can edit sprint details.')),
+        );
+        Navigator.of(context).pop(false);
+        return;
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to verify sprint permissions.')),
+      );
+      Navigator.of(context).pop(false);
+      return;
+    }
+  }
+
+  Future<void> _loadProjects() async {
+    if (widget.projectId != null) return; // Don't load if project is pre-selected
+
+    setState(() {
+      _isLoadingProjects = true;
+    });
+
+    try {
+      final projects = await _sprintService.getProjects();
+      
+      if (mounted) {
+        setState(() {
+          _projects = projects;
+          _isLoadingProjects = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading projects: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingProjects = false;
+        });
+      }
+    }
+  }
+
+  String _getOwnerDisplayName(Map<String, dynamic> project) {
+    // Debug the entire project structure
+    debugPrint('🔍 Full project data: $project');
+    
+    // Try different possible owner field names and formats
+    final ownerName = project['owner_name'];
+    final ownerId = project['owner_id'];
+    
+    debugPrint('🔍 Owner name value: $ownerName');
+    debugPrint('🔍 Owner name type: ${ownerName.runtimeType}');
+    debugPrint('🔍 Owner ID: $ownerId');
+    
+    if (ownerName != null) {
+      if (ownerName is String) {
+        debugPrint('🔍 Owner name is string: $ownerName');
+        return ownerName.isNotEmpty ? ownerName : 'Not assigned';
+      } else if (ownerName is Map) {
+        debugPrint('🔍 Owner name is map: ${ownerName.keys.toList()}');
+        // If owner_name is an object, try to extract name from it
+        final name = ownerName['name']?.toString() ?? 
+                     ownerName['first_name']?.toString() ?? 
+                     ownerName['email']?.toString() ?? 
+                     'Unknown Owner';
+        debugPrint('🔍 Extracted owner name: $name');
+        return name;
+      } else {
+        debugPrint('🔍 Owner name is other type: ${ownerName.toString()}');
+        return ownerName.toString();
+      }
+    }
+    
+    // Fallback to owner_id or default message
+    if (ownerId != null) {
+      return 'Owner ID: ${ownerId.toString().substring(0, 8)}...';
+    }
+    
+    return 'Not assigned';
   }
 
   Future<void> _checkActiveSprints() async {
@@ -263,31 +394,79 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
         return;
       }
 
-      await _sprintService.createSprint(
-        name: _nameController.text,
-        startDate: _startDate!,
-        endDate: _endDate!,
-        projectId: projectIdToUse,
-        plannedPoints: int.tryParse(_plannedPointsController.text) ?? 0,
-        committedPoints: int.tryParse(_committedPointsController.text),
-        completedPoints: int.tryParse(_completedPointsController.text),
-        carriedOverPoints: int.tryParse(_carriedOverPointsController.text),
-        testPassRate: double.tryParse(_testPassRateController.text),
-        codeCoverage: int.tryParse(_codeCoverageController.text),
-        escapedDefects: int.tryParse(_escapedDefectsController.text),
-        defectsOpened: int.tryParse(_defectsOpenedController.text),
-        defectsClosed: int.tryParse(_defectsClosedController.text),
-        defectSeverityMix: severityMix,
-        codeReviewCompletion: int.tryParse(_codeReviewCompletionController.text),
-        documentationStatus: _documentationStatusController.text.isNotEmpty ? _documentationStatusController.text : null,
-        uatNotes: _uatNotesController.text.isNotEmpty ? _uatNotesController.text : null,
-        uatPassRate: int.tryParse(_uatPassRateController.text),
-        risksIdentified: int.tryParse(_risksIdentifiedController.text),
-        risks: _risksController.text.isNotEmpty ? _risksController.text : null,
-        risksMitigated: int.tryParse(_risksMitigatedController.text),
-        blockers: _blockersController.text.isNotEmpty ? _blockersController.text : null,
-        decisions: _decisionsController.text.isNotEmpty ? _decisionsController.text : null,
-      );
+      final plannedPoints = int.tryParse(_plannedPointsController.text) ?? 0;
+      final committedPoints = int.tryParse(_committedPointsController.text);
+      final completedPoints = int.tryParse(_completedPointsController.text);
+      final carriedOverPoints = int.tryParse(_carriedOverPointsController.text);
+      final addedDuringSprint = int.tryParse(_addedDuringSprintController.text);
+      final removedDuringSprint = int.tryParse(_removedDuringSprintController.text);
+
+      if (_isEditing) {
+        final rawId = widget.sprint?['id']?.toString() ?? widget.sprint?['sprint_id']?.toString();
+        final sid = int.tryParse(rawId ?? '');
+        if (sid == null) {
+          throw Exception('Missing sprint id');
+        }
+        final ok = await _sprintService.updateSprint(
+          sprintId: sid,
+          name: _nameController.text,
+          description: _descriptionController.text,
+          startDate: _startDate,
+          endDate: _endDate,
+          projectId: projectIdToUse,
+          plannedPoints: plannedPoints,
+          committedPoints: committedPoints,
+          completedPoints: completedPoints,
+          carriedOverPoints: carriedOverPoints,
+          addedDuringSprint: addedDuringSprint,
+          removedDuringSprint: removedDuringSprint,
+          testPassRate: double.tryParse(_testPassRateController.text),
+          codeCoverage: int.tryParse(_codeCoverageController.text),
+          escapedDefects: int.tryParse(_escapedDefectsController.text),
+          defectsOpened: int.tryParse(_defectsOpenedController.text),
+          defectsClosed: int.tryParse(_defectsClosedController.text),
+          defectSeverityMix: severityMix,
+          codeReviewCompletion: int.tryParse(_codeReviewCompletionController.text),
+          documentationStatus: _documentationStatusController.text.isNotEmpty ? _documentationStatusController.text : null,
+          uatNotes: _uatNotesController.text.isNotEmpty ? _uatNotesController.text : null,
+          uatPassRate: int.tryParse(_uatPassRateController.text),
+          risksIdentified: int.tryParse(_risksIdentifiedController.text),
+          risks: _risksController.text.isNotEmpty ? _risksController.text : null,
+          risksMitigated: int.tryParse(_risksMitigatedController.text),
+          blockers: _blockersController.text.isNotEmpty ? _blockersController.text : null,
+          decisions: _decisionsController.text.isNotEmpty ? _decisionsController.text : null,
+        );
+        if (ok == null) {
+          throw Exception('Failed to update sprint');
+        }
+      } else {
+        await _sprintService.createSprint(
+          name: _nameController.text,
+          description: _descriptionController.text,
+          startDate: _startDate!,
+          endDate: _endDate!,
+          projectId: projectIdToUse,
+          plannedPoints: plannedPoints,
+          committedPoints: committedPoints,
+          completedPoints: completedPoints,
+          carriedOverPoints: carriedOverPoints,
+          testPassRate: double.tryParse(_testPassRateController.text),
+          codeCoverage: int.tryParse(_codeCoverageController.text),
+          escapedDefects: int.tryParse(_escapedDefectsController.text),
+          defectsOpened: int.tryParse(_defectsOpenedController.text),
+          defectsClosed: int.tryParse(_defectsClosedController.text),
+          defectSeverityMix: severityMix,
+          codeReviewCompletion: int.tryParse(_codeReviewCompletionController.text),
+          documentationStatus: _documentationStatusController.text.isNotEmpty ? _documentationStatusController.text : null,
+          uatNotes: _uatNotesController.text.isNotEmpty ? _uatNotesController.text : null,
+          uatPassRate: int.tryParse(_uatPassRateController.text),
+          risksIdentified: int.tryParse(_risksIdentifiedController.text),
+          risks: _risksController.text.isNotEmpty ? _risksController.text : null,
+          risksMitigated: int.tryParse(_risksMitigatedController.text),
+          blockers: _blockersController.text.isNotEmpty ? _blockersController.text : null,
+          decisions: _decisionsController.text.isNotEmpty ? _decisionsController.text : null,
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -375,7 +554,7 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         padding: EdgeInsets.all(16.0),
                         child: Center(child: CircularProgressIndicator()),
                       )
-                    : DropdownButtonFormField<Project>(
+                    : DropdownButtonFormField<Map<String, dynamic>>(
                         initialValue: _selectedProject,
                         decoration: const InputDecoration(
                           labelText: 'Project *',
@@ -384,15 +563,19 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         ),
                         hint: const Text('Select a project'),
                         items: _projects.map((project) {
-                          return DropdownMenuItem<Project>(
+                          return DropdownMenuItem<Map<String, dynamic>>(
                             value: project,
-                            child: Text(project.name),
+                            child: Text(project['name']?.toString() ?? 'Unnamed Project'),
                           );
                         }).toList(),
-                        onChanged: (Project? project) {
+                        onChanged: (Map<String, dynamic>? project) {
                           setState(() {
                             _selectedProject = project;
-                            _selectedProjectId = project?.id;
+                            _selectedProjectId = project?['id']?.toString();
+                            // Debug project data structure
+                            debugPrint('🔍 Selected project data: ${project?.keys.toList()}');
+                            debugPrint('🔍 Owner name field: ${project?['owner_name']}');
+                            debugPrint('🔍 Owner name type: ${project?['owner_name'].runtimeType}');
                           });
                         },
                         validator: (value) {
@@ -403,6 +586,34 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         },
                       ),
                 const SizedBox(height: 16),
+                
+                // Show project owner when project is selected
+                if (_selectedProject != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      border: Border.all(color: Colors.blue.shade200),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.person, color: Colors.blue.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Project Owner: ${_getOwnerDisplayName(_selectedProject!)}',
+                            style: TextStyle(
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ] else if (widget.projectName != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8.0),

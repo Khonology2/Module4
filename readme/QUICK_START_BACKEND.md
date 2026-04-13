@@ -1,17 +1,17 @@
 # 🚀 Quick Start - Backend Server
 
-## Option 1: Start on Port 8000 (Recommended)
+## Option 1: Start on Port 3001 (Recommended)
 
 Run this in a **new terminal window**:
 
 ```powershell
 cd backend
-.\start-server-8000.ps1
+.\start-server.ps1
 ```
 
-The server will start on `http://localhost:8000`
+The server will start on `http://localhost:3001`
 
-## Option 2: Start with default settings (Port 8000)
+## Option 2: Start with default settings (Port 3001)
 
 If the port script is unavailable, start the backend normally:
 
@@ -22,7 +22,7 @@ cd backend
 
 ## Verify Server is Running
 
-Open browser: `http://localhost:8000/health`
+Open browser: `http://localhost:3001/health`
 
 You should see a health check response.
 

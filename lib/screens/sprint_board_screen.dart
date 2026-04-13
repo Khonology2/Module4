@@ -65,13 +65,12 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
 
       if (sprintDetails != null) {
         final project = sprintDetails['project'];
-        final projectId = sprintDetails['project_id']?.toString() ?? 
-                         sprintDetails['projectId']?.toString() ??
-                         (project is Map ? project['id']?.toString() : null);
+        final projectId = sprintDetails['project_id']?.toString() ??
+            sprintDetails['projectId']?.toString() ??
+            (project is Map ? project['id']?.toString() : null);
         debugPrint('🔍 Sprint loaded. Project ID: $projectId');
-        
-        // Load deliverables related to the project
-        await _loadDeliverables(projectId);
+
+        await _loadDeliverablesForSprint(widget.sprintId, projectId: projectId);
       } else {
         debugPrint('⚠️ Sprint details not found for ID: ${widget.sprintId}');
         _showSnackBar('Sprint details not found', isError: true);
@@ -91,12 +90,12 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
   void _setupRealtime() {
     _realtime = RealtimeService();
     _realtime.initialize(authToken: AuthService().accessToken);
-    _realtime.on('deliverable_created', (data) => _loadDeliverables());
-    _realtime.on('deliverable_updated', (data) => _loadDeliverables());
-    _realtime.on('deliverable_deleted', (data) => _loadDeliverables());
+    _realtime.on('deliverable_created', (data) => _loadDeliverablesForSprint(widget.sprintId));
+    _realtime.on('deliverable_updated', (data) => _loadDeliverablesForSprint(widget.sprintId));
+    _realtime.on('deliverable_deleted', (data) => _loadDeliverablesForSprint(widget.sprintId));
   }
 
-  Future<void> _loadDeliverables([String? projectId]) async {
+  Future<void> _loadDeliverablesForSprint(String sprintId, {String? projectId}) async {
     try {
       final project = _sprintDetails?['project'];
       final pid = projectId ?? 
@@ -104,15 +103,12 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
                  _sprintDetails?['projectId']?.toString() ??
                  (project is Map ? project['id']?.toString() : null);
       
-      debugPrint('🔍 Fetching deliverables for project: $pid');
-      
-      // If we still don't have a project ID, we can't fetch deliverables
-      if (pid == null || pid.isEmpty) {
-        debugPrint('⚠️ Cannot load deliverables: No project ID found in sprint details');
-        return;
-      }
+      debugPrint('🔍 Fetching deliverables for sprint: $sprintId (project: $pid)');
 
-      final response = await _deliverableService.getDeliverables(projectId: pid);
+      var response = await _deliverableService.getDeliverablesForSprint(sprintId);
+      if (!response.isSuccess && pid != null && pid.isNotEmpty) {
+        response = await _deliverableService.getDeliverables(projectId: pid);
+      }
       
       if (response.isSuccess && response.data != null) {
         final data = response.data;
@@ -131,6 +127,15 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
           if (rawList is List) {
             deliverables = rawList.map((e) => e is Deliverable ? e : Deliverable.fromJson(Map<String, dynamic>.from(e))).toList();
           }
+        }
+
+        if (deliverables.isNotEmpty) {
+          deliverables = deliverables.where((d) {
+            final inSprint = d.sprintIds.map((e) => e.toString()).contains(sprintId.toString());
+            if (!inSprint) return false;
+            if (pid == null || pid.isEmpty) return true;
+            return (d.projectId ?? '').toString() == pid.toString();
+          }).toList();
         }
         
         if (mounted) {
@@ -158,7 +163,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
           });
         }
         
-        debugPrint('✅ Loaded ${_deliverables.length} deliverables for project $pid');
+        debugPrint('✅ Loaded ${_deliverables.length} deliverables for sprint $sprintId');
       } else {
         debugPrint('❌ Failed to fetch deliverables: ${response.error}');
         _showSnackBar('Failed to load deliverables: ${response.error}', isError: true);
@@ -204,8 +209,8 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
   Future<void> _handleIssueStatusChange(JiraIssue issue, String newStatus) async {
     try {
       final auth = AuthService();
-      if (auth.isSystemAdmin) {
-        _showSnackBar('System admin can view/comment only');
+      if (!auth.canEditDeliverable()) {
+        _showSnackBar('You do not have permission to update deliverables');
         return;
       }
       
@@ -351,8 +356,17 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
                           children: [
                             _buildSprintInfoChip(
                               'Status',
-                              _sprintDetails!['status'] ?? 'Unknown',
-                              _getStatusColor(_sprintDetails!['status']),
+                              (() {
+                                final raw = (_sprintDetails!['status'] ??
+                                        _sprintDetails!['state'] ??
+                                        '')
+                                    .toString()
+                                    .trim();
+                                if (raw.isEmpty) return 'Draft';
+                                if (raw.toLowerCase() == 'in_progress') return 'In Progress';
+                                return raw;
+                              })(),
+                              _getStatusColor((_sprintDetails!['status'] ?? _sprintDetails!['state'])?.toString()),
                             ),
                             const SizedBox(width: 12),
                             if (_sprintDetails!['start_date'] != null)
@@ -384,6 +398,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
               DropdownButton<String>(
                 value: _normalizeSprintStatus((_sprintDetails?['status'] ?? 'planning')?.toString()),
                 items: const [
+                  DropdownMenuItem(value: 'draft', child: Text('Draft')),
                   DropdownMenuItem(value: 'planning', child: Text('Planning')),
                   DropdownMenuItem(value: 'in_progress', child: Text('In Progress')),
                   DropdownMenuItem(value: 'completed', child: Text('Completed')),
@@ -451,12 +466,13 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
 
   String _normalizeSprintStatus(String? status) {
     final s = (status ?? '').toLowerCase().trim();
-    if (s.isEmpty) return 'planning';
+    if (s.isEmpty) return 'draft';
+    if (s == 'draft') return 'draft';
     if (s == 'in_progress' || s == 'in progress') return 'in_progress';
     if (s == 'completed' || s == 'done') return 'completed';
     if (s == 'planning' || s == 'planned' || s == 'to do') return 'planning';
     if (s == 'cancelled') return 'cancelled';
-    return 'planning';
+    return 'draft';
   }
 
   Widget _buildSprintInfoChip(String label, String value, Color color) {
@@ -585,12 +601,17 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
 
   Color _getStatusColor(String? status) {
     switch (status?.toLowerCase()) {
+      case 'draft':
       case 'active':
+      case 'in_progress':
+      case 'in progress':
         return FlownetColors.electricBlue;
       case 'completed':
         return Colors.green;
       case 'planning':
         return Colors.orange;
+      case 'cancelled':
+        return Colors.red;
       default:
         return FlownetColors.pureWhite;
     }
@@ -620,6 +641,8 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
       );
     }
 
+    final auth = AuthService();
+    final canCreateDeliverable = auth.canCreateDeliverable();
     return AppScaffold(
       useBackgroundImage: false,
       appBar: AppBar(
@@ -636,7 +659,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/projects');
+              context.go('/sprint-console');
             }
           },
         ),
@@ -647,10 +670,19 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
             tooltip: 'Refresh Data',
           ),
           IconButton(
-            icon: const Icon(Icons.add, color: Colors.white),
-            onPressed: _showCreateDeliverableDialog,
-            tooltip: 'Create Deliverable',
+            icon: const Icon(Icons.description_outlined, color: Colors.white),
+            onPressed: () {
+              final encodedName = Uri.encodeComponent(widget.sprintName);
+              context.push('/sprint-report/${widget.sprintId}?name=$encodedName');
+            },
+            tooltip: 'Sprint Report',
           ),
+          if (canCreateDeliverable)
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: _showCreateDeliverableDialog,
+              tooltip: 'Create Deliverable',
+            ),
         ],
       ),
       body: SingleChildScrollView(
@@ -675,20 +707,15 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
                 ],
               ),
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          final auth = AuthService();
-          if (auth.isSystemAdmin) {
-            _showSnackBar('System admin can view/comment only');
-            return;
-          }
-          _showCreateDeliverableDialog();
-        },
-        backgroundColor: FlownetColors.electricBlue,
-        foregroundColor: FlownetColors.pureWhite,
-        icon: const Icon(Icons.add),
-        label: const Text('Create Deliverable'),
-      ),
+      floatingActionButton: canCreateDeliverable
+          ? FloatingActionButton.extended(
+              onPressed: _showCreateDeliverableDialog,
+              backgroundColor: FlownetColors.electricBlue,
+              foregroundColor: FlownetColors.pureWhite,
+              icon: const Icon(Icons.add),
+              label: const Text('Create Deliverable'),
+            )
+          : null,
     );
   }
 }

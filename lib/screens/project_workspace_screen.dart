@@ -5,10 +5,12 @@ import '../models/project.dart';
 import '../models/deliverable.dart';
 import '../models/sprint.dart';
 import '../models/user.dart';
+import '../models/user_role.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_data_service.dart';
+import '../services/backend_api_service.dart';
 import '../providers/service_providers.dart';
 
 class ProjectWorkspaceScreen extends ConsumerStatefulWidget {
@@ -28,6 +30,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
   final _nameController = TextEditingController();
     final _descriptionController = TextEditingController();
   final _clientNameController = TextEditingController();
+  final _clientProjectOwnerController = TextEditingController();
   final _tagsController = TextEditingController();
   
   ProjectStatus _selectedStatus = ProjectStatus.planning;
@@ -68,6 +71,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
     _nameController.dispose();
     _descriptionController.dispose();
     _clientNameController.dispose();
+    _clientProjectOwnerController.dispose();
     _tagsController.dispose();
     super.dispose();
   }
@@ -85,6 +89,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
           _nameController.text = project.name;
           _descriptionController.text = project.description;
           _clientNameController.text = project.clientName ?? '';
+          _clientProjectOwnerController.text = project.clientOwnerName ?? '';
           _selectedStatus = project.status;
           _selectedPriority = project.priority;
           const validProjectTypes = ['software', 'hardware', 'research', 'consulting', 'other'];
@@ -93,6 +98,15 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
           _endDate = project.endDate;
           _tagsController.text = project.tags.join(', ');
           _members = project.members;
+
+          // Debug: Print member information
+          debugPrint('=== PROJECT MEMBERS DEBUG ===');
+          debugPrint('Project: ${project.name}');
+          debugPrint('Members count: ${project.members.length}');
+          for (var member in project.members) {
+            debugPrint('  - ${member.userName} (${member.userEmail}) - ${member.role}');
+          }
+          debugPrint('=============================');
 
           // Prefer IDs from project payload when present
           _deliverableIds = project.deliverableIds;
@@ -147,15 +161,114 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
   }
 
   Future<void> _loadAvailableData() async {
+    debugPrint('🔍 Starting to load available data for project workspace...');
     try {
       final deliverables = await ApiService.getDeliverables();
       final sprints = await ApiService.getSprints();
-      final users = await UserDataService().getUsers(limit: 1000);
+      
+      // Try direct API call first - more reliable
+      List<User> users = [];
+      try {
+        debugPrint('🔍 Trying direct API call for users...');
+        final backend = BackendApiService();
+        final response = await backend.getUsers(limit: 1000);
+        
+        if (response.isSuccess && response.data != null) {
+          debugPrint('✅ Direct API call successful - response type: ${response.data.runtimeType}');
+          
+          final responseData = response.data;
+          List<dynamic> usersDataList = [];
+          
+          if (responseData is Map && responseData['data'] is List) {
+            usersDataList = responseData['data'];
+            debugPrint('📦 Extracted ${usersDataList.length} users from data array');
+          } else if (responseData is List) {
+            usersDataList = responseData;
+            debugPrint('📦 Extracted ${usersDataList.length} users from direct list');
+          }
+          
+          users = usersDataList.map((userData) {
+            String displayName;
+            if (userData['name'] != null && userData['name'].toString().isNotEmpty) {
+              displayName = userData['name'];
+            } else {
+              displayName = userData['email'] ?? 'Unknown User';
+            }
+            
+            // Parse role string to UserRole enum
+            UserRole userRole = UserRole.teamMember; // default
+            final roleString = userData['role']?.toString().toLowerCase();
+            if (roleString != null) {
+              switch (roleString) {
+                case 'systemadmin':
+                  userRole = UserRole.systemAdmin;
+                  break;
+                case 'projectmanager':
+                  userRole = UserRole.projectManager;
+                  break;
+                case 'deliverylead':
+                  userRole = UserRole.deliveryLead;
+                  break;
+                case 'developer':
+                  userRole = UserRole.developer;
+                  break;
+                case 'qaengineer':
+                  userRole = UserRole.qaEngineer;
+                  break;
+                case 'client':
+                  userRole = UserRole.client;
+                  break;
+                case 'clientreviewer':
+                  userRole = UserRole.clientReviewer;
+                  break;
+                case 'scrummaster':
+                  userRole = UserRole.scrumMaster;
+                  break;
+                case 'stakeholder':
+                  userRole = UserRole.stakeholder;
+                  break;
+                default:
+                  userRole = UserRole.teamMember;
+              }
+            }
+            
+            debugPrint('👤 Processing user: $displayName (${userData['id']}) - Role: ${userRole.name}');
+            
+            return User(
+              id: userData['id'],
+              email: userData['email'] ?? '',
+              name: displayName,
+              role: userRole,
+              isActive: userData['is_active'] ?? userData['isActive'] ?? true,
+              emailVerified: userData['emailVerified'] ?? true,
+              createdAt: DateTime.tryParse(userData['createdAt'] ?? '') ?? DateTime.now(),
+            );
+          }).toList();
+          
+          debugPrint('✅ Successfully processed ${users.length} users from direct API');
+        } else {
+          debugPrint('❌ Direct API call failed: ${response.error}');
+          throw Exception('Direct API call failed');
+        }
+      } catch (e) {
+        debugPrint('❌ Direct API call failed, trying UserDataService: $e');
+        
+        // Fallback to UserDataService
+        try {
+          users = await UserDataService().getUsers(limit: 1000);
+          debugPrint('✅ Successfully loaded ${users.length} users from UserDataService');
+        } catch (e2) {
+          debugPrint('❌ UserDataService also failed: $e2');
+          users = [];
+        }
+      }
       
       setState(() {
         _availableDeliverables = deliverables.map((d) => Deliverable.fromJson(d)).toList();
         _availableSprints = sprints.map((s) => Sprint.fromJson(s)).toList();
         _availableUsers = users;
+
+        debugPrint('📊 Final state: ${_availableUsers.length} users available');
 
         // Set default owner if creating new project
         if (!_isEditing && _selectedOwner == null) {
@@ -163,11 +276,20 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
            if (currentUserId != null) {
              try {
                _selectedOwner = _availableUsers.firstWhere((u) => u.id == currentUserId);
-             } catch (_) {}
+               debugPrint('✅ Set default owner: ${_selectedOwner?.name}');
+             } catch (_) {
+               debugPrint('⚠️ Current user not found in available users');
+             }
            }
+        }
+        
+        debugPrint('✅ Loaded ${_availableUsers.length} available users for project owner selection');
+        for (final user in _availableUsers) {
+          debugPrint('  - ${user.name} (${user.id}) - ${user.role.name}');
         }
       });
     } catch (e) {
+      debugPrint('❌ Failed to load available data: $e');
       _showErrorSnackBar('Failed to load available data: $e');
     }
   }
@@ -228,12 +350,19 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
     setState(() => _isLoading = true);
 
     try {
+      debugPrint('💾 Saving project with dates:');
+      debugPrint('  Start Date: $_startDate');
+      debugPrint('  End Date: $_endDate');
+      
       final project = Project(
         id: _isEditing ? _currentProject!.id : DateTime.now().millisecondsSinceEpoch.toString(),
         name: _nameController.text.trim(),
         key: _isEditing ? _currentProject!.key : _generateProjectKey(_nameController.text.trim()),
         description: _descriptionController.text.trim(),
         clientName: _clientNameController.text.trim().isEmpty ? null : _clientNameController.text.trim(),
+        clientOwnerName: _clientProjectOwnerController.text.trim().isEmpty
+            ? null
+            : _clientProjectOwnerController.text.trim(),
         status: _selectedStatus,
         priority: _selectedPriority,
         projectType: _selectedProjectType,
@@ -251,20 +380,29 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
       );
 
       if (_isEditing) {
-        await ApiService.updateProject(project);
+        final updateSuccess = await ApiService.updateProject(project);
+        
+        if (updateSuccess) {
+          // Update the current project data with the new values
+          setState(() {
+            _currentProject = project;
+          });
+          
+          try {
+            // Link selected deliverables to this project by updating their project_id
+            for (final deliverableId in _deliverableIds) {
+              await ApiService.linkDeliverableToProject(project.id, deliverableId);
+            }
 
-        try {
-          // Link selected deliverables to this project by updating their project_id
-          for (final deliverableId in _deliverableIds) {
-            await ApiService.linkDeliverableToProject(project.id, deliverableId);
-          }
+            if (_sprintIds.isNotEmpty) {
+              await ApiService.associateSprintWithProject(project.id, _sprintIds);
+            }
+          } catch (_) {}
 
-          if (_sprintIds.isNotEmpty) {
-            await ApiService.associateSprintWithProject(project.id, _sprintIds);
-          }
-        } catch (_) {}
-
-        _showSuccessSnackBar('Project updated successfully');
+          _showSuccessSnackBar('Project updated successfully');
+        } else {
+          _showErrorSnackBar('Failed to update project');
+        }
       } else {
         final createdProject = await ApiService.createProjectModel(project);
 
@@ -292,7 +430,9 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
             Navigator.of(context).pop(true);
           } else {
             if (_isEditing) {
-              context.go('/project-workspace/${project.id}');
+              // Force refresh by adding timestamp to URL
+              final timestamp = DateTime.now().millisecondsSinceEpoch;
+              context.go('/project-workspace/${project.id}?refresh=$timestamp');
             } else {
               context.go('/projects');
             }
@@ -599,6 +739,33 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
             ),
           ),
           const SizedBox(height: 16),
+          TextFormField(
+            controller: _clientProjectOwnerController,
+            decoration: InputDecoration(
+              labelText: 'Project Owner (Client Side)',
+              hintText: 'Enter client-side project owner',
+              prefixIcon: Icon(Icons.badge_outlined, color: colorScheme.primary),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.primary, width: 2),
+              ),
+              filled: true,
+              fillColor: colorScheme.surface.withAlpha(100),
+            ),
+            style: TextStyle(
+              fontSize: 16,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
           DropdownButtonFormField<User>(
             // ignore: deprecated_member_use
             value: _selectedOwner,
@@ -609,7 +776,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
               });
             },
             decoration: InputDecoration(
-              labelText: 'Project Owner *',
+              labelText: 'Project Manager *',
               prefixIcon: Icon(Icons.person_outline, color: colorScheme.primary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -626,19 +793,25 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
               filled: true,
               fillColor: _isEditing ? colorScheme.surface.withAlpha(100) : colorScheme.surface.withAlpha(50), // Visual cue for disabled state
             ),
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 16,
-              color: colorScheme.onSurface,
+              color: Colors.black87,
             ),
             items: _availableUsers.map((user) {
               return DropdownMenuItem(
                 value: user,
-                child: Text(user.name),
+                child: Text(
+                  user.name,
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               );
             }).toList(),
             validator: (value) {
               if (value == null) {
-                return 'Project owner is required';
+                return 'Project manager is required';
               }
               return null;
             },
@@ -885,13 +1058,14 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
                 ),
               ),
               subtitle: Text(
-                _startDate != null ? _startDate!.toString().split(' ')[0] : 'Not set',
+                _currentProject?.formattedStartDate ?? 'Not set',
                 style: TextStyle(
                   color: colorScheme.onSurface.withAlpha(180),
                 ),
               ),
               trailing: Icon(Icons.arrow_drop_down, color: colorScheme.tertiary),
               onTap: () async {
+                debugPrint('🗓️ Start date picker opened');
                 final date = await showDatePicker(
                   context: context,
                   initialDate: _startDate ?? DateTime.now(),
@@ -899,9 +1073,13 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
                   lastDate: DateTime(2030),
                 );
                 if (date != null) {
+                  debugPrint('🗓️ Start date selected: $date');
                   setState(() {
                     _startDate = date;
+                    debugPrint('🗓️ _startDate updated to: $_startDate');
                   });
+                } else {
+                  debugPrint('🗓️ Start date selection cancelled');
                 }
               },
             ),
@@ -925,13 +1103,14 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
                 ),
               ),
               subtitle: Text(
-                _endDate != null ? _endDate!.toString().split(' ')[0] : 'Not set',
+                _currentProject?.formattedEndDate ?? 'Not set',
                 style: TextStyle(
                   color: colorScheme.onSurface.withAlpha(180),
                 ),
               ),
               trailing: Icon(Icons.arrow_drop_down, color: colorScheme.tertiary),
               onTap: () async {
+                debugPrint('🗓️ End date picker opened');
                 final date = await showDatePicker(
                   context: context,
                   initialDate: _endDate ?? DateTime.now().add(const Duration(days: 30)),
@@ -939,9 +1118,13 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
                   lastDate: DateTime(2030),
                 );
                 if (date != null) {
+                  debugPrint('🗓️ End date selected: $date');
                   setState(() {
                     _endDate = date;
+                    debugPrint('🗓️ _endDate updated to: $_endDate');
                   });
+                } else {
+                  debugPrint('🗓️ End date selection cancelled');
                 }
               },
             ),
@@ -992,7 +1175,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
         children: [
           Row(
             children: [
-              Icon(Icons.people_outline, color: colorScheme.primary, size: 24),
+              const Icon(Icons.people_outline, color: Colors.blue, size: 24),
               const SizedBox(width: 8),
               Text(
                 'Team Members',
@@ -1428,6 +1611,7 @@ class _SelectSprintsDialog extends StatefulWidget {
 
 class _SelectSprintsDialogState extends State<_SelectSprintsDialog> {
   late Set<String> _selectedIds;
+  String? _pendingSprintId;
 
   @override
   void initState() {
@@ -1437,32 +1621,89 @@ class _SelectSprintsDialogState extends State<_SelectSprintsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final remaining = widget.availableSprints
+        .where((s) => !_selectedIds.contains(s.id))
+        .toList();
+    final selected = widget.availableSprints
+        .where((s) => _selectedIds.contains(s.id))
+        .toList();
+
     return AlertDialog(
       title: const Text('Select Sprints'),
       content: SizedBox(
         width: double.maxFinite,
-        height: 300,
-        child: ListView.builder(
-          itemCount: widget.availableSprints.length,
-          itemBuilder: (context, index) {
-            final sprint = widget.availableSprints[index];
-            final isSelected = _selectedIds.contains(sprint.id);
-            
-            return CheckboxListTile(
-              title: Text(sprint.name),
-              subtitle: Text(sprint.statusText),
-              value: isSelected,
-              onChanged: (value) {
-                setState(() {
-                  if (value == true) {
-                    _selectedIds.add(sprint.id);
-                  } else {
-                    _selectedIds.remove(sprint.id);
-                  }
-                });
-              },
-            );
-          },
+        height: 340,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    initialValue: remaining.any((s) => s.id == _pendingSprintId)
+                        ? _pendingSprintId
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Add sprint',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Select sprint'),
+                      ),
+                      ...remaining.map(
+                        (s) => DropdownMenuItem<String?>(
+                          value: s.id,
+                          child: Text(s.name),
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _pendingSprintId = v),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: (_pendingSprintId == null)
+                      ? null
+                      : () {
+                          final id = _pendingSprintId;
+                          if (id == null || id.isEmpty) return;
+                          setState(() {
+                            _selectedIds.add(id);
+                            _pendingSprintId = null;
+                          });
+                        },
+                  child: const Text('Add'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: selected.isEmpty
+                  ? const Center(child: Text('No sprints selected'))
+                  : ListView.builder(
+                      itemCount: selected.length,
+                      itemBuilder: (context, index) {
+                        final sprint = selected[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(sprint.name),
+                          subtitle: Text(sprint.statusText),
+                          trailing: IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedIds.remove(sprint.id);
+                              });
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
       actions: [

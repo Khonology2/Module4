@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:khono/models/deliverable.dart';
 import 'package:khono/services/backend_api_service.dart';
 import 'package:khono/widgets/deliverable_card.dart';
+import 'package:khono/services/auth_service.dart';
 
 class DeliverablesListScreen extends StatefulWidget {
   const DeliverablesListScreen({super.key});
@@ -84,6 +85,7 @@ class _DeliverablesListScreenState extends State<DeliverablesListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canCreate = AuthService().canCreateDeliverable();
     return Scaffold(
       appBar: AppBar(
         title: const Text('All Deliverables'),
@@ -92,11 +94,12 @@ class _DeliverablesListScreenState extends State<DeliverablesListScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: _loadDeliverables,
           ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => context.go('/deliverable-setup'),
-            tooltip: 'Create Deliverable',
-          ),
+          if (canCreate)
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () => context.go('/deliverable-setup'),
+              tooltip: 'Create Deliverable',
+            ),
         ],
       ),
       body: _isLoading
@@ -124,11 +127,12 @@ class _DeliverablesListScreenState extends State<DeliverablesListScreen> {
                           const SizedBox(height: 16),
                           const Text('No deliverables found'),
                           const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: () => context.go('/deliverable-setup'),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Create First Deliverable'),
-                          ),
+                          if (canCreate)
+                            ElevatedButton.icon(
+                              onPressed: () => context.go('/deliverable-setup'),
+                              icon: const Icon(Icons.add),
+                              label: const Text('Create First Deliverable'),
+                            ),
                         ],
                       ),
                     )

@@ -102,6 +102,7 @@ Future.microtask(() async {
   Future<List<core.ApprovalRequest>> _mergeSignOffFallback(List<core.ApprovalRequest> base) async {
     try {
       final reportsRespSubmitted = await _reportService.getSignOffReports(status: 'submitted');
+      final reportsRespUnderReview = await _reportService.getSignOffReports(status: 'under_review');
       final reportsRespApproved = await _reportService.getSignOffReports(status: 'approved');
       final reportsRespChanges = await _reportService.getSignOffReports(status: 'change_requested');
 
@@ -157,6 +158,7 @@ Future.microtask(() async {
       }
 
       if (reportsRespSubmitted.isSuccess) addFrom(reportsRespSubmitted.data, 'pending');
+      if (reportsRespUnderReview.isSuccess) addFrom(reportsRespUnderReview.data, 'pending');
       if (reportsRespApproved.isSuccess) addFrom(reportsRespApproved.data, 'approved');
       if (reportsRespChanges.isSuccess) addFrom(reportsRespChanges.data, 'rejected');
 

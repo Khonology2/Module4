@@ -566,7 +566,7 @@ class SocketService {
       const wantAi = String(process.env.IOT_AI_SUMMARY_ENABLED || '').toLowerCase() === 'true';
       const aiTopic = String(process.env.IOT_AI_SUMMARY_TOPIC || '').trim();
       if (wantAi && (event === 'sprint_progress_updated' || event === 'deliverable_progress_updated' || (aiTopic && topic.includes(aiTopic)))) {
-        const port = process.env.PORT || 8000;
+        const port = process.env.PORT || 3001;
         const msgs = [
           { role: 'system', content: 'Create a concise summary of IoT telemetry for PM/QA.' },
           { role: 'user', content: JSON.stringify(payloadData).slice(0, 4000) }
@@ -593,6 +593,13 @@ class SocketService {
 
   sendToUser(userId, event, data) {
     this.io.to(`user:${userId}`).emit(event, {
+      ...data,
+      timestamp: new Date()
+    });
+  }
+
+  sendToRole(role, event, data) {
+    this.io.to(`role:${role}`).emit(event, {
       ...data,
       timestamp: new Date()
     });

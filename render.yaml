@@ -6,9 +6,9 @@ services:
       git clone https://github.com/flutter/flutter.git -b stable --depth 1
       export PATH="$PATH:$(pwd)/flutter/bin"
       flutter pub get
-      echo "Building with API_BASE_URL=https://flow-space.onrender.com/api/v1"
+      echo "Building with API_BASE_URL=https://backend-532p.onrender.com/api/v1"
       echo "Build timestamp: $(date)"
-      flutter build web --dart-define=API_BASE_URL=https://flow-space.onrender.com/api/v1 --dart-define=DEBUG_MODE=false --no-wasm --verbose --web-renderer canvaskit
+      flutter build web --dart-define=API_BASE_URL=https://backend-532p.onrender.com/api/v1 --dart-define=DEBUG_MODE=false --no-wasm --verbose --web-renderer canvaskit
     staticPublishPath: build/web
     envVars:
       - key: FLUTTER_WEB_CANVASKIT_URL
@@ -34,12 +34,9 @@ services:
   - type: web
     name: flow-space-backend
     env: node
-    buildCommand: |
-      echo "Running database migrations..."
-      node migrations/run-all.cjs
-    startCommand: |
-      echo "Starting backend server..."
-      node server.js
+    rootDir: backend/node-backend
+    buildCommand: npm ci
+    startCommand: npm start
     envVars:
       - key: DB_CONNECTION_MODE
         value: external
@@ -49,6 +46,4 @@ services:
         value: ${JWT_SECRET}
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
-    healthCheckPath: /api/v1/health
+    healthCheckPath: /health

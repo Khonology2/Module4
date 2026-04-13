@@ -148,7 +148,7 @@ class PermissionManager {
     'manage_sprints': Permission(
       name: 'Manage Sprints',
       description: 'Create and manage sprints, projects, and tickets',
-      allowedRoles: [UserRole.deliveryLead, UserRole.systemAdmin, UserRole.teamMember, UserRole.clientReviewer, UserRole.developer, UserRole.projectManager, UserRole.scrumMaster, UserRole.qaEngineer, UserRole.stakeholder],
+      allowedRoles: [UserRole.deliveryLead, UserRole.systemAdmin],
     ),
     'view_client_review': Permission(
       name: 'View Client Review',

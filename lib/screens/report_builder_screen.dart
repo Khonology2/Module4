@@ -96,18 +96,24 @@ WidgetsBinding.instance.addPostFrameCallback((_) {
         });
       }
     } catch (e) {
-      debugPrint('Error loading deliverable data: \$e');
+      debugPrint('Error loading deliverable data: $e');
+      // Always set loading to false even on error
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to load deliverable data. Please try again.'),
+          SnackBar(
+            content: Text('Error loading deliverable: $e'),
             backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _loadDeliverableData,
+            ),
           ),
         );
       }
       setState(() {
         _isLoading = false;
-        _deliverable = null;
+        _deliverable = null; // Keep null to trigger error state
         _sprintMetrics = [];
       });
     }
@@ -339,12 +345,34 @@ Future<void> _generateTitleSuggestion() async {
   Future<void> generateReport() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isGenerating = true;
-    });
-
     try {
       final backend = ref.read(backendApiServiceProvider);
+
+      final sprintIds = _deliverable?.sprintIds ?? [];
+      for (final sprintId in sprintIds) {
+        final resp = await backend.getSprint(sprintId);
+        if (resp.isSuccess && resp.data != null) {
+          final raw = resp.data;
+          final data = raw is Map && raw['data'] is Map ? Map<String, dynamic>.from(raw['data'] as Map) : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
+          final status = (data['status'] ?? '').toString().toLowerCase();
+          final isCompleted = status == 'completed' || status == 'done' || status == 'closed';
+          if (!isCompleted) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('A sprint report can only be generated for completed sprints.'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+        }
+      }
+
+      setState(() {
+        _isGenerating = true;
+      });
       
       String? sprintPerformanceData;
       if (_sprintMetrics.isNotEmpty) {
@@ -414,9 +442,51 @@ void togglePreview() {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading || _deliverable == null) {
+    // Show form even if deliverable fails to load, but show loading indicator during initial load
+    if (_isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    
+    // If deliverable failed to load, show error message but still allow form editing
+    if (_deliverable == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Create Report'),
+          backgroundColor: FlownetColors.graphiteGray,
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              // Error message
+              Container(
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Deliverable data could not be loaded. You can still create a report manually.',
+                        style: TextStyle(color: Colors.orange),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Show the form
+              buildEditMode(),
+            ],
+          ),
+        ),
       );
     }
 

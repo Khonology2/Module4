@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:go_router/go_router.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_card.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/app_modal.dart';
+import '../widgets/ai_assistant_fab_button.dart';
 import '../models/timeline_event.dart';
-import '../services/auth_service.dart';
+import '../services/timeline_event_service.dart';
 import 'add_event_modal.dart';
 
 /// Timeline/Calendar Screen
@@ -21,8 +22,16 @@ class TimelineScreen extends StatefulWidget {
 }
 
 class _TimelineScreenState extends State<TimelineScreen> {
+  /// Insets from the physical edges; matches typical [FloatingActionButtonLocation.endFloat] feel.
+  static const double _fabStackEdge = 20;
+  static const double _fabStackGap = 14;
+  /// Extra bottom scroll padding so content clears the stacked FAB column.
+  static const double _fabStackScrollPadding = 168;
+
   // View state
   String _activeView = 'Month'; // 'Month' | 'Week' | 'Day' | 'Timeline'
+  String? _hoveredView; // For subtle hover effects on view buttons
+  DateTime? _hoveredSlotStart; // For hover highlighting on week/day slots
 
   // Calendar state
   DateTime _focusedDay = DateTime.now();
@@ -31,94 +40,80 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   // Events
   final List<TimelineEvent> _events = [];
+  final TimelineEventService _timelineEventService = TimelineEventService();
 
-  // Calendar view constants
+  // Calendar view constants - Professional scheduling standards
   static const int _startHour = 6; // 6 AM
   static const int _endHour = 22; // 10 PM
-  static const double _hourHeight = 80.0; // Height of each hour slot in pixels
-  static const double _minuteHeight = _hourHeight / 60.0; // Height per minute
+  static const double _hourHeight = 90.0; // Professional hour height
+  static const double _minuteHeight =
+      _hourHeight / 60.0; // 1.5 pixels per minute
   static const Duration _defaultEventDuration =
       Duration(hours: 1); // Default 1 hour for events
+  static const double _minEventHeight = 40.0; // Minimum readable height
 
   @override
   void initState() {
     super.initState();
-    _loadSampleEvents();
+    _loadEvents();
   }
 
-  void _loadSampleEvents() {
-    final now = DateTime.now();
+  Future<void> _loadEvents() async {
+    final loaded = await _timelineEventService.loadEvents();
+    loaded.sort((a, b) => _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
+    if (!mounted) return;
     setState(() {
-      _events.addAll([
-        TimelineEvent(
-          id: '1',
-          title: 'Stand-Up Meeting',
-          description: 'Daily stand-up with team',
-          type: TimelineEventType.meeting,
-          date: now,
-          createdAt: now.subtract(const Duration(minutes: 10)),
-          time: '08:30',
-          priority: 'medium',
-          project: 'Sprint Planning',
-          colorTag: 'blue',
-        ),
-        TimelineEvent(
-          id: '2',
-          title: 'Working Group Session',
-          description: 'Team collaboration session',
-          type: TimelineEventType.task,
-          date: now,
-          createdAt: now.subtract(const Duration(minutes: 5)),
-          time: '11:00',
-          priority: 'high',
-          project: 'Feature Development',
-          colorTag: 'red',
-        ),
-        TimelineEvent(
-          id: '3',
-          title: 'Sprint Review',
-          description: 'Review sprint progress',
-          type: TimelineEventType.review,
-          date: now.add(const Duration(days: 2)),
-          createdAt: now,
-          time: '14:00',
-          priority: 'high',
-          project: 'Sprint Planning',
-          colorTag: 'green',
-        ),
-        TimelineEvent(
-          id: '4',
-          title: 'Training Session',
-          description: 'Team training on new tools',
-          type: TimelineEventType.other,
-          date: now.add(const Duration(days: 5)),
-          createdAt: now.add(const Duration(days: 1)),
-          time: '10:00',
-          priority: 'low',
-          project: 'Training',
-          colorTag: 'orange',
-        ),
-      ]);
+      _events
+        ..clear()
+        ..addAll(loaded);
     });
   }
 
   List<TimelineEvent> _getEventsForDay(DateTime day) {
     return _events.where((event) {
-      final date = event.date;
-      if (date == null) return false;
-      return date.year == day.year &&
-          date.month == day.month &&
-          date.day == day.day;
+      DateTime? eventDate;
+
+      // For new events, use startTime date
+      if (event.startTime != null) {
+        eventDate = event.startTime;
+      }
+      // For legacy events, use date field
+      else if (event.date != null) {
+        eventDate = event.date;
+      }
+      // Fallback to dateTime
+      else {
+        eventDate = event.dateTime;
+      }
+
+      if (eventDate == null) return false;
+      return eventDate.year == day.year &&
+          eventDate.month == day.month &&
+          eventDate.day == day.day;
     }).toList();
   }
 
   List<TimelineEvent> _getEventsForWeek(DateTime weekStart) {
     final weekEnd = weekStart.add(const Duration(days: 6));
     return _events.where((event) {
-      final date = event.date;
-      if (date == null) return false;
-      return date.isAfter(weekStart.subtract(const Duration(days: 1))) &&
-          date.isBefore(weekEnd.add(const Duration(days: 1)));
+      DateTime? eventDate;
+
+      // For new events, use startTime date
+      if (event.startTime != null) {
+        eventDate = event.startTime;
+      }
+      // For legacy events, use date field
+      else if (event.date != null) {
+        eventDate = event.date;
+      }
+      // Fallback to dateTime
+      else {
+        eventDate = event.dateTime;
+      }
+
+      if (eventDate == null) return false;
+      return eventDate.isAfter(weekStart.subtract(const Duration(days: 1))) &&
+          eventDate.isBefore(weekEnd.add(const Duration(days: 1)));
     }).toList();
   }
 
@@ -133,6 +128,25 @@ class _TimelineScreenState extends State<TimelineScreen> {
       _selectedDay = selectedDay;
       _focusedDay = focusedDay;
     });
+
+    // If user clicks a future (or today) date in Month view, open event creation modal
+    if (_activeView == 'Month') {
+      final today = DateTime.now();
+      final normalizedToday = DateTime(today.year, today.month, today.day);
+      final normalizedSelected =
+          DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+
+      final isFutureOrToday = !normalizedSelected.isBefore(normalizedToday);
+      if (isFutureOrToday) {
+        showAppDialog(
+          context: context,
+          builder: (context) => AddEventModal(
+            initialDate: normalizedSelected,
+            onEventAdded: _addEvent,
+          ),
+        );
+      }
+    }
   }
 
   void _onFormatChanged(CalendarFormat format) {
@@ -151,32 +165,200 @@ class _TimelineScreenState extends State<TimelineScreen> {
     setState(() {
       _events.add(event);
     });
+    _timelineEventService.saveEvents(_events);
+  }
+
+  void _toggleTaskCompleted(TimelineEvent event, bool isCompleted) {
+    final idx = _events.indexWhere((e) => e.id == event.id);
+    if (idx < 0) return;
+    setState(() {
+      _events[idx] = _events[idx].copyWith(
+        isCompleted: isCompleted,
+        updatedAt: DateTime.now(),
+      );
+    });
+    _timelineEventService.saveEvents(_events);
+  }
+
+  List<TimelineEvent> _getUpcomingTasksForToday() {
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+    final tasks = _events.where((e) {
+      if (e.type != TimelineEventType.task) return false;
+      if (e.isCompleted) return false;
+      final start = _getEventStartDateTime(e);
+      if (start.isBefore(startOfDay) || !start.isBefore(endOfDay)) return false;
+      return !start.isBefore(now) || _isAllDayEvent(e);
+    }).toList();
+    tasks.sort((a, b) => _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
+    return tasks;
+  }
+
+  bool _isAllDayEvent(TimelineEvent event) {
+    return event.startTime == null || event.endTime == null;
+  }
+
+  void _handleTimeSlotTap(DateTime day, int hour) {
+    // Normalize to the exact hour for this slot
+    final slotStart = DateTime(day.year, day.month, day.day, hour);
+    final now = DateTime.now();
+
+    // Prevent creating events in the past
+    if (slotStart.isBefore(now)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You can only create events in future time slots.'),
+          backgroundColor: FlownetColors.amberOrange,
+        ),
+      );
+      return;
+    }
+
+    final slotDate = DateTime(day.year, day.month, day.day);
+
+    showAppDialog(
+      context: context,
+      builder: (context) => AddEventModal(
+        initialDate: slotDate,
+        initialStartTime: slotStart,
+        onEventAdded: _addEvent,
+      ),
+    );
   }
 
   DateTime _getEventStartDateTime(TimelineEvent event) {
+    // First check if event has startTime field (from new events)
+    if (event.startTime != null) {
+      return event.startTime!;
+    }
+
+    // Fallback to time field parsing (for old sample events)
+    if (event.time != null && event.time!.isNotEmpty) {
+      final timeParts = event.time!.split(':');
+      if (timeParts.length >= 2) {
+        final hour = int.tryParse(timeParts[0]) ?? 12;
+        final minute = int.tryParse(timeParts[1]) ?? 0;
+        return DateTime(
+          event.date?.year ?? DateTime.now().year,
+          event.date?.month ?? DateTime.now().month,
+          event.date?.day ?? DateTime.now().day,
+          hour,
+          minute,
+        );
+      }
+    }
+
+    // Fallback to date time or current time
     return event.dateTime;
   }
 
   DateTime _getEventEndDateTime(TimelineEvent event) {
-    // Default to 1 hour duration for events without duration
-    return event.dateTime.add(_defaultEventDuration);
+    // First check if event has endTime field (from new events)
+    if (event.endTime != null) {
+      return event.endTime!;
+    }
+
+    // Fallback: Use the start time and add default duration
+    final startTime = _getEventStartDateTime(event);
+    return startTime.add(_defaultEventDuration);
   }
 
-  double _getEventTopPosition(DateTime eventTime) {
-    final hours = eventTime.hour + (eventTime.minute / 60.0);
-    final startHours = _startHour.toDouble();
-    return (hours - startHours) * _hourHeight;
+  String _formatEventTime(TimelineEvent event) {
+    // For new events with startTime and endTime, show both in professional format
+    if (event.startTime != null) {
+      final startTime = event.startTime!;
+      final endTime = event.endTime ?? startTime.add(const Duration(hours: 1));
+
+      // Format: "11:00 AM - 12:00 PM" or "2:30 PM - 4:00 PM"
+      final startFormatted = _formatTimeOfDay(startTime);
+      final endFormatted = _formatTimeOfDay(endTime);
+
+      return '$startFormatted - $endFormatted';
+    }
+
+    // For old events with time string field, convert to professional format
+    if (event.time != null && event.time!.isNotEmpty) {
+      final timeParts = event.time!.split(':');
+      if (timeParts.length >= 2) {
+        final hour = int.tryParse(timeParts[0]) ?? 12;
+        final minute = int.tryParse(timeParts[1]) ?? 0;
+        final dateTime = DateTime(2024, 1, 1, hour, minute);
+        return _formatTimeOfDay(dateTime);
+      }
+    }
+
+    return '';
+  }
+
+  String _formatTimeOfDay(DateTime time) {
+    final hour = time.hour;
+    final minute = time.minute;
+
+    // Convert to 12-hour format
+    int displayHour = hour % 12;
+    if (displayHour == 0) displayHour = 12;
+
+    final period = hour < 12 ? 'AM' : 'PM';
+    final minuteStr = minute > 0 ? ':${minute.toString().padLeft(2, '0')}' : '';
+
+    return '$displayHour$minuteStr $period';
+  }
+
+  double _getEventTopPosition(DateTime eventTime, {double headerOffset = 0.0}) {
+    // Professional minute-based positioning for exact time slot alignment
+    const timelineStartMinutes = _startHour * 60; // 6:00 AM = 360 minutes
+    final eventMinutes = eventTime.hour * 60 +
+        eventTime.minute; // 8:30 = 8*60 + 30 = 510 minutes
+
+    // Calculate minutes from start of timeline
+    final minutesFromStart =
+        eventMinutes - timelineStartMinutes; // 510 - 360 = 150 minutes
+
+    // Clamp to valid timeline range
+    const validRange =
+        (_endHour - _startHour) * 60; // 22-6 = 16 hours = 960 minutes
+    final clampedMinutes = minutesFromStart.clamp(0.0, validRange.toDouble());
+
+    // Convert to pixels using professional minute-based positioning
+    final position =
+        clampedMinutes * _minuteHeight - headerOffset; // 150 * 1.5 = 225px
+
+    // Debug output to verify correct positioning
+    debugPrint('=== EVENT POSITIONING DEBUG ===');
+    debugPrint(
+        'Event Time: $eventTime.hour:${eventTime.minute.toString().padLeft(2, '0')}');
+    debugPrint(
+        'Timeline Start: $_startHour:00 ($timelineStartMinutes minutes)');
+    debugPrint('Event Minutes: $eventMinutes minutes');
+    debugPrint('Minutes from Start: $minutesFromStart minutes');
+    debugPrint('Pixel per Minute: $_minuteHeight px');
+    debugPrint('Calculated Position: $position px');
+    debugPrint(
+        'Expected: 8:30 should be at 225px (halfway between 8:00=180px and 9:00=270px)');
+    debugPrint('=============================');
+
+    return position;
   }
 
   double _getEventHeight(DateTime startTime, DateTime endTime) {
-    final duration = endTime.difference(startTime);
-    return duration.inMinutes * _minuteHeight;
+    // Height based on actual duration for professional calendar
+    final durationMinutes = endTime.difference(startTime).inMinutes;
+    final height = durationMinutes * _minuteHeight;
+
+    // Ensure minimum height for readability
+    return height.clamp(_minEventHeight, double.infinity);
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = AuthService().currentUser;
-    final userName = currentUser?.name.split(' ').first ?? 'User';
+    final padding = MediaQuery.paddingOf(context);
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    final textDir = Directionality.of(context);
+    final endSafe =
+        textDir == TextDirection.ltr ? padding.right : padding.left;
+    final bottomInset = padding.bottom + keyboard + _fabStackEdge;
+    final endInset = endSafe + _fabStackEdge;
 
     return Container(
       decoration: BoxDecoration(
@@ -191,182 +373,240 @@ class _TimelineScreenState extends State<TimelineScreen> {
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight - 48,
-                  maxWidth: 1400, // Desktop-first max width
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Welcome Banner
-                    _buildWelcomeBanner(userName),
-                    const SizedBox(height: 24),
-
-                    // Quick Actions
-                    _buildQuickActions(),
-                    const SizedBox(height: 24),
-
-                    // View Switcher
-                    _buildViewSwitcher(),
-                    const SizedBox(height: 24),
-
-                    // Calendar/Timeline Content
-                    _buildCalendarContent(),
-                    const SizedBox(height: 24),
-
-                    // My Deliverables
-                    _buildMyDeliverables(),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-        floatingActionButton: _buildFAB(),
-      ),
-    );
-  }
-
-  Widget _buildWelcomeBanner(String userName) {
-    return GlassCard(
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: FlownetColors.crimsonRed.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: const Icon(
-              Icons.code,
-              color: FlownetColors.crimsonRed,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome back, $userName!',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: FlownetColors.pureWhite,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Timeline & Calendar',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: FlownetColors.coolGray,
-                      ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Quick Actions',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: FlownetColors.pureWhite,
-              ),
-        ),
-        const SizedBox(height: 16),
-        Row(
+        body: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
           children: [
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.add_task,
-                title: 'Create Deliverable',
-                onTap: () {
-                  context.go('/deliverable-setup');
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      24,
+                      24,
+                      24 +
+                          _fabStackScrollPadding +
+                          padding.bottom +
+                          keyboard,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight - 48,
+                        maxWidth: 1400, // Desktop-first max width
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // View Switcher
+                          _buildViewSwitcher(),
+                          const SizedBox(height: 24),
+
+                          _buildTaskReminders(),
+                          const SizedBox(height: 24),
+
+                          // Calendar/Timeline Content with subtle view transition
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 220),
+                            switchInCurve: Curves.easeOut,
+                            switchOutCurve: Curves.easeIn,
+                            child: KeyedSubtree(
+                              key: ValueKey(_activeView),
+                              child: _buildCalendarContent(),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          // My Deliverables
+                          _buildMyDeliverables(),
+                        ],
+                      ),
+                    ),
+                  );
                 },
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.timeline,
-                title: 'Open Sprint Console',
-                onTap: () {
-                  context.go('/sprint-console');
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.assessment,
-                title: 'Build Report',
-                onTap: () {
-                  context.go('/report-repository');
-                },
-              ),
+            Positioned.directional(
+              textDirection: textDir,
+              end: endInset,
+              bottom: bottomInset,
+              child: _buildTimelineFabStack(context),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// New Event above AI assistant, bottom-end, safe-area aware (see `_fabStackEdge`).
+  Widget _buildTimelineFabStack(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Material(
+          elevation: 12,
+          shadowColor: Colors.black54,
+          borderRadius: BorderRadius.circular(28),
+          color: FlownetColors.crimsonRed,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () {
+              showAppDialog(
+                context: context,
+                builder: (context) => AddEventModal(
+                  onEventAdded: _addEvent,
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(28),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.add, color: FlownetColors.pureWhite),
+                  const SizedBox(width: 8),
+                  Text(
+                    'New Event',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: FlownetColors.pureWhite,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: _fabStackGap),
+        // PNG already includes soft shadow; avoid an extra circular clip.
+        const AiAssistantFabButton(),
       ],
     );
   }
 
-  Widget _buildQuickActionCard({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return GlassContainer(
-      onTap: onTap,
-      borderRadius: 16.0,
-      opacity: 0.15,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 32, color: FlownetColors.crimsonRed),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                  color: FlownetColors.pureWhite,
-                ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+  Widget _buildViewSwitcher() {
+    // Make the view switcher span the same width as the calendar card below.
+    return SizedBox(
+      width: double.infinity,
+      child: GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            Expanded(child: _buildViewButton('Month', Icons.calendar_view_month)),
+            const SizedBox(width: 8),
+            Expanded(child: _buildViewButton('Week', Icons.calendar_view_week)),
+            const SizedBox(width: 8),
+            Expanded(child: _buildViewButton('Day', Icons.calendar_today)),
+            const SizedBox(width: 8),
+            Expanded(child: _buildViewButton('Timeline', Icons.timeline)),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildViewSwitcher() {
+  Widget _buildTaskReminders() {
+    final tasks = _getUpcomingTasksForToday();
     return GlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildViewButton('Month', Icons.calendar_view_month),
-          const SizedBox(width: 8),
-          _buildViewButton('Week', Icons.calendar_view_week),
-          const SizedBox(width: 8),
-          _buildViewButton('Day', Icons.calendar_today),
-          const SizedBox(width: 8),
-          _buildViewButton('Timeline', Icons.timeline),
+          Row(
+            children: [
+              const Icon(Icons.task_alt, color: FlownetColors.crimsonRed, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                "Today's Task Reminders",
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: FlownetColors.pureWhite,
+                    ),
+              ),
+              const Spacer(),
+              Text(
+                '${tasks.length} upcoming',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: FlownetColors.coolGray,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (tasks.isEmpty)
+            Text(
+              'No upcoming tasks for today.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: FlownetColors.coolGray,
+                  ),
+            )
+          else
+            ...tasks.take(6).map((task) {
+              final start = _getEventStartDateTime(task);
+              final timeLabel = _isAllDayEvent(task) ? 'All day' : DateFormat('HH:mm').format(start);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: GlassCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  borderRadius: 12.0,
+                  child: Row(
+                    children: [
+                      Checkbox(
+                        value: task.isCompleted,
+                        onChanged: (v) => _toggleTaskCompleted(task, v ?? false),
+                        activeColor: FlownetColors.emeraldGreen,
+                        checkColor: FlownetColors.pureWhite,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              task.title,
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    color: FlownetColors.pureWhite,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                            if (task.description.trim().isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                task.description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: FlownetColors.coolGray,
+                                    ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: FlownetColors.electricBlue.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          timeLabel,
+                          style: const TextStyle(
+                            color: FlownetColors.electricBlue,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -374,39 +614,60 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   Widget _buildViewButton(String view, IconData icon) {
     final isActive = _activeView == view;
-    return GlassContainer(
-      onTap: () {
-        setState(() {
-          _activeView = view;
-          if (view == 'Month') {
-            _calendarFormat = CalendarFormat.month;
-          } else if (view == 'Week') {
-            _calendarFormat = CalendarFormat.week;
-          }
-        });
-      },
-      borderRadius: 12.0,
-      opacity: isActive ? 0.20 : 0.10,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 18,
-            color: isActive ? FlownetColors.crimsonRed : FlownetColors.coolGray,
+    final isHovered = _hoveredView == view;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoveredView = view),
+      onExit: (_) => setState(() => _hoveredView = null),
+      child: AnimatedScale(
+        scale: isActive ? 1.02 : (isHovered ? 1.01 : 1.0),
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: GlassContainer(
+          onTap: () {
+            if (_activeView == view) return;
+            setState(() {
+              _activeView = view;
+              if (view == 'Month') {
+                _calendarFormat = CalendarFormat.month;
+              } else if (view == 'Week') {
+                _calendarFormat = CalendarFormat.week;
+              }
+            });
+          },
+          borderRadius: 14.0,
+          opacity: isActive
+              ? 0.24
+              : (isHovered ? 0.16 : 0.10),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isActive
+                    ? FlownetColors.crimsonRed
+                    : (isHovered
+                        ? FlownetColors.pureWhite
+                        : FlownetColors.coolGray),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                view,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight:
+                          isActive ? FontWeight.w600 : FontWeight.normal,
+                      color: isActive
+                          ? FlownetColors.crimsonRed
+                          : (isHovered
+                              ? FlownetColors.pureWhite
+                              : FlownetColors.coolGray),
+                    ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Text(
-            view,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  color: isActive
-                      ? FlownetColors.crimsonRed
-                      : FlownetColors.coolGray,
-                ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -494,17 +755,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   child: Column(
                     children: List.generate(
                       _endHour - _startHour,
-                      (index) => Container(
-                        height: _hourHeight,
-                        padding: const EdgeInsets.only(right: 8, top: 4),
-                        alignment: Alignment.topRight,
-                        child: Text(
-                          '${_startHour + index}:00',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: FlownetColors.coolGray,
-                                    fontSize: 12,
-                                  ),
+                      (index) => Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.only(right: 8, top: 4),
+                          alignment: Alignment.topRight,
+                          child: Text(
+                            '${_startHour + index}:00',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: FlownetColors.coolGray,
+                                      fontSize: 12,
+                                    ),
+                          ),
                         ),
                       ),
                     ),
@@ -515,11 +777,25 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   child: Row(
                     children: weekDays.map((day) {
                       final dayEvents = weekEvents.where((event) {
-                        final date = event.date;
-                        if (date == null) return false;
-                        return date.year == day.year &&
-                            date.month == day.month &&
-                            date.day == day.day;
+                        DateTime? eventDate;
+
+                        // For new events, use startTime date
+                        if (event.startTime != null) {
+                          eventDate = event.startTime;
+                        }
+                        // For legacy events, use date field
+                        else if (event.date != null) {
+                          eventDate = event.date;
+                        }
+                        // Fallback to dateTime
+                        else {
+                          eventDate = event.dateTime;
+                        }
+
+                        if (eventDate == null) return false;
+                        return eventDate.year == day.year &&
+                            eventDate.month == day.month &&
+                            eventDate.day == day.day;
                       }).toList();
 
                       final isToday = day.year == DateTime.now().year &&
@@ -544,21 +820,51 @@ class _TimelineScreenState extends State<TimelineScreen> {
                           ),
                           child: Stack(
                             children: [
-                              // Hour Lines
+                              // Hour Lines with clickable slots
                               Column(
                                 children: List.generate(
                                   _endHour - _startHour,
-                                  (index) => Container(
-                                    height: _hourHeight,
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: FlownetColors.slate
-                                              .withValues(alpha: 0.2),
+                                  (index) {
+                                    final slotStartHour = _startHour + index;
+                                    final slotStart = DateTime(
+                                      day.year,
+                                      day.month,
+                                      day.day,
+                                      slotStartHour,
+                                    );
+                                    final isHovered =
+                                        _hoveredSlotStart == slotStart;
+
+                                    return Expanded(
+                                      child: MouseRegion(
+                                        onEnter: (_) => setState(
+                                            () => _hoveredSlotStart = slotStart),
+                                        onExit: (_) =>
+                                            setState(() => _hoveredSlotStart = null),
+                                        child: GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: () =>
+                                              _handleTimeSlotTap(day, slotStartHour),
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 120),
+                                            decoration: BoxDecoration(
+                                              color: isHovered
+                                                  ? FlownetColors.pureWhite
+                                                      .withValues(alpha: 0.04)
+                                                  : null,
+                                              border: Border(
+                                                bottom: BorderSide(
+                                                  color: FlownetColors.slate
+                                                      .withValues(alpha: 0.2),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ),
+                                    );
+                                  },
                                 ),
                               ),
                               // Day Header
@@ -604,30 +910,35 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                 ),
                               ),
                               // Events
-                              Positioned.fill(
-                                top: 56,
-                                child: Stack(
-                                  children: dayEvents.map((event) {
-                                    final startTime =
-                                        _getEventStartDateTime(event);
-                                    final endTime = _getEventEndDateTime(event);
-                                    final top = _getEventTopPosition(startTime);
-                                    final height =
-                                        _getEventHeight(startTime, endTime);
-                                    final color =
-                                        _getColorForTag(event.colorTag);
+                              if (dayEvents.isNotEmpty)
+                                Positioned.fill(
+                                  top: 56,
+                                  child: Stack(
+                                    children: dayEvents.map((event) {
+                                      final startTime =
+                                          _getEventStartDateTime(event);
+                                      final endTime =
+                                          _getEventEndDateTime(event);
+                                      final top = _getEventTopPosition(
+                                          startTime,
+                                          headerOffset: 56.0);
+                                      final height =
+                                          _getEventHeight(startTime, endTime);
+                                      final color =
+                                          _getColorForTag(event.colorTag);
 
-                                    return Positioned(
-                                      top: top,
-                                      left: 4,
-                                      right: 4,
-                                      height:
-                                          height.clamp(36.0, double.infinity),
-                                      child: _buildWeekEventCard(event, color),
-                                    );
-                                  }).toList(),
+                                      return Positioned(
+                                        top: top,
+                                        left: 4,
+                                        right: 4,
+                                        height:
+                                            height.clamp(60.0, double.infinity),
+                                        child:
+                                            _buildWeekEventCard(event, color),
+                                      );
+                                    }).toList(),
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
@@ -650,34 +961,66 @@ class _TimelineScreenState extends State<TimelineScreen> {
         onTap: () => _showEventDetails(event),
         borderRadius: BorderRadius.circular(6),
         child: Container(
-          padding: const EdgeInsets.all(6),
+          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.2),
+            color: color.withValues(alpha: 0.25),
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: color.withValues(alpha: 0.5), width: 1),
+            border: Border.all(color: color.withValues(alpha: 0.6), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.2),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                event.title,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: FlownetColors.pureWhite,
-                      fontSize: 11,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              // Event title with better styling
+              Flexible(
+                child: Text(
+                  event.title,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: FlownetColors.pureWhite,
+                        fontSize: 12,
+                        height: 1.1,
+                        letterSpacing: 0.2,
+                      ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
+                ),
               ),
-              const SizedBox(height: 1),
-              Text(
-                event.time ?? '',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: color,
-                      fontSize: 9,
-                    ),
-              ),
+              if (_formatEventTime(event).isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(
+                        color: FlownetColors.pureWhite.withValues(alpha: 0.3),
+                        width: 1),
+                  ),
+                  child: Text(
+                    _formatEventTime(event),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: FlownetColors.pureWhite,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -746,13 +1089,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
               ],
             ),
           ),
-          // Day Timeline
-          SizedBox(
-            height: (_endHour - _startHour) * _hourHeight,
+          // Professional Day Timeline
+          Container(
+            height: (_endHour - _startHour) *
+                _hourHeight, // 16 hours × 90px = 1440px total
+            constraints: const BoxConstraints(
+              minHeight: 500, // Professional minimum height
+              // maxHeight: 900, // REMOVED - This was causing visual scaling issues!
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Time Column
+                // Professional Time Column
                 Container(
                   width: 80,
                   decoration: BoxDecoration(
@@ -764,61 +1112,118 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   child: Column(
                     children: List.generate(
                       _endHour - _startHour,
-                      (index) => Container(
-                        height: _hourHeight,
-                        padding: const EdgeInsets.only(right: 8, top: 4),
-                        alignment: Alignment.topRight,
-                        child: Text(
-                          '${_startHour + index}:00',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: FlownetColors.coolGray,
-                                    fontSize: 12,
-                                  ),
+                      (index) => Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.only(right: 8, top: 4),
+                          alignment: Alignment.topRight,
+                          child: Text(
+                            '${_startHour + index}:00',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: FlownetColors.coolGray,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-                // Events Column
+                // Professional Events Column
                 Expanded(
                   child: Stack(
                     children: [
-                      // Hour Lines
+                      // Professional Hour Grid
                       Column(
                         children: List.generate(
                           _endHour - _startHour,
-                          (index) => Container(
-                            height: _hourHeight,
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: FlownetColors.slate
-                                      .withValues(alpha: 0.2),
+                          (index) {
+                            final slotStartHour = _startHour + index;
+                            final slotStart = DateTime(
+                              _selectedDay.year,
+                              _selectedDay.month,
+                              _selectedDay.day,
+                              slotStartHour,
+                            );
+                            final isHovered =
+                                _hoveredSlotStart == slotStart;
+
+                            return Expanded(
+                              child: MouseRegion(
+                                onEnter: (_) => setState(
+                                    () => _hoveredSlotStart = slotStart),
+                                onExit: (_) =>
+                                    setState(() => _hoveredSlotStart = null),
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _handleTimeSlotTap(
+                                    _selectedDay,
+                                    slotStartHour,
+                                  ),
+                                  child: AnimatedContainer(
+                                    duration:
+                                        const Duration(milliseconds: 120),
+                                    decoration: BoxDecoration(
+                                      color: isHovered
+                                          ? FlownetColors.pureWhite
+                                              .withValues(alpha: 0.04)
+                                          : null,
+                                      border: Border(
+                                        bottom: BorderSide(
+                                          color: FlownetColors.slate
+                                              .withValues(alpha: 0.15),
+                                          width: 0.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         ),
                       ),
-                      // Events
-                      Stack(
-                        children: dayEvents.map((event) {
-                          final startTime = _getEventStartDateTime(event);
-                          final endTime = _getEventEndDateTime(event);
-                          final top = _getEventTopPosition(startTime);
-                          final height = _getEventHeight(startTime, endTime);
-                          final color = _getColorForTag(event.colorTag);
-
-                          return Positioned(
-                            top: top,
-                            left: 8,
-                            right: 8,
-                            height: height.clamp(48.0, double.infinity),
-                            child: _buildDayEventCard(event, color),
-                          );
-                        }).toList(),
-                      ),
+                      // Professional Overlapping Events
+                      if (dayEvents.isNotEmpty)
+                        ..._buildOverlappingEvents(dayEvents),
+                      // No events message
+                      if (dayEvents.isEmpty)
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.event_available,
+                                size: 48,
+                                color: FlownetColors.coolGray
+                                    .withValues(alpha: 0.5),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No events scheduled for this day',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(
+                                      color: FlownetColors.coolGray
+                                          .withValues(alpha: 0.7),
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Click "New Event" button to add one',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      color: FlownetColors.coolGray
+                                          .withValues(alpha: 0.5),
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -830,46 +1235,137 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  Widget _buildDayEventCard(TimelineEvent event, Color color) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _showEventDetails(event),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withValues(alpha: 0.5), width: 1.5),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                event.title,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: FlownetColors.pureWhite,
-                      fontSize: 12,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+  List<Widget> _buildOverlappingEvents(List<TimelineEvent> dayEvents) {
+    // Simple approach - sort events and position them directly without nested Stacks
+    final sortedEvents = List<TimelineEvent>.from(dayEvents)
+      ..sort((a, b) =>
+          _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
+
+    return sortedEvents.map((event) {
+      final startTime = _getEventStartDateTime(event);
+      final endTime = _getEventEndDateTime(event);
+      final top = _getEventTopPosition(startTime);
+      final height = _getEventHeight(startTime, endTime);
+      final color = _getColorForTag(event.colorTag);
+
+      return Positioned(
+        top: top,
+        left: 8.0,
+        right: 8.0,
+        height: height,
+        child: _buildProfessionalEventCard(event, color, 200.0),
+      );
+    }).toList();
+  }
+
+  Widget _buildProfessionalEventCard(
+      TimelineEvent event, Color color, double availableWidth) {
+    final startTime = _getEventStartDateTime(event);
+    final endTime = _getEventEndDateTime(event);
+    final duration = endTime.difference(startTime);
+    final durationMinutes = duration.inMinutes;
+    final isSmallEvent = durationMinutes < 30;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showEventDetails(event),
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            padding: EdgeInsets.all(isSmallEvent ? 4 : 6),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: color.withValues(alpha: 0.7),
+                width: 1,
               ),
-              const SizedBox(height: 2),
-              Text(
-                event.time ?? '',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: color,
-                      fontSize: 11,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.2),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Professional time display
+                if (!isSmallEvent) ...[
+                  Text(
+                    _formatEventTime(event),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: FlownetColors.pureWhite,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                ],
+                // Professional title display
+                Flexible(
+                  child: Text(
+                    event.title,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: FlownetColors.pureWhite,
+                          fontSize: isSmallEvent ? 11 : 12,
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
+                          letterSpacing: 0.2,
+                        ),
+                    maxLines: isSmallEvent ? 1 : 2,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: true,
+                  ),
+                ),
+                // Priority indicator for larger events
+                if (!isSmallEvent && event.priority != null) ...[
+                  const SizedBox(height: 3),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: _getPriorityColor(event.priority!),
+                      borderRadius: BorderRadius.circular(3),
                     ),
-              ),
-            ],
+                    child: Text(
+                      event.priority!.toUpperCase(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: FlownetColors.pureWhite,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w600,
+                          ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'high':
+        return FlownetColors.crimsonRed;
+      case 'medium':
+        return FlownetColors.slate;
+      case 'low':
+        return FlownetColors.coolGray;
+      default:
+        return FlownetColors.coolGray;
+    }
   }
 
   Widget _buildCalendarView() {
@@ -935,8 +1431,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
             startingDayOfWeek: StartingDayOfWeek.monday,
             calendarStyle: CalendarStyle(
               outsideDaysVisible: false,
-              weekendTextStyle: const TextStyle(color: FlownetColors.coolGray),
-              defaultTextStyle: const TextStyle(color: FlownetColors.pureWhite),
+              // Slightly lighter date text for better contrast
+              weekendTextStyle: const TextStyle(
+                color: FlownetColors.pureWhite,
+              ),
+              defaultTextStyle: const TextStyle(
+                color: FlownetColors.pureWhite,
+                fontWeight: FontWeight.w500,
+              ),
               selectedTextStyle: const TextStyle(
                 color: FlownetColors.pureWhite,
                 fontWeight: FontWeight.bold,
@@ -944,6 +1446,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
               todayTextStyle: const TextStyle(
                 color: FlownetColors.crimsonRed,
                 fontWeight: FontWeight.bold,
+              ),
+              // Extra breathing room between cells
+              cellMargin: const EdgeInsets.symmetric(
+                horizontal: 4,
+                vertical: 4,
+              ),
+              cellPadding: const EdgeInsets.symmetric(
+                horizontal: 4,
+                vertical: 6,
               ),
               todayDecoration: BoxDecoration(
                 color: FlownetColors.crimsonRed.withValues(alpha: 0.2),
@@ -966,18 +1477,11 @@ class _TimelineScreenState extends State<TimelineScreen> {
               formatButtonVisible: false,
               titleCentered: true,
               titleTextStyle: TextStyle(
-                color: FlownetColors.pureWhite,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+                color: Colors.transparent, // Hide duplicate month header
+                fontSize: 1,
               ),
-              leftChevronIcon: Icon(
-                Icons.chevron_left,
-                color: FlownetColors.pureWhite,
-              ),
-              rightChevronIcon: Icon(
-                Icons.chevron_right,
-                color: FlownetColors.pureWhite,
-              ),
+              leftChevronVisible: false, // Hide duplicate navigation
+              rightChevronVisible: false, // Hide duplicate navigation
             ),
             daysOfWeekStyle: const DaysOfWeekStyle(
               weekdayStyle: TextStyle(color: FlownetColors.coolGray),
@@ -1314,114 +1818,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          _buildDeliverableItem(
-            title: 'Sprint Run',
-            status: 'approved',
-            daysRemaining: 36,
-            priority: 'medium',
+          Text(
+            'No deliverables to display.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: FlownetColors.coolGray,
+                ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildDeliverableItem({
-    required String title,
-    required String status,
-    required int daysRemaining,
-    required String priority,
-  }) {
-    final isApproved = status == 'approved';
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => context.go('/deliverables'),
-        child: GlassCard(
-          padding: const EdgeInsets.all(16),
-          borderRadius: 12.0,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  if (isApproved)
-                    const Icon(Icons.check_circle,
-                        color: FlownetColors.emeraldGreen, size: 20)
-                  else
-                    const SizedBox(width: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '$title • $status',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: FlownetColors.pureWhite,
-                          ),
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: FlownetColors.amberOrange.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.local_fire_department,
-                            size: 14, color: FlownetColors.amberOrange),
-                        const SizedBox(width: 4),
-                        Text(
-                          priority,
-                          style: const TextStyle(
-                            color: FlownetColors.amberOrange,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.calendar_today,
-                      size: 14, color: FlownetColors.coolGray),
-                  const SizedBox(width: 4),
-                  Text(
-                    'In $daysRemaining days',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: FlownetColors.coolGray,
-                        ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFAB() {
-    return FloatingActionButton.extended(
-      onPressed: () {
-        showAppDialog(
-          context: context,
-          builder: (context) => AddEventModal(
-            onEventAdded: _addEvent,
-          ),
-        );
-      },
-      backgroundColor: FlownetColors.crimsonRed,
-      foregroundColor: FlownetColors.pureWhite,
-      icon: const Icon(Icons.add),
-      label: const Text('New Event'),
-      elevation: 8,
     );
   }
 

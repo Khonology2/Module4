@@ -1,21 +1,17 @@
+import 'environment.dart';
+
 class ApiConfig {
   // Base API configuration - prioritize production URL for deployed apps
-  static const String _baseUrl = String.fromEnvironment(
+  static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:8000/api',
+    defaultValue: 'http://127.0.0.1:3001/api',
   );
-  
-  // Get baseUrl without /v1 to avoid double versioning
-  static String get baseUrl {
-    return _baseUrl.replaceAll('/v1', '');
-  }
   static const String apiVersion = '/v1';
   static const Duration requestTimeout = Duration(seconds: 30);
   static const Duration tokenRefreshBuffer = Duration(minutes: 5);
 
   // Environment-specific URLs
-  // Use 127.0.0.1 instead of localhost for better Flutter Web compatibility
-  static const String developmentUrl = 'http://127.0.0.1:8001/api';
+  static const String developmentUrl = 'http://127.0.0.1:3001/api';
   static const String stagingUrl = 'https://staging-api.flownet.works';
   static const String productionUrl = 'https://flow-space.onrender.com/api';
 
@@ -77,7 +73,7 @@ class ApiConfig {
 
   // Helper methods
   static String getFullUrl(String endpoint) {
-    return '$baseUrl$apiVersion$endpoint';
+    return '${Environment.apiBaseUrl}$endpoint';
   }
 
   static String replacePathParameter(
@@ -108,11 +104,11 @@ class ApiConfig {
   static Map<String, String> get defaultHeaders => {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'User-Agent': 'Flownet-Mobile/1.0.0',
       };
 
   static Map<String, String> getAuthHeaders(String token) => {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
+        ...defaultHeaders,
         'Authorization': 'Bearer $token',
       };
 

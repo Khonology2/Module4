@@ -12,7 +12,15 @@
     "reset": "node reset-database.js",
     "create-tables": "node create-tables.js",
     "jira-proxy": "node jira-proxy.js",
-    "setup-jira": "node setup-jira-tables.js"
+    "setup-jira": "node setup-jira-tables.js",
+    "migrate": "node migrations/run-migration.js",
+    "test-db": "node migrations/test-connection.js",
+    "db-status": "node migrations/test-connection.js",
+    "migrate-render": "node migrations/migrate-render.js",
+    "test-render": "node migrations/migrate-render.js",
+    "update-render": "node migrations/update-render.js",
+    "clean-render-users": "node migrations/clean-render-users.js",
+    "check-render-users": "node migrations/check-render-users.js"
   },
   "keywords": [
     "flow-space",

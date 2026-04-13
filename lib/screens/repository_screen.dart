@@ -11,7 +11,6 @@ import '../services/realtime_service.dart';
 import '../services/deliverable_service.dart';
 import '../services/sign_off_report_service.dart';
 import '../theme/flownet_theme.dart';
-import '../widgets/flownet_logo.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/document_preview_widget.dart';
 import '../widgets/audit_history_widget.dart';
@@ -29,11 +28,12 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
   final DocumentService _documentService = DocumentService(AuthService());
   final SprintDatabaseService _sprintService = SprintDatabaseService();
   final DeliverableService _deliverableService = DeliverableService();
-  final SignOffReportService _reportService = SignOffReportService(AuthService());
+  final SignOffReportService _reportService =
+      SignOffReportService(AuthService());
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _tagsController = TextEditingController();
-  
+
   List<RepositoryFile> _documents = [];
   List<RepositoryFile> _filteredDocuments = [];
   Map<String, String> _reportTitles = {};
@@ -62,7 +62,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
           await RealtimeService().initialize(authToken: token);
           RealtimeService().on('document_uploaded', (data) {
             try {
-              final doc = RepositoryFile.fromJson(Map<String, dynamic>.from(data));
+              final doc =
+                  RepositoryFile.fromJson(Map<String, dynamic>.from(data));
               setState(() {
                 // Remove existing document with same ID to prevent duplicates
                 _documents.removeWhere((d) => d.id == doc.id);
@@ -75,7 +76,9 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
           });
           RealtimeService().on('document_deleted', (data) {
             try {
-              final id = (data is Map && data['id'] != null) ? data['id'].toString() : null;
+              final id = (data is Map && data['id'] != null)
+                  ? data['id'].toString()
+                  : null;
               if (id != null) {
                 setState(() {
                   _documents.removeWhere((d) => d.id == id);
@@ -101,27 +104,27 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
     try {
       final response = await _reportService.getSignOffReports();
       if (response.isSuccess && response.data != null) {
-        final reportsData = response.data is List 
+        final reportsData = response.data is List
             ? response.data as List
             : (response.data!['data'] as List? ?? []);
-        
+
         final Map<String, String> titles = {};
         for (final json in reportsData) {
-            final id = json['id']?.toString();
-            if (id == null) continue;
-            
-            final contentRaw = json['content'] as Map<String, dynamic>?;
-            final title = contentRaw?['reportTitle']?.toString() ?? 
-                          json['reportTitle']?.toString() ?? 
-                          json['report_title']?.toString() ?? 
-                          'Untitled Report';
-            titles[id] = title;
+          final id = json['id']?.toString();
+          if (id == null) continue;
+
+          final contentRaw = json['content'] as Map<String, dynamic>?;
+          final title = contentRaw?['reportTitle']?.toString() ??
+              json['reportTitle']?.toString() ??
+              json['report_title']?.toString() ??
+              'Untitled Report';
+          titles[id] = title;
         }
-        
+
         if (mounted) {
-            setState(() {
-                _reportTitles = titles;
-            });
+          setState(() {
+            _reportTitles = titles;
+          });
         }
       }
     } catch (_) {}
@@ -132,12 +135,14 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
       final projects = await _sprintService.getProjects();
       final sprints = await _sprintService.getSprints();
       final deliverablesResponse = await _deliverableService.getDeliverables();
-      
+
       setState(() {
         _projects = projects;
         _sprints = sprints;
-        if (deliverablesResponse.isSuccess && deliverablesResponse.data != null) {
-          _deliverables = deliverablesResponse.data!['deliverables'] as List? ?? [];
+        if (deliverablesResponse.isSuccess &&
+            deliverablesResponse.data != null) {
+          _deliverables =
+              deliverablesResponse.data!['deliverables'] as List? ?? [];
         }
       });
 
@@ -158,7 +163,7 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
 
   Future<void> _loadDocuments() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final response = await _documentService.getDocuments(
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
@@ -169,10 +174,12 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
         from: _dateFrom?.toIso8601String(),
         to: _dateTo?.toIso8601String(),
       );
-      
+
       if (response.isSuccess) {
         setState(() {
-          _documents = (response.data!['documents'] as List).cast<RepositoryFile>().toList();
+          _documents = (response.data!['documents'] as List)
+              .cast<RepositoryFile>()
+              .toList();
           _filteredDocuments = _documents;
         });
         _filterDocuments();
@@ -202,7 +209,7 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
           _showErrorSnackBar('JSON files cannot be uploaded.');
           return;
         }
-        
+
         // For web platform, we need to handle the file differently
         if (kIsWeb) {
           // On web, we can't create a File from path, so we'll handle it differently
@@ -222,14 +229,17 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: FlownetColors.graphiteGray,
-        title: const Text('Upload Document', style: TextStyle(color: FlownetColors.pureWhite)),
+        title: const Text('Upload Document',
+            style: TextStyle(color: FlownetColors.pureWhite)),
         content: SizedBox(
           width: 400,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('File: ${filePath.split('/').last}', 
-                   style: const TextStyle(color: FlownetColors.coolGray),),
+              Text(
+                'File: ${filePath.split('/').last}',
+                style: const TextStyle(color: FlownetColors.coolGray),
+              ),
               const SizedBox(height: 16),
               TextField(
                 controller: _descriptionController,
@@ -261,12 +271,15 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
               _descriptionController.clear();
               _tagsController.clear();
             },
-            child: const Text('Cancel', style: TextStyle(color: FlownetColors.coolGray)),
+            child: const Text('Cancel',
+                style: TextStyle(color: FlownetColors.coolGray)),
           ),
           ElevatedButton(
             onPressed: () => _performUpload(filePath),
-            style: ElevatedButton.styleFrom(backgroundColor: FlownetColors.crimsonRed),
-            child: const Text('Upload', style: TextStyle(color: FlownetColors.pureWhite)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: FlownetColors.crimsonRed),
+            child: const Text('Upload',
+                style: TextStyle(color: FlownetColors.pureWhite)),
           ),
         ],
       ),
@@ -275,16 +288,35 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
 
   Future<void> _performUpload(String filePath) async {
     Navigator.pop(context);
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
+      String? selectedProjectKey;
+      try {
+        if (_selectedProjectId != null) {
+          final p = _projects.firstWhere(
+            (x) => (x['id']?.toString() ?? '') == _selectedProjectId,
+            orElse: () => const <String, dynamic>{},
+          );
+          if (p.isNotEmpty) {
+            selectedProjectKey = (p['key'] ?? '').toString();
+          }
+        }
+      } catch (_) {}
+
       final response = await _documentService.uploadDocument(
         filePath: filePath,
-        description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
+        description: _descriptionController.text.isNotEmpty
+            ? _descriptionController.text
+            : null,
         tags: _tagsController.text.isNotEmpty ? _tagsController.text : null,
+        projectId: _selectedProjectId,
+        projectKey: selectedProjectKey,
+        sprintId: _selectedSprintId,
+        deliverableId: _selectedDeliverableId,
       );
-      
+
       if (response.isSuccess) {
         _showSuccessSnackBar('Document uploaded successfully!');
         _descriptionController.clear();
@@ -305,7 +337,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: FlownetColors.graphiteGray,
-        title: const Text('Upload Document', style: TextStyle(color: FlownetColors.pureWhite)),
+        title: const Text('Upload Document',
+            style: TextStyle(color: FlownetColors.pureWhite)),
         content: SizedBox(
           width: 400,
           child: Column(
@@ -351,12 +384,15 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: FlownetColors.coolGray)),
+            child: const Text('Cancel',
+                style: TextStyle(color: FlownetColors.coolGray)),
           ),
           ElevatedButton(
             onPressed: () => _performWebUpload(pickedFile),
-            style: ElevatedButton.styleFrom(backgroundColor: FlownetColors.crimsonRed),
-            child: const Text('Upload', style: TextStyle(color: FlownetColors.pureWhite)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: FlownetColors.crimsonRed),
+            child: const Text('Upload',
+                style: TextStyle(color: FlownetColors.pureWhite)),
           ),
         ],
       ),
@@ -365,22 +401,41 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
 
   Future<void> _performWebUpload(PlatformFile pickedFile) async {
     Navigator.pop(context);
-    
+
     if (pickedFile.bytes == null) {
       _showErrorSnackBar('Failed to read file. Please try again.');
       return;
     }
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
+      String? selectedProjectKey;
+      try {
+        if (_selectedProjectId != null) {
+          final p = _projects.firstWhere(
+            (x) => (x['id']?.toString() ?? '') == _selectedProjectId,
+            orElse: () => const <String, dynamic>{},
+          );
+          if (p.isNotEmpty) {
+            selectedProjectKey = (p['key'] ?? '').toString();
+          }
+        }
+      } catch (_) {}
+
       final response = await _documentService.uploadWebDocument(
         fileBytes: pickedFile.bytes!,
         fileName: pickedFile.name,
-        description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
+        description: _descriptionController.text.isNotEmpty
+            ? _descriptionController.text
+            : null,
         tags: _tagsController.text.isNotEmpty ? _tagsController.text : null,
+        projectId: _selectedProjectId,
+        projectKey: selectedProjectKey,
+        sprintId: _selectedSprintId,
+        deliverableId: _selectedDeliverableId,
       );
-      
+
       if (response.isSuccess) {
         _showSuccessSnackBar('Document uploaded successfully!');
         _descriptionController.clear();
@@ -398,10 +453,10 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
 
   Future<void> _downloadDocument(RepositoryFile document) async {
     setState(() => _isLoading = true);
-    
+
     try {
       final response = await _documentService.downloadDocument(document.id);
-      
+
       if (response.isSuccess) {
         if (kIsWeb) {
           // For web, the download should trigger automatically
@@ -429,18 +484,24 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: FlownetColors.graphiteGray,
-        title: const Text('Delete Document', style: TextStyle(color: FlownetColors.pureWhite)),
-        content: Text('Are you sure you want to delete "${document.name}"?', 
-                     style: const TextStyle(color: FlownetColors.coolGray),),
+        title: const Text('Delete Document',
+            style: TextStyle(color: FlownetColors.pureWhite)),
+        content: Text(
+          'Are you sure you want to delete "${document.name}"?',
+          style: const TextStyle(color: FlownetColors.coolGray),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: FlownetColors.coolGray)),
+            child: const Text('Cancel',
+                style: TextStyle(color: FlownetColors.coolGray)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: FlownetColors.crimsonRed),
-            child: const Text('Delete', style: TextStyle(color: FlownetColors.pureWhite)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: FlownetColors.crimsonRed),
+            child: const Text('Delete',
+                style: TextStyle(color: FlownetColors.pureWhite)),
           ),
         ],
       ),
@@ -448,10 +509,10 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
 
     if (confirmed == true) {
       setState(() => _isLoading = true);
-      
+
       try {
         final response = await _documentService.deleteDocument(document.id);
-        
+
         if (response.isSuccess) {
           // Remove from local list immediately
           setState(() {
@@ -501,7 +562,7 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
 
         final inDateRange = (_dateFrom == null && _dateTo == null) ||
             ((_dateFrom == null || doc.uploadDate.isAfter(_dateFrom!)) &&
-             (_dateTo == null || doc.uploadDate.isBefore(_dateTo!)));
+                (_dateTo == null || doc.uploadDate.isBefore(_dateTo!)));
 
         return matchesSearch && matchesFileType && inDateRange;
       }).toList();
@@ -530,7 +591,7 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
       scrollable: false,
       useGlassContainer: false,
       appBar: AppBar(
-        title: const FlownetLogo(),
+        title: const Text('Repository'),
         backgroundColor: Colors.transparent,
         foregroundColor: FlownetColors.pureWhite,
         centerTitle: false,
@@ -566,7 +627,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                         decoration: const InputDecoration(
                           hintText: 'Search documents...',
                           hintStyle: TextStyle(color: FlownetColors.coolGray),
-                          prefixIcon: Icon(Icons.search, color: FlownetColors.coolGray),
+                          prefixIcon:
+                              Icon(Icons.search, color: FlownetColors.coolGray),
                           border: OutlineInputBorder(),
                           filled: true,
                           fillColor: FlownetColors.charcoalBlack,
@@ -581,7 +643,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                       dropdownColor: FlownetColors.graphiteGray,
                       style: const TextStyle(color: FlownetColors.pureWhite),
                       items: const [
-                        DropdownMenuItem(value: 'all', child: Text('All Types')),
+                        DropdownMenuItem(
+                            value: 'all', child: Text('All Types')),
                         DropdownMenuItem(value: 'pdf', child: Text('PDF')),
                         DropdownMenuItem(value: 'docx', child: Text('Word')),
                         DropdownMenuItem(value: 'xlsx', child: Text('Excel')),
@@ -601,11 +664,14 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                         value: _selectedProjectId,
                         hint: 'All Projects',
                         items: [
-                          const DropdownMenuItem<String?>(value: null, child: Text('All Projects')),
-                          ..._projects.map((p) => DropdownMenuItem<String?>(
-                            value: p['id']?.toString(),
-                            child: Text((p['name'] ?? 'Unknown').toString()),
-                          ),),
+                          const DropdownMenuItem<String?>(
+                              value: null, child: Text('All Projects')),
+                          ..._projects.map(
+                            (p) => DropdownMenuItem<String?>(
+                              value: p['id']?.toString(),
+                              child: Text((p['name'] ?? 'Unknown').toString()),
+                            ),
+                          ),
                         ],
                         onChanged: (value) {
                           setState(() {
@@ -617,7 +683,9 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                               (p) => p['id']?.toString() == value,
                               orElse: () => {},
                             );
-                            final key = proj.isNotEmpty ? (proj['key'] ?? '').toString() : '';
+                            final key = proj.isNotEmpty
+                                ? (proj['key'] ?? '').toString()
+                                : '';
                             if (key.isNotEmpty) {
                               GoRouter.of(context).go('/repository/$key');
                             }
@@ -632,13 +700,20 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                         value: _selectedSprintId,
                         hint: 'All Sprints',
                         items: [
-                          const DropdownMenuItem<String?>(value: null, child: Text('All Sprints')),
+                          const DropdownMenuItem<String?>(
+                              value: null, child: Text('All Sprints')),
                           ..._sprints
-                              .where((s) => _selectedProjectId == null || (s['project_id']?.toString() == _selectedProjectId))
-                              .map((s) => DropdownMenuItem<String?>(
-                                value: s['id']?.toString(),
-                                child: Text((s['name'] ?? 'Unknown').toString()),
-                              ),),
+                              .where((s) =>
+                                  _selectedProjectId == null ||
+                                  (s['project_id']?.toString() ==
+                                      _selectedProjectId))
+                              .map(
+                                (s) => DropdownMenuItem<String?>(
+                                  value: s['id']?.toString(),
+                                  child:
+                                      Text((s['name'] ?? 'Unknown').toString()),
+                                ),
+                              ),
                         ],
                         onChanged: (value) {
                           setState(() => _selectedSprintId = value);
@@ -652,7 +727,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                         value: _selectedDeliverableId,
                         hint: 'All Deliverables',
                         items: [
-                          const DropdownMenuItem<String?>(value: null, child: Text('All Deliverables')),
+                          const DropdownMenuItem<String?>(
+                              value: null, child: Text('All Deliverables')),
                           ..._deliverables.map((d) {
                             // Handle both Map and Deliverable object
                             final id = d is Map ? d['id'] : d.id;
@@ -677,10 +753,12 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                             child: InkWell(
                               onTap: () => _selectDateRange(),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 16),
                                 decoration: BoxDecoration(
                                   color: FlownetColors.charcoalBlack,
-                                  border: Border.all(color: FlownetColors.slate),
+                                  border:
+                                      Border.all(color: FlownetColors.slate),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -688,8 +766,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                                       ? '${_formatDateShort(_dateFrom!)} - ${_formatDateShort(_dateTo!)}'
                                       : 'Date Range',
                                   style: TextStyle(
-                                    color: _dateFrom != null && _dateTo != null 
-                                        ? FlownetColors.pureWhite 
+                                    color: _dateFrom != null && _dateTo != null
+                                        ? FlownetColors.pureWhite
                                         : FlownetColors.coolGray,
                                   ),
                                 ),
@@ -698,7 +776,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                           ),
                           if (_dateFrom != null || _dateTo != null)
                             IconButton(
-                              icon: const Icon(Icons.clear, size: 18, color: FlownetColors.coolGray),
+                              icon: const Icon(Icons.clear,
+                                  size: 18, color: FlownetColors.coolGray),
                               onPressed: () {
                                 setState(() {
                                   _dateFrom = null;
@@ -715,13 +794,14 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
               ],
             ),
           ),
-          
+
           // Documents list
           Expanded(
             child: _isLoading
                 ? const Center(
                     child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(FlownetColors.crimsonRed),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          FlownetColors.crimsonRed),
                     ),
                   )
                 : _filteredDocuments.isEmpty
@@ -736,7 +816,7 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                       )
                     : ListView.builder(
                         itemCount: _filteredDocuments.length,
-              itemBuilder: (context, index) {
+                        itemBuilder: (context, index) {
                           final document = _filteredDocuments[index];
                           return _buildDocumentCard(document);
                         },
@@ -753,25 +833,25 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
   }
 
   String _getDisplayName(RepositoryFile document) {
-     final name = document.name;
-     String? reportId;
-     
-     // Try to extract ID from various patterns
-     // 1. Exact match: ID.pdf
-     var match = RegExp(r'^([a-zA-Z0-9-]+)\.pdf$').firstMatch(name);
-     
-     // 2. Prefix match: report_ID.pdf or Title_ID.pdf
-     match ??= RegExp(r'[._-]([a-zA-Z0-9-]+)\.pdf$').firstMatch(name);
+    final name = document.name;
+    String? reportId;
 
-     if (match != null) {
-       reportId = match.group(1);
-     }
-     
-     if (reportId != null && _reportTitles.containsKey(reportId)) {
-         return '${_reportTitles[reportId]}.pdf';
-     }
-     
-     return name;
+    // Try to extract ID from various patterns
+    // 1. Exact match: ID.pdf
+    var match = RegExp(r'^([a-zA-Z0-9-]+)\.pdf$').firstMatch(name);
+
+    // 2. Prefix match: report_ID.pdf or Title_ID.pdf
+    match ??= RegExp(r'[._-]([a-zA-Z0-9-]+)\.pdf$').firstMatch(name);
+
+    if (match != null) {
+      reportId = match.group(1);
+    }
+
+    if (reportId != null && _reportTitles.containsKey(reportId)) {
+      return '${_reportTitles[reportId]}.pdf';
+    }
+
+    return name;
   }
 
   Widget _buildDocumentCard(RepositoryFile document) {
@@ -797,8 +877,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
           ),
         ),
         subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
               'Uploaded by: ${document.uploaderName ?? document.uploader}',
               style: const TextStyle(color: FlownetColors.coolGray),
@@ -808,56 +888,66 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
               style: const TextStyle(color: FlownetColors.coolGray),
             ),
             if (document.description.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
                   document.description,
-                              style: const TextStyle(
-                                color: FlownetColors.coolGray,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
+                  style: const TextStyle(
+                    color: FlownetColors.coolGray,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
             if (document.tags != null && document.tags!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Wrap(
                   spacing: 4,
-                  children: document.tags!.split(',').map((tag) => Chip(
-                    label: Text(tag.trim(), style: const TextStyle(fontSize: 10)),
-                    backgroundColor: FlownetColors.electricBlue.withValues(alpha: 0.2),
-                    labelStyle: const TextStyle(color: FlownetColors.electricBlue),
-                  ),).toList(),
-                            ),
-                          ),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-              icon: const Icon(Icons.visibility, color: FlownetColors.electricBlue),
+                  children: document.tags!
+                      .split(',')
+                      .map(
+                        (tag) => Chip(
+                          label: Text(tag.trim(),
+                              style: const TextStyle(fontSize: 10)),
+                          backgroundColor:
+                              FlownetColors.electricBlue.withValues(alpha: 0.2),
+                          labelStyle: const TextStyle(
+                              color: FlownetColors.electricBlue),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.visibility,
+                  color: FlownetColors.electricBlue),
               onPressed: () => _previewDocument(document),
               tooltip: 'Preview',
             ),
-                        IconButton(
+            IconButton(
               icon: const Icon(Icons.history, color: FlownetColors.coolGray),
               onPressed: () => _showDocumentAuditHistory(document.id),
-                          tooltip: 'Audit History',
-                        ),
-                        IconButton(
-              icon: const Icon(Icons.download, color: FlownetColors.electricBlue),
+              tooltip: 'Audit History',
+            ),
+            IconButton(
+              icon:
+                  const Icon(Icons.download, color: FlownetColors.electricBlue),
               onPressed: () => _downloadDocument(document),
-                          tooltip: 'Download',
-                        ),
-                        IconButton(
+              tooltip: 'Download',
+            ),
+            IconButton(
               icon: const Icon(Icons.delete, color: FlownetColors.crimsonRed),
               onPressed: () => _deleteDocument(document),
-                          tooltip: 'Delete',
-                        ),
-                      ],
-                    ),
-                    isThreeLine: true,
+              tooltip: 'Delete',
+            ),
+          ],
+        ),
+        isThreeLine: true,
       ),
     );
   }
@@ -914,7 +1004,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
         border: const OutlineInputBorder(),
         filled: true,
         fillColor: FlownetColors.charcoalBlack,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
       ),
       isExpanded: true,
       style: const TextStyle(color: FlownetColors.pureWhite, fontSize: 14),
@@ -988,7 +1079,8 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: FlownetColors.pureWhite),
+                    icon:
+                        const Icon(Icons.close, color: FlownetColors.pureWhite),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -1025,4 +1117,3 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
     );
   }
 }
-

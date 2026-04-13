@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../services/deliverable_service.dart';
 import '../../models/deliverable.dart';
 import '../../widgets/deliverable_card.dart';
+import '../../theme/flownet_theme.dart';
 
 class StageTrackingScreen extends StatefulWidget {
   const StageTrackingScreen({super.key});
@@ -82,6 +83,12 @@ class _StageTrackingScreenState extends State<StageTrackingScreen> {
         currentIndex: _selectedTabIndex,
         onTap: (index) => setState(() => _selectedTabIndex = index),
         type: BottomNavigationBarType.fixed,
+        selectedItemColor: FlownetColors.crimsonRed,
+        unselectedItemColor: FlownetColors.graphiteGray,
+        selectedFontSize: 12,
+        unselectedFontSize: 12,
+        iconSize: 22,
+        showUnselectedLabels: true,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),

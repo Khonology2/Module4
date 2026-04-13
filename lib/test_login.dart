@@ -9,7 +9,7 @@ void main() async {
   
   // Test if backend is running
   try {
-    final response = await http.get(Uri.parse('http://localhost:8000/api/v1/health'));
+    final response = await http.get(Uri.parse('http://localhost:3001/api/v1/health'));
     print('Backend health check: ${response.statusCode} - ${response.body}');
   } catch (e) {
     print('Backend health check failed: $e');
@@ -19,7 +19,7 @@ void main() async {
   // Test login endpoint directly
   try {
     final loginResponse = await http.post(
-      Uri.parse('http://localhost:8000/api/v1/auth/login'),
+      Uri.parse('http://localhost:3001/api/v1/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'email': 'Thabang.Nkabinde@khonology.com',

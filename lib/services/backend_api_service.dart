@@ -7,12 +7,38 @@ import 'package:khono/models/user_role.dart';
 import 'package:khono/models/deliverable.dart';
 import 'package:khono/models/sprint_metrics.dart';
 import 'package:khono/models/sign_off_report.dart';
+import 'package:khono/config/environment.dart';
+
+/// JWT access token payload may include `role` when API user object omits it.
+String? _roleFromAccessToken(String? token) {
+  if (token == null || token.isEmpty) return null;
+  final parts = token.split('.');
+  if (parts.length < 2) return null;
+  try {
+    var payload = parts[1];
+    switch (payload.length % 4) {
+      case 1:
+        payload += '===';
+        break;
+      case 2:
+        payload += '==';
+        break;
+      case 3:
+        payload += '=';
+        break;
+    }
+    final decoded = utf8.decode(base64Url.decode(payload));
+    final map = jsonDecode(decoded) as Map<String, dynamic>;
+    return map['role']?.toString();
+  } catch (_) {
+    return null;
+  }
+}
 
 class BackendApiService {
   static final BackendApiService _instance = BackendApiService._internal();
   factory BackendApiService() => _instance;
   BackendApiService._internal();
-
   final ApiClient _apiClient = ApiClient();
 
   // Getters
@@ -30,7 +56,31 @@ class BackendApiService {
   }
 
   Future<ApiResponse> signUp(String email, String password, String name, UserRole role) async {
-    return await _apiClient.register(email, password, name, role.name);
+    // Parse the full name into firstName and lastName for the backend
+    final nameParts = name.trim().split(' ');
+    final firstName = nameParts.isNotEmpty ? nameParts[0] : '';
+    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+    // Use different endpoints based on environment
+    final endpoint = Environment.isRenderDeployed ? '/auth/register' : '/auth/register';
+    
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+    
+    debugPrint('🔍 Environment.isRenderDeployed: ${Environment.isRenderDeployed}');
+    debugPrint('🔍 Using endpoint: $endpoint');
+    debugPrint('🔍 Signing up with email: $email');
+    
+    final response = await _apiClient.post(endpoint, body: {
+      'email': email,
+      'password': password,
+      'firstName': firstName,
+      'lastName': lastName,
+      'role': role.name,
+    }, requireAuth: false);
+
+    debugPrint('🔍 Signup response: ${response.statusCode} - ${response.error ?? "Success"}');
+    return response;
   }
 
   Future<ApiResponse> signOut() async {
@@ -199,6 +249,54 @@ class BackendApiService {
     return await _apiClient.get('/sprints/$sprintId');
   }
 
+  Future<ApiResponse> getSprintReport(
+    String sprintId, {
+    String? statusCategory,
+    String? ownerId,
+    DateTime? dueFrom,
+    DateTime? dueTo,
+  }) async {
+    final queryParams = <String, String>{};
+    if (statusCategory != null && statusCategory.trim().isNotEmpty) {
+      queryParams['statusCategory'] = statusCategory.trim();
+    }
+    if (ownerId != null && ownerId.trim().isNotEmpty) {
+      queryParams['ownerId'] = ownerId.trim();
+    }
+    if (dueFrom != null) {
+      queryParams['dueFrom'] = dueFrom.toIso8601String();
+    }
+    if (dueTo != null) {
+      queryParams['dueTo'] = dueTo.toIso8601String();
+    }
+    return await _apiClient.get('/sprints/$sprintId/report', queryParams: queryParams);
+  }
+
+  Future<ApiResponse> createSprintReportFromSprint(String sprintId, {String? note}) async {
+    final body = <String, dynamic>{};
+    if (note != null && note.trim().isNotEmpty) {
+      body['note'] = note.trim();
+    }
+    final primary = await _apiClient.post('/sign-off-reports/from-sprint/$sprintId', body: body);
+    if (primary.isSuccess) return primary;
+    final fallback = await _apiClient.post('/signoff/from-sprint/$sprintId', body: body);
+    return fallback;
+  }
+
+  Future<ApiResponse> addReportSignature(String reportId, {required String signatureData, String? signatureType}) async {
+    final body = <String, dynamic>{
+      'signatureData': signatureData,
+    };
+    if (signatureType != null && signatureType.isNotEmpty) {
+      body['signatureType'] = signatureType;
+    }
+    return await _apiClient.post('/sign-off-reports/$reportId/signature', body: body);
+  }
+
+  Future<ApiResponse> submitReport(String reportId) async {
+    return await _apiClient.post('/sign-off-reports/$reportId/submit');
+  }
+
   Future<ApiResponse> createSprint(Map<String, dynamic> sprintData) async {
     return await _apiClient.post('/sprints', body: sprintData);
   }
@@ -212,7 +310,7 @@ class BackendApiService {
   }
 
   Future<ApiResponse> updateSprintStatus(String sprintId, Map<String, dynamic> updates) async {
-    return await _apiClient.put('/sprints/$sprintId', body: updates);
+    return await _apiClient.put('/sprints/$sprintId/status', body: updates);
   }
 
   Future<ApiResponse> runDiagnostics() async {
@@ -340,11 +438,28 @@ class BackendApiService {
   }
 
   Future<ApiResponse> aiChat(List<Map<String, dynamic>> messages, {double? temperature, int? maxTokens}) async {
-    return await _apiClient.post('/ai/chat', body: {
+    final body = {
       'messages': messages,
       if (temperature != null) 'temperature': temperature,
       if (maxTokens != null) 'max_tokens': maxTokens,
-    });
+    };
+    final resp = await _apiClient.post('/ai/chat', body: body);
+    if (resp.statusCode == 429) {
+      int seconds = 2;
+      try {
+        final raw = resp.data;
+        if (raw is Map) {
+          final ra = raw['retry_after'];
+          if (ra != null) {
+            final parsed = int.tryParse(ra.toString());
+            if (parsed != null && parsed > 0 && parsed <= 30) seconds = parsed;
+          }
+        }
+      } catch (_) {}
+      await Future.delayed(Duration(seconds: seconds));
+      return await _apiClient.post('/ai/chat', body: body);
+    }
+    return resp;
   }
 
   // Project endpoints
@@ -384,6 +499,10 @@ class BackendApiService {
   }
 
   // Project member management
+  Future<ApiResponse> getProjectMembers(String projectId) async {
+    return await _apiClient.get('/projects/$projectId/members');
+  }
+
   Future<ApiResponse> addProjectMember(String projectId, Map<String, dynamic> memberData) async {
     return await _apiClient.post('/projects/$projectId/members', body: memberData);
   }
@@ -626,7 +745,7 @@ class BackendApiService {
   Future<ApiResponse> resendVerificationEmail(String email) async {
     return await _apiClient.post('/auth/resend-verification', body: {
       'email': email,
-    },);
+    }, requireAuth: false);
   }
 
   Future<ApiResponse> verifyEmail(String email, String verificationCode) async {
@@ -634,7 +753,7 @@ class BackendApiService {
     final response = await _apiClient.post('/auth/verify-email', body: {
       'email': email,
       'code': verificationCode,
-    },);
+    }, requireAuth: false);
     debugPrint('📡 verifyEmail response: ${response.toString()}');
     return response;
   }
@@ -642,7 +761,7 @@ class BackendApiService {
   Future<ApiResponse> checkEmailVerificationStatus(String email) async {
     return await _apiClient.get('/auth/verification-status', queryParams: {
       'email': email,
-    },);
+    }, requireAuth: false);
   }
 
 // Approval requests endpoints
@@ -715,29 +834,54 @@ class BackendApiService {
       // Handle different field names from different backend endpoints
       
       // Convert backend role string to UserRole enum name format
-      final backendRole = userData['role']?.toString() ?? '';
+      var backendRole = userData['role']?.toString().trim() ?? '';
+      if (backendRole.isEmpty) {
+        backendRole = _roleFromAccessToken(_apiClient.accessToken) ?? '';
+      }
       String userRoleForParsing;
       
-      switch (backendRole.toLowerCase()) {
+      // Must match Node/Postgres role strings (legacy uses e.g. admin, developer, project_manager).
+      // Previously `default` forced teamMember — so DB role `admin` showed as Team Member Dashboard.
+      final r = backendRole.toLowerCase().replaceAll(RegExp(r'[\s_-]'), '');
+      switch (r) {
         case 'client':
           userRoleForParsing = 'client';
           break;
         case 'clientreviewer':
-        case 'client_reviewer':
           userRoleForParsing = 'clientReviewer';
           break;
         case 'deliverylead':
-        case 'delivery_lead':
           userRoleForParsing = 'deliveryLead';
           break;
         case 'systemadmin':
-        case 'system_admin':
           userRoleForParsing = 'systemAdmin';
           break;
+        case 'admin':
+          userRoleForParsing = 'systemAdmin';
+          break;
+        case 'developer':
+          userRoleForParsing = 'developer';
+          break;
+        case 'projectmanager':
+          userRoleForParsing = 'projectManager';
+          break;
+        case 'scrummaster':
+          userRoleForParsing = 'scrumMaster';
+          break;
+        case 'qaengineer':
+          userRoleForParsing = 'qaEngineer';
+          break;
+        case 'stakeholder':
+          userRoleForParsing = 'stakeholder';
+          break;
         case 'teammember':
-        case 'team_member':
-        default:
           userRoleForParsing = 'teamMember';
+          break;
+        default:
+          // Fallback: let User.fromJson map raw role (handles camelCase enum names from API)
+          userRoleForParsing = backendRole.isNotEmpty
+              ? backendRole
+              : 'teamMember';
           break;
       }
       

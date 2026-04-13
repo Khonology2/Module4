@@ -28,8 +28,9 @@ module.exports = (sequelize, DataTypes) => {
     },
     added_at: {
       type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW
-    }
+      defaultValue: DataTypes.NOW,
+      field: 'joined_at',
+    },
   }, {
     tableName: 'project_members',
     underscored: true,

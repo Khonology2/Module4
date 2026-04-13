@@ -170,7 +170,50 @@ class DeliverableCard extends StatelessWidget {
                       ...deliverable.artifacts.take(4).map((artifact) => Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: Tooltip(
-                          message: artifact.originalName,
+                          richMessage: WidgetSpan(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.person,
+                                      size: 16,
+                                      color: Colors.grey[600],
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            deliverable.ownerName!,
+                                            style: TextStyle(
+                                              color: Colors.blue[700],
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          if (deliverable.assignedToName != null && deliverable.assignedToName!.isNotEmpty) ...[
+                                            Text(
+                                              'Assigned to: ${deliverable.assignedToName}',
+                                              style: TextStyle(
+                                                color: Colors.grey[600],
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
                           child: Icon(
                             _getFileIcon(artifact.fileType),
                             size: 16,

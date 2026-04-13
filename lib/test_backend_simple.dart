@@ -10,13 +10,13 @@ void main() async {
   try {
     // Test basic backend connectivity
     print('🌐 Testing backend health check...');
-    final healthResponse = await http.get(Uri.parse('http://localhost:8000/api/v1/health'));
+    final healthResponse = await http.get(Uri.parse('http://localhost:3001/api/v1/health'));
     print('✅ Health check: ${healthResponse.statusCode} - ${healthResponse.body}');
     
     // Test authentication endpoint
     print('\n🔐 Testing authentication endpoint...');
     final loginResponse = await http.post(
-      Uri.parse('http://localhost:8000/api/v1/auth/login'),
+      Uri.parse('http://localhost:3001/api/v1/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'email': 'admin@flowspace.com',
@@ -38,7 +38,7 @@ void main() async {
       if (token != null) {
         print('\n📊 Testing system stats endpoint...');
         final statsResponse = await http.get(
-          Uri.parse('http://localhost:8000/api/v1/system/stats'),
+          Uri.parse('http://localhost:3001/api/v1/system/stats'),
           headers: {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
@@ -59,7 +59,7 @@ void main() async {
   } catch (e) {
     print('❌ Backend connection test failed: $e');
     print('\n💡 Troubleshooting tips:');
-    print('   - Make sure backend server is running on port 8000');
+    print('   - Make sure backend server is running on port 3001');
     print('   - Check if admin user exists in database');
     print('   - Verify database connection');
   }

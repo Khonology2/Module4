@@ -164,61 +164,53 @@ String? description,
 debugPrint('📡 Sprint creation response: ${response.statusCode}');
 
       if (response.isSuccess) {
-        // Handle various response formats from the backend
-        final dynamic rawData = response.data;
-        
-        debugPrint('✅ Sprint creation response data: $rawData');
-        
-        if (rawData == null) {
-          throw Exception('Server returned success but no data');
+        final dynamic raw = response.data;
+        if (raw == null) {
+          throw Exception('Failed to create sprint');
         }
 
-        // Send notification for sprint creation
-        try {
-          final token = _authService.accessToken;
-          if (token != null) {
-            _notificationService.setAuthToken(token);
-            final user = _authService.currentUser;
-            final userName = user?.name ?? 'Unknown User';
-            
-            await _notificationService.notifySprintCreated(
-              sprintName: name,
-              projectName: projectId ?? 'Current Project',
-              createdBy: userName,
-            );
-          }
-        } catch (e) {
-          debugPrint('❌ Error sending sprint creation notification: $e');
-        }
-        
-        final Map<String, dynamic> created;
-        
-        // Check if data is already the sprint object (common with ApiClient unwrapping)
-        if (rawData is Map) {
-          final mapData = Map<String, dynamic>.from(rawData);
-          
-          if (mapData.containsKey('data') && mapData['data'] is Map) {
-             // Case: { success: true, data: { ...sprint... } }
-             created = Map<String, dynamic>.from(mapData['data']);
-          } else if (mapData.containsKey('sprint') && mapData['sprint'] is Map) {
-             // Case: { success: true, sprint: { ...sprint... } }
-             created = Map<String, dynamic>.from(mapData['sprint']);
-          } else {
-             // Case: { ...sprint... } (direct object)
-             created = mapData;
-             created.remove('success'); // Clean up if mixed
-          }
+        Map<String, dynamic> created;
+        if (raw is Map<String, dynamic>) {
+          created = raw;
+        } else if (raw is Map) {
+          created = Map<String, dynamic>.from(raw);
         } else {
-          // Fallback or error
-          debugPrint('❌ Unexpected response data format: $rawData');
-          throw Exception('Unexpected response format from server');
+          throw Exception('Failed to create sprint');
         }
 
-        // Cache: prepend to global and project-specific cache
-        try {
-          await _prependCachedSprint(created, projectId: projectId);
-        } catch (_) {}
-        return created;
+        if (created['success'] == true && created['data'] is Map) {
+          created = Map<String, dynamic>.from(created['data'] as Map);
+        }
+
+        if (created.isEmpty) {
+          throw Exception('Failed to create sprint');
+        }
+
+        debugPrint('✅ Sprint "$name" created successfully');
+          
+          // Send notification for sprint creation
+          try {
+            final token = _authService.accessToken;
+            if (token != null) {
+              _notificationService.setAuthToken(token);
+              final user = _authService.currentUser;
+              final userName = user?.name ?? 'Unknown User';
+              
+              await _notificationService.notifySprintCreated(
+                sprintName: name,
+                projectName: projectId ?? 'Current Project',
+                createdBy: userName,
+              );
+            }
+          } catch (e) {
+            debugPrint('❌ Error sending sprint creation notification: $e');
+          }
+          
+          // Cache: prepend to global and project-specific cache
+          try {
+            await _prependCachedSprint(created, projectId: projectId);
+          } catch (_) {}
+          return created;
       } else {
         debugPrint('❌ Failed to create sprint: ${response.error ?? 'Unknown error'}');
         throw Exception(response.error ?? 'Failed to create sprint');
@@ -233,14 +225,18 @@ debugPrint('📡 Sprint creation response: ${response.statusCode}');
   Future<Map<String, dynamic>?> updateSprint({
     required int sprintId,
     String? name,
+    String? description,
     String? goal,
     String? state,
     DateTime? startDate,
     DateTime? endDate,
     String? projectId,
+    int? plannedPoints,
     int? committedPoints,
     int? completedPoints,
     int? carriedOverPoints,
+    int? addedDuringSprint,
+    int? removedDuringSprint,
     double? testPassRate,
     int? codeCoverage,
     int? escapedDefects,
@@ -260,14 +256,18 @@ debugPrint('📡 Sprint creation response: ${response.statusCode}');
     try {
       final body = <String, dynamic>{};
       if (name != null) body['name'] = name;
+      if (description != null) body['description'] = description;
       if (goal != null) body['goal'] = goal;
       if (state != null) body['state'] = state;
       if (startDate != null) body['startDate'] = startDate.toIso8601String();
       if (endDate != null) body['endDate'] = endDate.toIso8601String();
       if (projectId != null) body['project_id'] = projectId;
+      if (plannedPoints != null) body['planned_points'] = plannedPoints;
       if (committedPoints != null) body['committed_points'] = committedPoints;
       if (completedPoints != null) body['completed_points'] = completedPoints;
       if (carriedOverPoints != null) body['carried_over_points'] = carriedOverPoints;
+      if (addedDuringSprint != null) body['added_during_sprint'] = addedDuringSprint;
+      if (removedDuringSprint != null) body['removed_during_sprint'] = removedDuringSprint;
       if (testPassRate != null) body['test_pass_rate'] = testPassRate;
       if (codeCoverage != null) body['code_coverage'] = codeCoverage;
       if (escapedDefects != null) body['escaped_defects'] = escapedDefects;
@@ -503,22 +503,99 @@ if (response.isSuccess) {
       for (final lp in local) {
         try {
           final id = lp['id']?.toString();
-          if (id == null || id.isEmpty) {
-            continue;
+          if (id != null && !merged.any((p) => p['id']?.toString() == id)) {
+            merged.add(lp);
           }
-          final existingIndex = merged.indexWhere((p) => p['id']?.toString() == id);
-          if (existingIndex >= 0) {
-            merged[existingIndex] = lp;
-          } else {
-            merged.insert(0, lp);
-          }
-        } catch (_) {}
+        } catch (_) {
+          // Skip invalid local projects
+        }
       }
 
       return merged;
     } catch (e) {
       debugPrint('❌ Error fetching projects via ApiService: $e');
       return [];
+    }
+  }
+
+  /// Get project members for a specific project
+  Future<List<Map<String, dynamic>>> getProjectMembers(String projectId) async {
+    try {
+      debugPrint('Fetching project members for project: $projectId');
+      final response = await _backendApiService.getProjectMembers(projectId);
+      
+      if (response.isSuccess && response.data != null) {
+        final dynamic data = response.data;
+        final List<Map<String, dynamic>> members = [];
+        
+        if (data is Map) {
+          final List<dynamic> items = data['data'] ?? data['members'] ?? data['users'] ?? [];
+          for (final item in items) {
+            if (item is Map) {
+              members.add(Map<String, dynamic>.from(item));
+            }
+          }
+        } else if (data is List) {
+          for (final item in data) {
+            if (item is Map) {
+              members.add(Map<String, dynamic>.from(item));
+            }
+          }
+        }
+        
+        debugPrint('✅ Found ${members.length} project members');
+        
+        // Debug: Print the actual structure of members data
+        debugPrint('=== DEBUG: Project Members Data Structure ===');
+        for (final member in members) {
+          debugPrint('Member data: $member');
+        }
+        debugPrint('=== END DEBUG ===');
+        
+        return members;
+      } else {
+        debugPrint('❌ Failed to fetch project members: ${response.error ?? 'Unknown error'}');
+        return [];
+      }
+    } catch (e) {
+      debugPrint('❌ Error fetching project members: $e');
+      return [];
+    }
+  }
+
+  /// Delete a project
+  Future<bool> deleteProject(String projectId) async {
+    try {
+      debugPrint('🗑️ Deleting project: $projectId');
+      final response = await _backendApiService.deleteProject(projectId);
+      
+      if (response.isSuccess) {
+        debugPrint('✅ Project $projectId deleted successfully');
+        
+        // Remove from local cache if it exists
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final jsonStr = prefs.getString('local_created_projects');
+          if (jsonStr != null && jsonStr.isNotEmpty) {
+            final decoded = jsonDecode(jsonStr);
+            if (decoded is List) {
+              final projects = List<Map<String, dynamic>>.from(decoded);
+              projects.removeWhere((p) => p['id']?.toString() == projectId);
+              await prefs.setString('local_created_projects', jsonEncode(projects));
+            }
+          }
+        } catch (e) {
+          debugPrint('❌ Error updating local cache: $e');
+        }
+        
+        return true;
+      } else {
+        debugPrint('❌ Failed to delete project: ${response.error ?? 'Unknown error'}');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Error deleting project: $e');
+      return false;
     }
   }
 

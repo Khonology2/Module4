@@ -9,6 +9,48 @@ class DeliverableService {
   final ApiClient _apiClient = ApiClient();
   final AuthService _authService = AuthService();
 
+  Future<ApiResponse> getDeliverablesForSprint(String sprintId) async {
+    try {
+      if (sprintId.trim().isEmpty) {
+        return ApiResponse.error('Sprint ID is required');
+      }
+
+      final response = await _apiClient.get('/deliverables/sprint/$sprintId');
+
+      if (response.isSuccess && response.data != null) {
+        List<dynamic> deliverablesJson = [];
+
+        if (response.data is List) {
+          deliverablesJson = response.data as List<dynamic>;
+        } else if (response.data is Map) {
+          final data = response.data as Map<String, dynamic>;
+          deliverablesJson =
+              data['data'] as List<dynamic>? ?? data['deliverables'] as List<dynamic>? ?? [];
+        }
+
+        final List<Deliverable> deliverables = deliverablesJson
+            .map((json) {
+              try {
+                return Deliverable.fromJson(json as Map<String, dynamic>);
+              } catch (e) {
+                debugPrint('Error parsing deliverable: $e, json: $json');
+                return null;
+              }
+            })
+            .whereType<Deliverable>()
+            .toList();
+
+        return ApiResponse.success({'deliverables': deliverables}, response.statusCode);
+      }
+
+      return ApiResponse.error(response.error ?? 'Failed to fetch sprint deliverables');
+    } catch (e, stackTrace) {
+      debugPrint('Exception in getDeliverablesForSprint: $e');
+      debugPrint('Stack trace: $stackTrace');
+      return ApiResponse.error('Error fetching sprint deliverables: $e');
+    }
+  }
+
   // Get all deliverables
   Future<ApiResponse> getDeliverables({String? projectId}) async {
     try {
@@ -151,8 +193,10 @@ class DeliverableService {
         'due_date': dueDate?.toIso8601String(),
         'created_by': _authService.currentUser?.id,
         'assigned_to': assignedTo,
-        if (sprintId != null && (sprintIds == null || sprintIds.isEmpty)) 'sprint_id': sprintId,
-        if (sprintIds != null) 'sprintIds': sprintIds,
+        if ((sprintIds != null && sprintIds.isNotEmpty) || (sprintId != null && sprintId.trim().isNotEmpty))
+          'sprintIds': (sprintIds != null && sprintIds.isNotEmpty)
+              ? sprintIds
+              : [sprintId!.trim()],
         if (evidenceLinks != null) 'evidence_links': evidenceLinks,
         if (ownerId != null) 'owner_id': ownerId,
         if (projectId != null) 'project_id': projectId,
@@ -216,17 +260,31 @@ class DeliverableService {
         return ApiResponse.error('No access token available');
       }
 
-      // final fileType = fileName.split('.').last;
+      final fileType = fileName.contains('.') ? fileName.split('.').last : 'file';
       
       final fields = <String, String>{};
       if (title != null) fields['title'] = title;
       if (description != null) fields['description'] = description;
 
-      final response = await _apiClient.uploadFileBytes(
-        '/deliverables/$deliverableId/artifacts',
-        fileBytes: fileBytes ?? [],
-        filename: fileName,
-      );
+      ApiResponse response;
+      if (fileBytes != null && fileBytes.isNotEmpty) {
+        response = await _apiClient.uploadFileBytes(
+          '/deliverables/$deliverableId/artifacts',
+          fileBytes: fileBytes,
+          filename: fileName,
+          fields: fields,
+        );
+      } else if (!kIsWeb && filePath.trim().isNotEmpty) {
+        response = await _apiClient.uploadFile(
+          '/deliverables/$deliverableId/artifacts',
+          filePath,
+          fileName,
+          fileType,
+          fields: fields,
+        );
+      } else {
+        return ApiResponse.error('No file data provided. Please reselect the file.');
+      }
 
       if (response.isSuccess) {
          return response;

@@ -24,6 +24,7 @@ jest.mock('../src/middleware/auth', () => ({
     req.user = { id: 'test-user-id', role: role };
     next();
   },
+  requireRole: () => (_req, _res, next) => next(),
 }));
 
 const deliverablesRouter = require('../src/routes/deliverables');

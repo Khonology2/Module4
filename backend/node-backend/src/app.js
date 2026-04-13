@@ -18,6 +18,7 @@ app.use((req, res, next) => {
 
 // Import database configuration
 const { testConnection, syncDatabase } = require('./config/database');
+const { ensureProjectsSchema } = require('./config/ensureProjectsSchema');
 
 // Import models
 const { sequelize, User, Notification, Ticket, ApprovalRequest } = require('./models');
@@ -56,6 +57,7 @@ const analyticsService = require('./services/analyticsService');
 const { loggingService } = require('./services/loggingService');
 const socketService = require('./services/socketService');
 const { databaseNotificationService } = require('./services/DatabaseNotificationService');
+const { runExpiredDummy12hCleanup } = require('./services/dummyDataCleanupService');
 
 // Middleware
 app.use(helmet());
@@ -111,8 +113,9 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/deliverables', deliverablesRoutes);
 app.use('/api/v1/sprints', sprintsRoutes);
 app.use('/api/v1/projects', projectsRoutes);
+const { optionalAuthenticateToken } = require('./middleware/auth');
 app.use('/api/v1/signoff', authenticateToken, signoffRoutes);
-app.use('/api/v1/sign-off-reports', authenticateToken, signoffRoutes);
+app.use('/api/v1/sign-off-reports', optionalAuthenticateToken, signoffRoutes);
 const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
 app.use('/api/v1/ai', aiLimiter, aiRoutes);
 app.use('/api/ai', aiLimiter, aiRoutes);
@@ -297,7 +300,7 @@ app.use('*', (req, res) => {
 });
 
 // Database connection and server startup
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 3001;
 
 async function startServer() {
   try {
@@ -307,6 +310,30 @@ async function startServer() {
     console.log('✅ Database connection established successfully');
     if (!syncOk) {
       console.warn('⚠️ Database sync failed; continuing without alter sync');
+    }
+
+    try {
+      if (sequelize.getDialect() === 'postgres') {
+        await sequelize.query("ALTER TABLE sprints ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)");
+        await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id UUID");
+        await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by UUID");
+        await sequelize.query("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS payload JSONB");
+        await ensureProjectsSchema(sequelize);
+        console.log('✅ projects table schema aligned with API (key, client_*, etc.)');
+      }
+    } catch (e) {
+      console.warn('⚠️ Unable to ensure DB columns; continuing', e?.message || e);
+    }
+
+    try {
+      await runExpiredDummy12hCleanup(sequelize);
+      setInterval(() => {
+        runExpiredDummy12hCleanup(sequelize).catch((err) =>
+          console.warn('[dummy12h-cleanup]', err?.message || err),
+        );
+      }, 15 * 60 * 1000);
+    } catch (e) {
+      console.warn('⚠️ dummy 12h cleanup scheduler skipped:', e?.message || e);
     }
     
     // Sync database (use with caution in production)
@@ -320,8 +347,8 @@ async function startServer() {
       }
     }
     
-    // Start server first to ensure it's listening
-    const server = app.listen(PORT, () => {
+    // Bind IPv4 explicitly so clients using 127.0.0.1 and localhost both reach this process.
+    const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
       
@@ -337,12 +364,14 @@ async function startServer() {
       const dbConnectionString = process.env.DATABASE_URL;
       if (dbConnectionString) {
         databaseNotificationService.initialize(dbConnectionString)
-          .then(() => {
-            console.log('✅ Database notification service initialized');
-            
-            // Integrate socket service with database notification service
-            databaseNotificationService.setSocketService(socketService);
-            console.log('✅ Real-time services integrated successfully');
+          .then((ok) => {
+            if (ok) {
+              console.log('✅ Database notification service initialized');
+              databaseNotificationService.setSocketService(socketService);
+              console.log('✅ Real-time services integrated successfully');
+            } else {
+              console.warn('⚠️ Database notification service unavailable; continuing without LISTEN/NOTIFY');
+            }
           })
           .catch(error => {
             console.error('❌ Failed to initialize database notification service:', error);
@@ -386,7 +415,10 @@ async function startServer() {
     });
     server.on('error', (err) => {
       if (err && err.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use; another instance is running. Continuing without starting a new server.`);
+        console.error(
+          `Port ${PORT} is already in use. Stop the other process (or free the port), then restart.`,
+        );
+        process.exit(1);
         return;
       }
       console.error('Server error:', err);

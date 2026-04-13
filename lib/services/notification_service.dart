@@ -5,7 +5,7 @@ import '../models/notification_item.dart';
 import '../config/environment.dart';
 
 class NotificationService {
-static final String _baseUrl = Environment.apiBaseUrl;
+  static final String _baseUrl = Environment.apiBaseUrl;
   String? _authToken;
 
   void setAuthToken(String token) {
@@ -50,11 +50,13 @@ static final String _baseUrl = Environment.apiBaseUrl;
         final data = json.decode(response.body);
         if (data is List) {
           return data
-              .map((json) => NotificationItem.fromJson(json as Map<String, dynamic>))
+              .map((json) =>
+                  NotificationItem.fromJson(json as Map<String, dynamic>))
               .toList();
         } else if (data is Map && data['data'] is List) {
           return (data['data'] as List)
-              .map((json) => NotificationItem.fromJson(json as Map<String, dynamic>))
+              .map((json) =>
+                  NotificationItem.fromJson(json as Map<String, dynamic>))
               .toList();
         }
       }
@@ -189,5 +191,75 @@ static final String _baseUrl = Environment.apiBaseUrl;
       message: message,
       type: NotificationType.system,
     );
+  }
+
+  // Enhanced synchronization methods
+  Future<bool> broadcastNotification({
+    required List<String> recipients,
+    required List<String> roles,
+    required String message,
+    required String title,
+    NotificationType type = NotificationType.system,
+    Map<String, dynamic>? payload,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/notifications/broadcast'),
+        headers: _headers,
+        body: json.encode({
+          'recipients': recipients,
+          'roles': roles,
+          'message': message,
+          'title': title,
+          'type': type.name,
+          'payload': payload ?? {},
+        }),
+      );
+      return response.statusCode == 201;
+    } catch (e) {
+      debugPrint('Error broadcasting notification: $e');
+      return false;
+    }
+  }
+
+  Future<bool> syncNotifications() async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/notifications/sync'),
+        headers: _headers,
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error syncing notifications: $e');
+      return false;
+    }
+  }
+
+  Future<List<NotificationItem>> getUnreadNotifications() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/notifications/me?unread_only=true'),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data is List) {
+          return data
+              .map((json) =>
+                  NotificationItem.fromJson(json as Map<String, dynamic>))
+              .toList();
+        } else if (data is Map && data['data'] is List) {
+          return (data['data'] as List)
+              .map((json) =>
+                  NotificationItem.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Error fetching unread notifications: $e');
+      return [];
+    }
   }
 }

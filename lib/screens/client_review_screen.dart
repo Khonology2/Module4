@@ -15,7 +15,7 @@ class ClientReviewScreen extends ConsumerStatefulWidget {
   final SignOffReport? initialReport;
   final Deliverable? initialDeliverable;
   final String? reviewToken; // Token for token-based access (no auth required)
-  
+
   const ClientReviewScreen({
     super.key,
     required this.reportId,
@@ -31,9 +31,10 @@ class ClientReviewScreen extends ConsumerStatefulWidget {
 class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
   final _commentController = TextEditingController();
   final _changeRequestController = TextEditingController();
-  final GlobalKey<SignatureCaptureWidgetState> _signatureKey = GlobalKey<SignatureCaptureWidgetState>();
+  final GlobalKey<SignatureCaptureWidgetState> _signatureKey =
+      GlobalKey<SignatureCaptureWidgetState>();
   String? _capturedSignature;
-  
+
   SignOffReport? _report;
   Deliverable? _deliverable;
   bool _isSubmitting = false;
@@ -45,11 +46,14 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
     if (widget.initialReport != null) {
       _report = widget.initialReport;
       _deliverable = widget.initialDeliverable;
-      final needsFullFetch = (_report?.reportContent.isEmpty ?? true) || (_report?.deliverableId.isEmpty ?? true);
+      final needsFullFetch = (_report?.reportContent.isEmpty ?? true) ||
+          (_report?.deliverableId.isEmpty ?? true);
       if (needsFullFetch) {
         // Fetch full report details in background
         _loadReportData();
-      } else if (_deliverable == null && _report != null && _report!.deliverableId.isNotEmpty) {
+      } else if (_deliverable == null &&
+          _report != null &&
+          _report!.deliverableId.isNotEmpty) {
         // Fetch deliverable in background without blocking initial render
         _loadDeliverable(_report!.deliverableId);
       }
@@ -61,29 +65,30 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
   Future<void> _loadReportData() async {
     try {
       final api = BackendApiService();
-      
+
       // If token is provided, use token-based endpoint
       if (widget.reviewToken != null && widget.reviewToken!.isNotEmpty) {
         final tokenResp = await api.getClientReviewByToken(widget.reviewToken!);
         if (!mounted) return;
-        
+
         if (tokenResp.isSuccess && tokenResp.data != null) {
           final data = tokenResp.data!;
           final reportJson = data['report'] ?? data;
           final loadedReport = SignOffReport.fromJson(reportJson);
-          
+
           Deliverable? loadedDeliverable;
           if (data['deliverable'] != null) {
             try {
               loadedDeliverable = Deliverable.fromJson(data['deliverable']);
             } catch (_) {}
           }
-          
+
           // Update sprint performance data if provided
           if (data['performanceMetrics'] != null) {
             final perfData = data['performanceMetrics'];
             final updatedReport = loadedReport.copyWith(
-              sprintPerformanceData: perfData is String ? perfData : jsonEncode(perfData),
+              sprintPerformanceData:
+                  perfData is String ? perfData : jsonEncode(perfData),
             );
             setState(() {
               _report = updatedReport;
@@ -100,7 +105,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(tokenResp.error ?? 'Invalid or expired review link'),
+                content:
+                    Text(tokenResp.error ?? 'Invalid or expired review link'),
                 backgroundColor: Colors.red,
                 duration: const Duration(seconds: 5),
               ),
@@ -113,18 +119,23 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
         }
         return;
       }
-      
+
       // Standard authenticated endpoint
       final reportResp = await api.getSignOffReport(widget.reportId);
       if (!mounted) return;
       if (reportResp.isSuccess && reportResp.data != null) {
-        final reportJson = reportResp.data!['data'] ?? reportResp.data!['report'] ?? reportResp.data!;
+        final reportJson = reportResp.data!['data'] ??
+            reportResp.data!['report'] ??
+            reportResp.data!;
         final loadedReport = SignOffReport.fromJson(reportJson);
         Deliverable? loadedDeliverable;
         if (loadedReport.deliverableId.isNotEmpty) {
-          final delivResp = await api.getDeliverable(loadedReport.deliverableId);
+          final delivResp =
+              await api.getDeliverable(loadedReport.deliverableId);
           if (delivResp.isSuccess && delivResp.data != null) {
-            final dJson = delivResp.data!['data'] ?? delivResp.data!['deliverable'] ?? delivResp.data!;
+            final dJson = delivResp.data!['data'] ??
+                delivResp.data!['deliverable'] ??
+                delivResp.data!;
             loadedDeliverable = Deliverable.fromJson(dJson);
           }
         }
@@ -161,7 +172,9 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
       final delivResp = await api.getDeliverable(deliverableId);
       if (!mounted) return;
       if (delivResp.isSuccess && delivResp.data != null) {
-        final dJson = delivResp.data!['data'] ?? delivResp.data!['deliverable'] ?? delivResp.data!;
+        final dJson = delivResp.data!['data'] ??
+            delivResp.data!['deliverable'] ??
+            delivResp.data!;
         setState(() {
           _deliverable = Deliverable.fromJson(dJson);
         });
@@ -180,7 +193,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
       return;
     }
 
-    if (_selectedAction == 'changeRequest' && _changeRequestController.text.isEmpty) {
+    if (_selectedAction == 'changeRequest' &&
+        _changeRequestController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please provide details for the change request'),
@@ -203,7 +217,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Digital signature is required to approve this report.'),
+                content: Text(
+                    'Digital signature is required to approve this report.'),
                 backgroundColor: Colors.orange,
               ),
             );
@@ -211,8 +226,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
           return;
         }
         // If using token-based access, pass token in request
-        final reportId = widget.reviewToken != null && widget.reportId.isEmpty 
-            ? _report?.id ?? '' 
+        final reportId = widget.reviewToken != null && widget.reportId.isEmpty
+            ? _report?.id ?? ''
             : widget.reportId;
         final response = await backendService.approveSignOffReport(
           reportId,
@@ -241,8 +256,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
         }
       } else if (_selectedAction == 'changeRequest') {
         // If using token-based access, pass token in request
-        final reportId = widget.reviewToken != null && widget.reportId.isEmpty 
-            ? _report?.id ?? '' 
+        final reportId = widget.reviewToken != null && widget.reportId.isEmpty
+            ? _report?.id ?? ''
             : widget.reportId;
         final response = await backendService.requestSignOffChanges(
           reportId,
@@ -262,7 +277,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Failed to submit change request: ${response.error}'),
+              content:
+                  Text('Failed to submit change request: ${response.error}'),
               backgroundColor: Colors.red,
             ),
           );
@@ -305,14 +321,15 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                 Text(
                   'Deliverable Status',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: FlownetColors.pureWhite,
-                    fontWeight: FontWeight.bold,
-                  ),
+                        color: FlownetColors.pureWhite,
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            if (_deliverable == null && (_report?.deliverableId.isEmpty ?? true)) ...[
+            if (_deliverable == null &&
+                (_report?.deliverableId.isEmpty ?? true)) ...[
               buildStatusItem('Linked Deliverable', 'None'),
             ] else if (_deliverable == null) ...[
               const LinearProgressIndicator(),
@@ -323,7 +340,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                     child: buildStatusItem('Title', _deliverable!.title),
                   ),
                   Expanded(
-                    child: buildStatusItem('Status', _deliverable!.statusDisplayName),
+                    child: buildStatusItem(
+                        'Status', _deliverable!.statusDisplayName),
                   ),
                 ],
               ),
@@ -331,10 +349,17 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: buildStatusItem('Due Date', formatDate(_deliverable!.dueDate)),
+                    child: buildStatusItem(
+                        'Due Date', formatDate(_deliverable!.dueDate)),
                   ),
                   Expanded(
-                    child: buildStatusItem('Submitted By', _deliverable!.submittedBy ?? 'Unknown'),
+                    child: buildStatusItem('Submitted By', () {
+                      final name = (_report?.submittedByName ?? _report?.submittedBy ?? '').toString().trim();
+                      final role = (_report?.submittedByRole ?? '').toString().trim();
+                      if (name.isEmpty) return '—';
+                      if (role.isEmpty) return name;
+                      return '$name ($role)';
+                    }()),
                   ),
                 ],
               ),
@@ -389,9 +414,9 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                     Text(
                       'Sign-Off Report',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: FlownetColors.pureWhite,
-                        fontWeight: FontWeight.bold,
-                      ),
+                            color: FlownetColors.pureWhite,
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                   ],
                 ),
@@ -423,13 +448,15 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
   }
 
   Widget _buildPerformanceVisuals() {
-    if (_report?.sprintPerformanceData == null || _report!.sprintPerformanceData!.isEmpty) {
+    if (_report?.sprintPerformanceData == null ||
+        _report!.sprintPerformanceData!.isEmpty) {
       return const SizedBox.shrink();
     }
 
     try {
       final List<dynamic> rawData = jsonDecode(_report!.sprintPerformanceData!);
-      final List<Map<String, dynamic>> sprints = rawData.map((e) => Map<String, dynamic>.from(e)).toList();
+      final List<Map<String, dynamic>> sprints =
+          rawData.map((e) => Map<String, dynamic>.from(e)).toList();
 
       if (sprints.isEmpty) return const SizedBox.shrink();
 
@@ -439,9 +466,9 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
           Text(
             'Performance Metrics',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: FlownetColors.pureWhite,
-              fontWeight: FontWeight.bold,
-            ),
+                  color: FlownetColors.pureWhite,
+                  fontWeight: FontWeight.bold,
+                ),
           ),
           const SizedBox(height: 16),
           // Velocity Chart
@@ -506,14 +533,15 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
   }
 
   Widget _buildChangeRequestHistory() {
-    if ((_report?.changeRequestHistory == null || _report!.changeRequestHistory!.isEmpty) && 
+    if ((_report?.changeRequestHistory == null ||
+            _report!.changeRequestHistory!.isEmpty) &&
         _report?.changeRequestDetails == null) {
       return const SizedBox.shrink();
     }
-    
+
     final history = _report?.changeRequestHistory ?? [];
     final List<dynamic> historyList = history;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       padding: const EdgeInsets.all(16),
@@ -532,30 +560,33 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
               Text(
                 'Change Request History (Action List)',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.orange,
-                  fontWeight: FontWeight.bold,
-                ),
+                      color: Colors.orange,
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
             ],
           ),
           const SizedBox(height: 16),
           if (_report?.changeRequestDetails != null) ...[
-             _buildHistoryItem(
-               details: _report!.changeRequestDetails!,
-               date: _report!.reviewedAt,
-               user: _report!.reviewedBy,
-               isLatest: true,
-             ),
-             if (historyList.isNotEmpty) const Divider(color: Colors.orange, height: 24),
+            _buildHistoryItem(
+              details: _report!.changeRequestDetails!,
+              date: _report!.reviewedAt,
+              user: _report!.reviewedBy,
+              isLatest: true,
+            ),
+            if (historyList.isNotEmpty)
+              const Divider(color: Colors.orange, height: 24),
           ],
           ...historyList.map((item) {
-             final i = item is Map ? item : {'details': item.toString()};
-             return _buildHistoryItem(
-               details: i['details'] ?? '',
-               date: i['requestedAt'] != null ? DateTime.parse(i['requestedAt']) : null,
-               user: i['requestedBy'],
-               isLatest: false,
-             );
+            final i = item is Map ? item : {'details': item.toString()};
+            return _buildHistoryItem(
+              details: i['details'] ?? '',
+              date: i['requestedAt'] != null
+                  ? DateTime.parse(i['requestedAt'])
+                  : null,
+              user: i['requestedBy'],
+              isLatest: false,
+            );
           }),
         ],
       ),
@@ -595,11 +626,14 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
           style: const TextStyle(color: Colors.white),
         ),
         if (user != null) ...[
-           const SizedBox(height: 4),
-           Text(
-             'Requested by: $user',
-             style: const TextStyle(color: Colors.white38, fontSize: 11, fontStyle: FontStyle.italic),
-           ),
+          const SizedBox(height: 4),
+          Text(
+            'Requested by: $user',
+            style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 11,
+                fontStyle: FontStyle.italic),
+          ),
         ],
         const SizedBox(height: 12),
       ],
@@ -617,17 +651,19 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
             Text(
               'Review Decision',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: FlownetColors.pureWhite,
-                fontWeight: FontWeight.bold,
-              ),
+                    color: FlownetColors.pureWhite,
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
             const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
                   child: RadioListTile<String>(
-                    title: const Text('Approve', style: TextStyle(color: Colors.white)),
-                    subtitle: const Text('Accept the deliverable as complete', style: TextStyle(color: Colors.grey)),
+                    title: const Text('Approve',
+                        style: TextStyle(color: Colors.white)),
+                    subtitle: const Text('Accept the deliverable as complete',
+                        style: TextStyle(color: Colors.grey)),
                     value: 'approve',
                     // ignore: deprecated_member_use
                     groupValue: _selectedAction,
@@ -642,8 +678,11 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                 ),
                 Expanded(
                   child: RadioListTile<String>(
-                    title: const Text('Request Changes', style: TextStyle(color: Colors.white)),
-                    subtitle: const Text('Request modifications before approval', style: TextStyle(color: Colors.grey)),
+                    title: const Text('Request Changes',
+                        style: TextStyle(color: Colors.white)),
+                    subtitle: const Text(
+                        'Request modifications before approval',
+                        style: TextStyle(color: Colors.grey)),
                     value: 'changeRequest',
                     // ignore: deprecated_member_use
                     groupValue: _selectedAction,
@@ -677,11 +716,13 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                   labelText: 'Change Request Details *',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.edit),
-                  hintText: 'List the required changes (e.g.,\n1. Update charts\n2. Fix typo in summary)',
+                  hintText:
+                      'List the required changes (e.g.,\n1. Update charts\n2. Fix typo in summary)',
                 ),
                 maxLines: 6,
                 validator: (value) {
-                  if (_selectedAction == 'changeRequest' && (value?.isEmpty ?? true)) {
+                  if (_selectedAction == 'changeRequest' &&
+                      (value?.isEmpty ?? true)) {
                     return 'Please provide change request details';
                   }
                   return null;
@@ -706,13 +747,16 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
             Text(
               'Digital Signature',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: FlownetColors.pureWhite,
-                fontWeight: FontWeight.bold,
-              ),
+                    color: FlownetColors.pureWhite,
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
             const SizedBox(height: 16),
             SignatureCaptureWidget(
               key: _signatureKey,
+              allowSignatureReuse: true,
+              showAuditInfo: true,
+              reportId: _report?.id,
               onSignatureCaptured: (sig) {
                 setState(() {
                   _capturedSignature = sig;
@@ -725,15 +769,15 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
               child: ElevatedButton(
                 onPressed: _isSubmitting ? null : _submitApproval,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _selectedAction == 'approve' 
-                      ? Colors.green 
+                  backgroundColor: _selectedAction == 'approve'
+                      ? Colors.green
                       : Colors.orange,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
                 child: _isSubmitting
                     ? const CircularProgressIndicator(color: Colors.white)
                     : Text(
-                        _selectedAction == 'approve' 
+                        _selectedAction == 'approve'
                             ? 'Approve Report'
                             : 'Submit Change Request',
                         style: const TextStyle(fontSize: 16),
@@ -771,16 +815,16 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
             Text(
               'Client Review & Approval',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: FlownetColors.pureWhite,
-                fontWeight: FontWeight.bold,
-              ),
+                    color: FlownetColors.pureWhite,
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
             const SizedBox(height: 8),
             Text(
               'Review the deliverable and provide your decision',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: FlownetColors.coolGray,
-              ),
+                    color: FlownetColors.coolGray,
+                  ),
             ),
             const SizedBox(height: 24),
 
@@ -796,7 +840,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
             const SizedBox(height: 24),
 
             // Change Request History
-            if (_report?.changeRequestHistory?.isNotEmpty == true || _report?.changeRequestDetails != null)
+            if (_report?.changeRequestHistory?.isNotEmpty == true ||
+                _report?.changeRequestDetails != null)
               _buildChangeRequestHistory(),
 
             // Review Actions
@@ -818,10 +863,13 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                         children: [
                           Text(
                             'Report Approved',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.bold,
+                                ),
                           ),
                           const Text(
                             'This report has been approved and sealed.',
@@ -829,7 +877,7 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                           ),
                           if (_report?.approvedBy != null)
                             Text(
-                              'Approved by: ${_report!.approvedBy} on ${formatDate(_report!.approvedAt ?? DateTime.now())}',
+                              'Approved by: ${((_report!.approvedByName ?? _report!.approvedBy) ?? '').toString()}${((_report!.approvedByRole ?? '').toString().trim().isNotEmpty) ? ' (${_report!.approvedByRole})' : ''} on ${formatDate(_report!.approvedAt ?? DateTime.now())}',
                               style: const TextStyle(color: Colors.white54, fontSize: 12),
                             ),
                         ],
@@ -856,10 +904,13 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                         children: [
                           Text(
                             'Change Requested',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.orange,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  color: Colors.orange,
+                                  fontWeight: FontWeight.bold,
+                                ),
                           ),
                           const Text(
                             'Changes have been requested. The team will review and resubmit.',
@@ -898,7 +949,6 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
       ),
     );
   }
-
 
   @override
   void dispose() {

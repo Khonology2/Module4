@@ -3,8 +3,11 @@ const router = express.Router();
 const axios = require('axios');
 const analyticsService = require('../services/analyticsService');
 const cache = new Map();
+const inflight = new Map();
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+let consecutiveFailures = 0;
+let circuitOpenUntil = 0;
 function makeKey(msgs, temperature, max_tokens) {
   try { return JSON.stringify({ msgs, temperature, max_tokens }); } catch (_) { return String(temperature) + '|' + String(max_tokens); }
 }
@@ -103,7 +106,6 @@ router.post('/chat', async (req, res) => {
       if (m.active_sprints !== undefined) parts.push(`active_sprints=${m.active_sprints}`);
       if (m.completed_sprints !== undefined) parts.push(`completed_sprints=${m.completed_sprints}`);
       if (m.total_deliverables !== undefined) parts.push(`deliverables=${m.total_deliverables}`);
-      if (m.timestamp) parts.push(`ts=${m.timestamp}`);
       const summary = parts.join(', ');
       msgs.unshift({ role: 'system', content: `Context: ${summary}` });
     } catch (_) {}
@@ -112,6 +114,16 @@ router.post('/chat', async (req, res) => {
     if (cached) {
       return res.json({ success: true, data: cached });
     }
+    const existing = inflight.get(key);
+    if (existing) {
+      try {
+        const v = await existing;
+        return res.json({ success: true, data: v });
+      } catch (e) {
+        const status = (e && e.response && e.response.status) || 500;
+        return res.status(status).json({ error: e.message || 'AI request failed' });
+      }
+    }
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({ error: 'OpenAI API key not configured' });
@@ -119,27 +131,46 @@ router.post('/chat', async (req, res) => {
     if (!msgs || msgs.length === 0) {
       return res.status(400).json({ error: 'messages or prompt required' });
     }
-    const r = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: OPENAI_MODEL,
-      messages: msgs,
-      temperature: typeof temperature === 'number' ? temperature : 0.7,
-      max_tokens: typeof max_tokens === 'number' ? max_tokens : 512
-    }, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    const data = r.data || {};
-    const choice = (data.choices && data.choices[0]) || {};
-    const message = choice.message || {};
-    const payload = { content: message.content || '', usage: data.usage || {}, model: data.model || OPENAI_MODEL };
-    setCached(key, payload);
-    consecutiveFailures = 0;
-    circuitOpenUntil = 0;
-    return res.json({ success: true, data: payload });
+    const p = (async () => {
+      const r = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: OPENAI_MODEL,
+        messages: msgs,
+        temperature: typeof temperature === 'number' ? temperature : 0.7,
+        max_tokens: typeof max_tokens === 'number' ? max_tokens : 512
+      }, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = r.data || {};
+      const choice = (data.choices && data.choices[0]) || {};
+      const message = choice.message || {};
+      const payload = { content: message.content || '', usage: data.usage || {}, model: data.model || OPENAI_MODEL };
+      setCached(key, payload);
+      consecutiveFailures = 0;
+      circuitOpenUntil = 0;
+      return payload;
+    })();
+    inflight.set(key, p);
+    try {
+      const payload = await p;
+      return res.json({ success: true, data: payload });
+    } finally {
+      inflight.delete(key);
+    }
   } catch (error) {
+    inflight.delete(makeKey(msgs, temperature, max_tokens));
     const status = (error && error.response && error.response.status) || 500;
+    if (status === 429) {
+      consecutiveFailures += 1;
+      const retryAfter = (error && error.response && error.response.headers && (error.response.headers['retry-after'] || error.response.headers['Retry-After'])) || '2';
+      return res.status(429).json({
+        error: 'AI provider rate limit exceeded. Please retry shortly.',
+        retry_after: retryAfter
+      });
+    }
+    consecutiveFailures += 1;
     return res.status(status).json({ error: error.message || 'AI request failed' });
   }
 });

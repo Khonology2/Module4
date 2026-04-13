@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 // ignore: depend_on_referenced_packages
@@ -14,8 +15,12 @@ class ApiClient {
   ApiClient._internal();
 
 static String get _baseUrlWithVersion => Environment.apiBaseUrl;
-  static const Duration _timeout = Duration(seconds: 45); // Increased timeout for Render
+  static const Duration _timeout = Duration(seconds: 90); // Increased timeout for Render cold starts
 
+  static String _timeoutUserMessage() =>
+      'Connection timed out. Start the API on port 3001 (node backend). If the port is busy, stop the other process and restart once.';
+
+  bool _initialized = false;
   String? _accessToken;
   String? _refreshToken;
   DateTime? _tokenExpiry;
@@ -39,9 +44,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
   // Initialize API client
   Future<void> initialize() async {
+    if (_initialized) return;
     await _loadStoredTokens();
     DebugHelper.logEnvironmentInfo();
     debugPrint('API Client initialized with base URL: $_baseUrlWithVersion');
+    _initialized = true;
   }
 
   // Token management
@@ -118,6 +125,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         await saveTokens(newAccessToken, newRefreshToken, expiry);
         return true;
       }
+    } on TimeoutException {
+      debugPrint('Token refresh timed out');
     } catch (e) {
       debugPrint('Error refreshing token: $e');
     }
@@ -126,27 +135,48 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
   // HTTP Methods
   Future<ApiResponse> get(String endpoint, {Map<String, String>? queryParams, bool requireAuth = true}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
     if (!requireAuth) {
       // Make unauthenticated request
       return await _makeUnauthenticatedRequest('GET', endpoint, queryParams: queryParams);
     }
+
+    // Check auth
+    if (isAuthenticated && !_isTokenValid()) {
+      final refreshed = await _refreshAccessToken();
+      if (!refreshed) {
+        return ApiResponse.error('Authentication expired. Please login again.');
+      }
+    }
+
     return await _makeRequest('GET', endpoint, queryParams: queryParams);
   }
 
   Future<ApiResponse> post(String endpoint, {Map<String, dynamic>? body, Map<String, String>? queryParams, bool requireAuth = true}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
     if (!requireAuth && queryParams != null && queryParams.containsKey('token')) {
-      // For token-based requests, we can skip auth but still need to pass token
-      // The token will be in query params, so we'll make a special request
       return await _makeTokenBasedRequest('POST', endpoint, body: body, queryParams: queryParams);
+    }
+    if (!requireAuth) {
+      return await _makeUnauthenticatedRequest('POST', endpoint,
+          body: body, queryParams: queryParams);
     }
     return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams);
   }
 
   Future<ApiResponse> put(String endpoint, {Map<String, dynamic>? body, Map<String, String>? queryParams}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
     return await _makeRequest('PUT', endpoint, body: body, queryParams: queryParams);
   }
 
   Future<ApiResponse> delete(String endpoint, {Map<String, String>? queryParams}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
     return await _makeRequest('DELETE', endpoint, queryParams: queryParams);
   }
 
@@ -289,6 +319,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
 
       return _handleResponse(response);
+    } on TimeoutException {
+      return ApiResponse.error(_timeoutUserMessage());
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
     } on HttpException catch (e) {
@@ -302,6 +334,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   Future<ApiResponse> _makeUnauthenticatedRequest(
     String method,
     String endpoint, {
+    Map<String, dynamic>? body,
     Map<String, String>? queryParams,
   }) async {
     try {
@@ -324,11 +357,34 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         case 'GET':
           response = await http.get(Uri.parse(url), headers: headers).timeout(_timeout);
           break;
+        case 'POST':
+          response = await http
+              .post(
+                Uri.parse(url),
+                headers: headers,
+                body: body != null ? jsonEncode(body) : null,
+              )
+              .timeout(_timeout);
+          break;
+        case 'PUT':
+          response = await http
+              .put(
+                Uri.parse(url),
+                headers: headers,
+                body: body != null ? jsonEncode(body) : null,
+              )
+              .timeout(_timeout);
+          break;
+        case 'DELETE':
+          response = await http.delete(Uri.parse(url), headers: headers).timeout(_timeout);
+          break;
         default:
           throw Exception('Unsupported HTTP method for unauthenticated request: $method');
       }
 
       return _handleResponse(response);
+    } on TimeoutException {
+      return ApiResponse.error(_timeoutUserMessage());
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
     } on HttpException catch (e) {
@@ -379,6 +435,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
 
       return _handleResponse(response);
+    } on TimeoutException {
+      return ApiResponse.error(_timeoutUserMessage());
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
     } on HttpException catch (e) {
@@ -513,10 +571,33 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   // Authentication methods
   Future<ApiResponse> login(String email, String password) async {
 
-    final response = await post('/auth/login', body: {
-      'email': email,
-      'password': password,
-    },);
+    // Retry helps Render cold starts; login must not attach an auth header.
+    ApiResponse response = ApiResponse.error('Initial response not set');
+    int attempts = 0;
+    const maxAttempts = 2;
+
+    while (attempts < maxAttempts) {
+      try {
+        debugPrint('🔐 Login attempt ${attempts + 1} for: $email');
+        response = await post('/auth/login', body: {
+          'email': email,
+          'password': password,
+        }, requireAuth: false);
+
+        if (response.statusCode != 0) {
+          break;
+        }
+      } catch (e) {
+        debugPrint('🔐 Login attempt ${attempts + 1} failed: $e');
+        attempts++;
+
+        if (attempts >= maxAttempts) {
+          rethrow;
+        }
+
+        await Future.delayed(const Duration(seconds: 3));
+      }
+    }
 
     if (response.isSuccess && response.data != null) {
       final data = response.data!;
@@ -543,7 +624,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       'firstName': firstName,
       'lastName': lastName,
       'role': role,
-    },);
+    }, requireAuth: false);
 
     // Save tokens if registration is successful
     if (response.isSuccess && response.data != null) {
@@ -563,12 +644,23 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
   Future<ApiResponse> logout() async {
 
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
     final response = await post('/auth/logout');
     await clearTokens();
     return response;
   }
 
   Future<ApiResponse> getCurrentUser() async {
+
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
+    // Don't call /auth/me if we don't have an access token
+    if (_accessToken == null) {
+      return ApiResponse.error('No access token available. Please login first.');
+    }
 
     return await get('/auth/me');
   }
@@ -587,14 +679,14 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   Future<ApiResponse> forgotPassword(String email) async {
     return await post('/auth/forgot-password', body: {
       'email': email,
-    },);
+    }, requireAuth: false);
   }
 
   Future<ApiResponse> resetPassword(String token, String newPassword) async {
     return await post('/auth/reset-password', body: {
       'token': token,
       'password': newPassword,
-    },);
+    }, requireAuth: false);
   }
 
 }
