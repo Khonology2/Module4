@@ -48,12 +48,19 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     return _collapsed ? collapsed : expanded;
   }
 
+  /// Merged from `origin/Busisiwe`: role-based nav. AI stays FAB-only (not duplicated here).
+  /// Sprint route uses `/sprint-console` (matches [main] go_router). Client reviewer routes
+  /// match pre-Busisiwe behavior so dashboards stay consistent.
   List<_NavItem> get _navItems {
     final authService = AuthService();
-    final allItems = [
-      // Work-focused items only
+    final currentUser = authService.currentUser;
+    final userRole = currentUser != null
+        ? currentUser.role.toString().toLowerCase()
+        : '';
+
+    final List<_NavItem> allItems = [
       const _NavItem(
-        label: 'Dashboard', 
+        label: 'Dashboard',
         icon: Icons.dashboard_outlined,
         iconName: 'dashboard',
         route: '/dashboard',
@@ -65,13 +72,6 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
         iconName: 'projects',
         route: '/projects',
         requiredPermission: null,
-      ),
-      const _NavItem(
-        label: 'Sprints', 
-        icon: Icons.timer_outlined, 
-        iconName: 'sprints',
-        route: '/sprint-console',
-        requiredPermission: 'view_sprints',
       ),
       const _NavItem(
         label: 'Deliverables',
@@ -87,45 +87,147 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
         route: '/timeline',
         requiredPermission: null,
       ),
-      const _NavItem(
-        label: 'Approval Requests',
-        icon: Icons.assignment_outlined,
-        iconName: 'approval_requests',
-        route: '/approval-requests',
-        requiredPermission: 'view_approvals',
-      ),
-      const _NavItem(
-        label: 'Repository', 
-        icon: Icons.folder_outlined, 
-        iconName: 'repository',
-        route: '/repository',
-        requiredPermission: 'view_all_deliverables',
-      ),
-      const _NavItem(
-        label: 'Reports', 
-        icon: Icons.assessment_outlined, 
-        iconName: 'reports',
-        route: '/report-repository',
-        requiredPermission: 'view_all_deliverables',
-      ),
-      const _NavItem(
-        label: 'Role Management',
-        icon: Icons.admin_panel_settings_outlined,
-        iconName: 'role_management',
-        route: '/role-management',
-        requiredPermission: 'manage_users',
-      ),
-      const _NavItem(
-        label: 'Settings', // kept for potential use outside sidebar
-        icon: Icons.settings_outlined,
-        iconName: 'settings',
-        route: '/settings',
-        requiredPermission: 'HIDE_FROM_SIDEBAR',
-      ),
     ];
 
-    // Filter items based on user permissions
-    return allItems.where((item) {
+    final List<_NavItem> roleSpecificItems = [];
+
+    if (userRole.contains('admin') || userRole.contains('system')) {
+      roleSpecificItems.addAll([
+        const _NavItem(
+          label: 'Sprints',
+          icon: Icons.timer_outlined,
+          iconName: 'sprints',
+          route: '/sprint-console',
+          requiredPermission: 'view_sprints',
+        ),
+        const _NavItem(
+          label: 'Approval Requests',
+          icon: Icons.assignment_outlined,
+          iconName: 'approval_requests',
+          route: '/approval-requests',
+          requiredPermission: 'view_approvals',
+        ),
+        const _NavItem(
+          label: 'Repository',
+          icon: Icons.folder_outlined,
+          iconName: 'repository',
+          route: '/repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+        const _NavItem(
+          label: 'Reports',
+          icon: Icons.assessment_outlined,
+          iconName: 'reports',
+          route: '/report-repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+        const _NavItem(
+          label: 'Role Management',
+          icon: Icons.admin_panel_settings_outlined,
+          iconName: 'role_management',
+          route: '/role-management',
+          requiredPermission: 'manage_users',
+        ),
+      ]);
+    } else if (userRole.contains('delivery') || userRole.contains('project')) {
+      roleSpecificItems.addAll([
+        const _NavItem(
+          label: 'Sprints',
+          icon: Icons.timer_outlined,
+          iconName: 'sprints',
+          route: '/sprint-console',
+          requiredPermission: 'view_sprints',
+        ),
+        const _NavItem(
+          label: 'Approval Requests',
+          icon: Icons.assignment_outlined,
+          iconName: 'approval_requests',
+          route: '/approval-requests',
+          requiredPermission: 'view_approvals',
+        ),
+        const _NavItem(
+          label: 'Repository',
+          icon: Icons.folder_outlined,
+          iconName: 'repository',
+          route: '/repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+        const _NavItem(
+          label: 'Reports',
+          icon: Icons.assessment_outlined,
+          iconName: 'reports',
+          route: '/report-repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+      ]);
+    } else if (userRole.contains('client')) {
+      roleSpecificItems.addAll([
+        const _NavItem(
+          label: 'Approval Requests',
+          icon: Icons.assignment_outlined,
+          iconName: 'approval_requests',
+          route: '/approval-requests',
+          requiredPermission: 'view_approvals',
+        ),
+        const _NavItem(
+          label: 'Repository',
+          icon: Icons.folder_outlined,
+          iconName: 'repository',
+          route: '/repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+        const _NavItem(
+          label: 'Reports',
+          icon: Icons.assessment_outlined,
+          iconName: 'reports',
+          route: '/report-repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+      ]);
+    } else {
+      // team_member and other roles: same extras as delivery (gated by permissions below)
+      roleSpecificItems.addAll([
+        const _NavItem(
+          label: 'Sprints',
+          icon: Icons.timer_outlined,
+          iconName: 'sprints',
+          route: '/sprint-console',
+          requiredPermission: 'view_sprints',
+        ),
+        const _NavItem(
+          label: 'Approval Requests',
+          icon: Icons.assignment_outlined,
+          iconName: 'approval_requests',
+          route: '/approval-requests',
+          requiredPermission: 'view_approvals',
+        ),
+        const _NavItem(
+          label: 'Repository',
+          icon: Icons.folder_outlined,
+          iconName: 'repository',
+          route: '/repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+        const _NavItem(
+          label: 'Reports',
+          icon: Icons.assessment_outlined,
+          iconName: 'reports',
+          route: '/report-repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+      ]);
+    }
+
+    final combinedItems = [...allItems, ...roleSpecificItems];
+
+    return combinedItems.where((item) {
+      if (item.requiredPermission == 'HIDE_FROM_SIDEBAR') return false;
+
+      if (userRole.contains('client') &&
+          (item.label == 'Projects' || item.label == 'Deliverables')) {
+        return false;
+      }
+
       if (authService.isClientReviewer || authService.isClient) {
         if (item.route == '/projects' ||
             item.route == '/sprint-console' ||
@@ -133,8 +235,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
           return false;
         }
       }
-      // Special flag: hide from sidebar even if user has permission
-      if (item.requiredPermission == 'HIDE_FROM_SIDEBAR') return false;
+
       if (item.requiredPermission == null) return true;
       return authService.hasPermission(item.requiredPermission!);
     }).toList();
@@ -175,12 +276,24 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
   Widget build(BuildContext context) {
     String routeLocation = '/';
     try {
-      final router = GoRouter.maybeOf(context);
-      final uri = router?.routeInformationProvider.value.uri;
-      if (uri != null) {
-        routeLocation = uri.path;
+      final topState = GoRouter.maybeOf(context)?.state;
+      if (topState != null && topState.matchedLocation.isNotEmpty) {
+        routeLocation = topState.matchedLocation;
       } else {
-        routeLocation = ModalRoute.of(context)?.settings.name ?? '/';
+        final router = GoRouter.maybeOf(context);
+        final uri = router?.routeInformationProvider.value.uri;
+        if (uri != null) {
+          if (uri.path.isNotEmpty && uri.path != '/') {
+            routeLocation = uri.path;
+          } else if (uri.hasFragment) {
+            final frag = uri.fragment;
+            routeLocation = frag.startsWith('/') ? frag : '/$frag';
+          } else {
+            routeLocation = uri.path;
+          }
+        } else {
+          routeLocation = ModalRoute.of(context)?.settings.name ?? '/';
+        }
       }
     } catch (_) {
       routeLocation = ModalRoute.of(context)?.settings.name ?? '/';
@@ -309,62 +422,43 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                                       borderRadius: BorderRadius.circular(12),
                                       child: Padding(
                                         padding: EdgeInsets.symmetric(
-                                          horizontal: _collapsed ? 4 : 16,
+                                          horizontal: _collapsed ? 8 : 16,
                                           vertical: 12,
                                         ),
-                                        child: _collapsed
-                                            ? Center(
-                                                child: SizedBox(
-                                                  width: 24,
-                                                  height: 24,
-                                                  child: AppIcons.getIconWidget(
-                                                    item.iconName,
-                                                    fallbackIcon: item.icon,
-                                                    isActive: active,
-                                                    size: 20,
-                                                    color: active
-                                                        ? FlownetColors.pureWhite
-                                                        : FlownetColors
-                                                            .textSecondary,
-                                                  ),
-                                                ),
-                                              )
-                                            : Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.start,
-                                                children: [
-                                                  SizedBox(
-                                                    width: 24,
-                                                    height: 24,
-                                                    child:
-                                                        AppIcons.getIconWidget(
-                                                      item.iconName,
-                                                      fallbackIcon: item.icon,
-                                                      isActive: active,
-                                                      size: 20,
-                                                      color: active
-                                                          ? FlownetColors
-                                                              .pureWhite
-                                                          : FlownetColors
-                                                              .textSecondary,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Expanded(
-                                                    child: Text(
-                                                      item.label,
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w500,
-                                                      ),
-                                                      overflow: TextOverflow
-                                                          .ellipsis,
-                                                    ),
-                                                  ),
-                                                ],
+                                        child: Row(
+                                          mainAxisAlignment: _collapsed
+                                              ? MainAxisAlignment.center
+                                              : MainAxisAlignment.start,
+                                          children: [
+                                            SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: AppIcons.getIconWidget(
+                                                item.iconName,
+                                                fallbackIcon: item.icon,
+                                                isActive: active,
+                                                size: 20,
+                                                color: active
+                                                    ? FlownetColors.pureWhite
+                                                    : FlownetColors.textSecondary,
                                               ),
+                                            ),
+                                            if (!_collapsed) ...[
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Text(
+                                                  item.label,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
