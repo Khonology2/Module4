@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:convert';
 import '../models/sign_off_report.dart';
 import '../models/user_role.dart';
 import '../services/sign_off_report_service.dart';
@@ -19,27 +18,31 @@ import '../services/realtime_service.dart';
 
 class ClientReviewWorkflowScreen extends ConsumerStatefulWidget {
   final String reportId;
-  
+
   const ClientReviewWorkflowScreen({
     super.key,
     required this.reportId,
   });
 
   @override
-  ConsumerState<ClientReviewWorkflowScreen> createState() => _ClientReviewWorkflowScreenState();
+  ConsumerState<ClientReviewWorkflowScreen> createState() =>
+      _ClientReviewWorkflowScreenState();
 }
 
-class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflowScreen> {
+class _ClientReviewWorkflowScreenState
+    extends ConsumerState<ClientReviewWorkflowScreen> {
   final _commentController = TextEditingController();
   final _changeRequestController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  final GlobalKey<SignatureCaptureWidgetState> _signatureKey = GlobalKey<SignatureCaptureWidgetState>();
-  
-  final SignOffReportService _reportService = SignOffReportService(AuthService());
+  final GlobalKey<SignatureCaptureWidgetState> _signatureKey =
+      GlobalKey<SignatureCaptureWidgetState>();
+
+  final SignOffReportService _reportService =
+      SignOffReportService(AuthService());
   final DeliverableService _deliverableService = DeliverableService();
   final DocuSignService _docuSignService = DocuSignService(ApiClient());
   final BackendApiService _apiService = BackendApiService();
-  
+
   SignOffReport? _report;
   Map<String, dynamic>? _deliverable;
   List<Map<String, dynamic>> _reviews = [];
@@ -68,81 +71,32 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
 
   Future<void> _loadReportData() async {
     setState(() => _isLoading = true);
-    
+
     try {
       // Load report
-      final reportResponse = await _reportService.getSignOffReport(widget.reportId);
+      final reportResponse =
+          await _reportService.getSignOffReport(widget.reportId);
       if (reportResponse.isSuccess && reportResponse.data != null) {
         // ApiClient already extracts the 'data' field, so response.data is the report object directly
         // But check if it's nested in a 'data' key or is the report directly
-        final data = reportResponse.data is Map && reportResponse.data!['data'] != null
-            ? reportResponse.data!['data'] as Map<String, dynamic>
-            : reportResponse.data as Map<String, dynamic>;
-        
-        final contentRaw = data['content'];
-        Map<String, dynamic> content;
-        if (contentRaw is String) {
-          try {
-            final decoded = jsonDecode(contentRaw);
-            content = decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
-          } catch (_) {
-            content = {
-              'reportTitle': (data['report_title'] ?? data['deliverable_title'] ?? data['reportTitle'] ?? 'Sign-Off Report').toString(),
-              'reportContent': (data['report_content'] ?? data['reportContent'] ?? contentRaw).toString(),
-              'knownLimitations': (data['known_limitations'] ?? data['knownLimitations'])?.toString(),
-              'nextSteps': (data['next_steps'] ?? data['nextSteps'])?.toString(),
-              'sprintIds': (() {
-                final v = data['sprint_ids'] ?? data['sprintIds'];
-                if (v is List) return v.map((e) => e.toString()).toList();
-                return <String>[];
-              })(),
-            };
-          }
-        } else if (contentRaw is Map) {
-          content = Map<String, dynamic>.from(contentRaw);
-        } else {
-          content = <String, dynamic>{};
-        }
+        final data =
+            reportResponse.data is Map && reportResponse.data!['data'] != null
+                ? reportResponse.data!['data'] as Map<String, dynamic>
+                : reportResponse.data as Map<String, dynamic>;
+
         final reviews = data['reviews'] as List? ?? [];
-        
+
         setState(() {
-          _report = SignOffReport(
-            id: (data['id'] ?? '').toString(),
-            deliverableId: ((data['deliverableId'] ?? data['deliverable_id']) ?? '').toString(),
-            reportTitle: (content['reportTitle'] ?? content['report_title'] ?? data['report_title'] ?? data['reportTitle'] ?? 'Untitled Report').toString(),
-            reportContent: (content['reportContent'] ?? content['report_content'] ?? data['report_content'] ?? data['reportContent'] ?? '').toString(),
-            sprintIds: (() {
-              final v = content['sprintIds'] ?? content['sprint_ids'];
-              if (v is List) return v.map((e) => e.toString()).toList();
-              return <String>[];
-            })(),
-            knownLimitations: (content['knownLimitations'] ?? content['known_limitations'])?.toString(),
-            nextSteps: (content['nextSteps'] ?? content['next_steps'])?.toString(),
-            status: _parseStatus(data['status'] as String? ?? 'draft'),
-            createdAt: (() {
-              final v = data['createdAt'] ?? data['created_at'];
-              if (v is String && v.isNotEmpty) {
-                try { return DateTime.parse(v).toLocal(); } catch (_) {}
-              }
-              return DateTime.now();
-            })(),
-            createdBy: (data['createdByName'] ?? data['created_by_name'] ?? data['created_by'])?.toString() ?? 'Unknown',
-            digitalSignature: content['digitalSignature'] as String?,
-            sprintPerformanceData: (data['sprintPerformanceData'] ?? data['sprint_performance_data'])?.toString(),
-            changeRequestHistory: data['changeRequestHistory'] ?? data['change_request_history'],
-            changeRequestDetails: (data['changeRequestDetails'] ?? data['change_request_details'])?.toString(),
-            reviewedBy: (data['reviewedBy'] ?? data['reviewed_by'])?.toString(),
-            reviewedAt: data['reviewedAt'] != null ? DateTime.tryParse(data['reviewedAt'].toString()) : null,
-          );
-          
+          _report = SignOffReport.fromJson(Map<String, dynamic>.from(data));
+
           _reviews = reviews.cast<Map<String, dynamic>>();
-          
+
           // Load deliverable details
           if (_report!.deliverableId.isNotEmpty) {
             _loadDeliverable(_report!.deliverableId);
           }
         });
-        
+
         // Load digital signatures
         await _loadSignatures();
       }
@@ -163,8 +117,9 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
     try {
       final ApiClient apiClient = ApiClient();
       await apiClient.initialize();
-      final response = await apiClient.get('/sign-off-reports/${widget.reportId}/signatures');
-      
+      final response = await apiClient
+          .get('/sign-off-reports/${widget.reportId}/signatures');
+
       if (response.isSuccess && response.data != null) {
         final raw = response.data;
         List<dynamic> items = const [];
@@ -180,7 +135,10 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
           }
         }
         setState(() {
-          _signatures = items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+          _signatures = items
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
         });
         debugPrint('✅ Loaded ${_signatures.length} signatures for report');
       }
@@ -215,22 +173,6 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
     }
   }
 
-  ReportStatus _parseStatus(String status) {
-    switch (status.toLowerCase()) {
-      case 'submitted':
-        return ReportStatus.submitted;
-      case 'under_review':
-        return ReportStatus.underReview;
-      case 'approved':
-        return ReportStatus.approved;
-      case 'change_requested':
-      case 'change_request':
-        return ReportStatus.changeRequested;
-      default:
-        return ReportStatus.draft;
-    }
-  }
-
   Future<void> _handleApproval() async {
     if (_selectedAction == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -242,7 +184,8 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
       return;
     }
 
-    if (_selectedAction == 'request_changes' && _changeRequestController.text.trim().isEmpty) {
+    if (_selectedAction == 'request_changes' &&
+        _changeRequestController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please provide details for the change request'),
@@ -256,7 +199,7 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
 
     try {
       ApiResponse response;
-      
+
       if (_selectedAction == 'approve') {
         if (_docuSignEnabled && _useDocuSign) {
           if (_signerEmail.trim().isEmpty) {
@@ -299,7 +242,8 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
               setState(() => _isSubmitting = false);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Digital signature is required to approve this report.'),
+                  content: Text(
+                      'Digital signature is required to approve this report.'),
                   backgroundColor: Colors.orange,
                 ),
               );
@@ -308,8 +252,8 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
           }
           response = await _reportService.approveReport(
             widget.reportId,
-            comment: _commentController.text.trim().isNotEmpty 
-                ? _commentController.text.trim() 
+            comment: _commentController.text.trim().isNotEmpty
+                ? _commentController.text.trim()
                 : null,
             digitalSignature: signature,
           );
@@ -331,17 +275,24 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
           final token = AuthService().accessToken;
           if (token != null) ns.setAuthToken(token);
           final actor = AuthService().currentUser?.name ?? 'User';
-          final title = _selectedAction == 'approve' ? 'Report Approved' : 'Report Changes Requested';
+          final title = _selectedAction == 'approve'
+              ? 'Report Approved'
+              : 'Report Changes Requested';
           final message = _selectedAction == 'approve'
               ? '$actor approved "${_report?.reportTitle ?? 'Report'}"'
               : '$actor requested changes for "${_report?.reportTitle ?? 'Report'}"';
-          final type = _selectedAction == 'approve' ? NotificationType.reportApproved : NotificationType.reportChangesRequested;
-          await ns.createNotification(title: title, message: message, type: type);
+          final type = _selectedAction == 'approve'
+              ? NotificationType.reportApproved
+              : NotificationType.reportChangesRequested;
+          await ns.createNotification(
+              title: title, message: message, type: type);
         } catch (_) {}
         try {
           final rt = RealtimeService();
           await rt.initialize(authToken: AuthService().accessToken);
-          final event = _selectedAction == 'approve' ? 'report_approved' : 'report_change_requested';
+          final event = _selectedAction == 'approve'
+              ? 'report_approved'
+              : 'report_change_requested';
           rt.emit(event, {
             'reportId': widget.reportId,
             'title': _report?.reportTitle ?? 'Report',
@@ -350,15 +301,13 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
             'reportId': widget.reportId,
           });
         } catch (_) {}
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                _selectedAction == 'approve'
-                    ? '✅ Report approved successfully!'
-                    : 'Change request submitted successfully!'
-              ),
+              content: Text(_selectedAction == 'approve'
+                  ? '✅ Report approved successfully!'
+                  : 'Change request submitted successfully!'),
               backgroundColor: Colors.green,
             ),
           );
@@ -397,23 +346,27 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
       final messages = [
         {
           'role': 'system',
-          'content': 'Generate a concise, professional client approval comment based on the report.'
+          'content':
+              'Generate a concise, professional client approval comment based on the report.'
         },
         {
           'role': 'user',
-          'content': '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nKnown limitations: ${_report!.knownLimitations ?? '-'}\nNext steps: ${_report!.nextSteps ?? '-'}'
+          'content':
+              '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nKnown limitations: ${_report!.knownLimitations ?? '-'}\nNext steps: ${_report!.nextSteps ?? '-'}'
         }
       ];
-      final resp = await _apiService.aiChat(messages, temperature: 0.6, maxTokens: 120);
+      final resp =
+          await _apiService.aiChat(messages, temperature: 0.6, maxTokens: 120);
       if (resp.isSuccess && resp.data != null) {
         final data = resp.data as Map<String, dynamic>;
-        final content = (data['content'] ?? (data['data']?['content']))?.toString() ?? '';
+        final content =
+            (data['content'] ?? (data['data']?['content']))?.toString() ?? '';
         if (content.isNotEmpty) {
           _commentController.text = content;
         }
       }
-    } catch (_) {}
-    finally {
+    } catch (_) {
+    } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
@@ -425,23 +378,27 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
       final messages = [
         {
           'role': 'system',
-          'content': 'Draft a clear, actionable change request detailing improvements needed.'
+          'content':
+              'Draft a clear, actionable change request detailing improvements needed.'
         },
         {
           'role': 'user',
-          'content': '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nFocus on gaps, risks, and necessary updates.'
+          'content':
+              '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nFocus on gaps, risks, and necessary updates.'
         }
       ];
-      final resp = await _apiService.aiChat(messages, temperature: 0.7, maxTokens: 160);
+      final resp =
+          await _apiService.aiChat(messages, temperature: 0.7, maxTokens: 160);
       if (resp.isSuccess && resp.data != null) {
         final data = resp.data as Map<String, dynamic>;
-        final content = (data['content'] ?? (data['data']?['content']))?.toString() ?? '';
+        final content =
+            (data['content'] ?? (data['data']?['content']))?.toString() ?? '';
         if (content.isNotEmpty) {
           _changeRequestController.text = content;
         }
       }
-    } catch (_) {}
-    finally {
+    } catch (_) {
+    } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
@@ -463,7 +420,8 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.assignment, color: FlownetColors.electricBlue),
+                      const Icon(Icons.assignment,
+                          color: FlownetColors.electricBlue),
                       const SizedBox(width: 8),
                       Text(
                         'Deliverable Summary',
@@ -498,7 +456,8 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                           (_deliverable!['status'] as String?) ?? 'Unknown',
                           style: const TextStyle(fontSize: 12),
                         ),
-                        backgroundColor: FlownetColors.electricBlue.withValues(alpha: 0.2),
+                        backgroundColor:
+                            FlownetColors.electricBlue.withValues(alpha: 0.2),
                       ),
                       const SizedBox(width: 8),
                       if (_deliverable!['priority'] != null)
@@ -517,7 +476,7 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
           ),
           const SizedBox(height: 16),
         ],
-        
+
         // Report Title
         Text(
           _report!.reportTitle,
@@ -527,7 +486,7 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
               ),
         ),
         const SizedBox(height: 16),
-        
+
         // Report Content
         Card(
           color: FlownetColors.graphiteGray,
@@ -571,9 +530,10 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
             ),
           ),
         ),
-        
+
         // Known Limitations
-        if (_report!.knownLimitations != null && _report!.knownLimitations!.isNotEmpty) ...[
+        if (_report!.knownLimitations != null &&
+            _report!.knownLimitations!.isNotEmpty) ...[
           const SizedBox(height: 16),
           Card(
             color: FlownetColors.graphiteGray,
@@ -606,7 +566,7 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
             ),
           ),
         ],
-        
+
         // Next Steps
         if (_report!.nextSteps != null && _report!.nextSteps!.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -619,7 +579,8 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.arrow_forward, color: FlownetColors.electricBlue),
+                      Icon(Icons.arrow_forward,
+                          color: FlownetColors.electricBlue),
                       SizedBox(width: 8),
                       Text(
                         'Next Steps',
@@ -641,7 +602,7 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
             ),
           ),
         ],
-        
+
         // Previous Reviews
         if (_reviews.isNotEmpty) ...[
           const SizedBox(height: 24),
@@ -654,45 +615,56 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
             ),
           ),
           const SizedBox(height: 12),
-          ..._reviews.map((review) => Card(
-                color: FlownetColors.graphiteGray,
-                child: ListTile(
-                  leading: Icon(
-                    review['status'] == 'approved' ? Icons.check_circle : Icons.edit,
-                    color: review['status'] == 'approved' 
-                        ? Colors.green 
-                        : Colors.orange,
-                  ),
-                  title: Text(
-                    (review['reviewerName'] ?? review['reviewer_name'] ?? review['reviewer'])?.toString() ?? 'Unknown Reviewer',
-                    style: const TextStyle(color: FlownetColors.pureWhite),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        review['status'] == 'approved' ? 'Approved' : 'Requested Changes',
-                        style: TextStyle(
-                          color: review['status'] == 'approved' 
-                              ? Colors.green 
-                              : Colors.orange,
-                        ),
-                      ),
-                      if (review['feedback'] != null)
-                        Text(
-                          review['feedback'] as String,
-                          style: const TextStyle(color: FlownetColors.coolGray),
-                        ),
-                    ],
-                  ),
-                  trailing: review['approved_at'] != null
-                      ? Text(
-                          _formatDate(DateTime.parse(review['approved_at'])),
-                          style: const TextStyle(color: FlownetColors.coolGray, fontSize: 12),
-                        )
-                      : null,
+          ..._reviews.map(
+            (review) => Card(
+              color: FlownetColors.graphiteGray,
+              child: ListTile(
+                leading: Icon(
+                  review['status'] == 'approved'
+                      ? Icons.check_circle
+                      : Icons.edit,
+                  color: review['status'] == 'approved'
+                      ? Colors.green
+                      : Colors.orange,
                 ),
-              ),),
+                title: Text(
+                  (review['reviewerName'] ??
+                              review['reviewer_name'] ??
+                              review['reviewer'])
+                          ?.toString() ??
+                      'Unknown Reviewer',
+                  style: const TextStyle(color: FlownetColors.pureWhite),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      review['status'] == 'approved'
+                          ? 'Approved'
+                          : 'Requested Changes',
+                      style: TextStyle(
+                        color: review['status'] == 'approved'
+                            ? Colors.green
+                            : Colors.orange,
+                      ),
+                    ),
+                    if (review['feedback'] != null)
+                      Text(
+                        review['feedback'] as String,
+                        style: const TextStyle(color: FlownetColors.coolGray),
+                      ),
+                  ],
+                ),
+                trailing: review['approved_at'] != null
+                    ? Text(
+                        _formatDate(DateTime.parse(review['approved_at'])),
+                        style: const TextStyle(
+                            color: FlownetColors.coolGray, fontSize: 12),
+                      )
+                    : null,
+              ),
+            ),
+          ),
         ],
       ],
     );
@@ -745,9 +717,12 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildReportDisplay(),
-                  
+
                   // Review Section (only if can review and not already approved)
-                  if (canReview && !isApproved && (_report?.status == ReportStatus.submitted || _report?.status == ReportStatus.underReview)) ...[
+                  if (canReview &&
+                      !isApproved &&
+                      (_report?.status == ReportStatus.submitted ||
+                          _report?.status == ReportStatus.underReview)) ...[
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
@@ -765,7 +740,7 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                             ),
                           ),
                           const SizedBox(height: 16),
-                          
+
                           // Action Selection
                           SegmentedButton<String>(
                             segments: const [
@@ -780,11 +755,15 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                                 icon: Icon(Icons.edit_note),
                               ),
                             ],
-                            selected: <String>{if (_selectedAction != null) _selectedAction!},
+                            selected: <String>{
+                              if (_selectedAction != null) _selectedAction!
+                            },
                             emptySelectionAllowed: true,
                             onSelectionChanged: (Set<String> newSelection) {
                               setState(() {
-                                _selectedAction = newSelection.isEmpty ? null : newSelection.first;
+                                _selectedAction = newSelection.isEmpty
+                                    ? null
+                                    : newSelection.first;
                               });
                             },
                             style: SegmentedButton.styleFrom(
@@ -792,7 +771,7 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                               foregroundColor: FlownetColors.coolGray,
                             ),
                           ),
-                          
+
                           // Comment (for approval)
                           if (_selectedAction == 'approve') ...[
                             const SizedBox(height: 16),
@@ -809,45 +788,55 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton.icon(
-                                onPressed: _isSubmitting ? null : _generateCommentSuggestion,
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : _generateCommentSuggestion,
                                 icon: const Icon(Icons.auto_awesome),
                                 label: const Text('Suggest with AI'),
                               ),
                             ),
                             const SizedBox(height: 24),
-                          if (_docuSignEnabled) ...[
-                            const SizedBox(height: 8),
-                            SwitchListTile(
-                              value: _useDocuSign,
-                              onChanged: (v) => setState(() => _useDocuSign = v),
-                              title: const Text('Use DocuSign (Certified)'),
-                              subtitle: const Text('Send a DocuSign envelope to signer email'),
-                              activeThumbColor: FlownetColors.electricBlue,
-                            ),
-                            if (_useDocuSign) ...[
+                            if (_docuSignEnabled) ...[
                               const SizedBox(height: 8),
-                              TextFormField(
-                                decoration: const InputDecoration(
-                                  labelText: 'Signer Email',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.email),
-                                ),
-                                onChanged: (v) => _signerEmail = v,
+                              SwitchListTile(
+                                value: _useDocuSign,
+                                onChanged: (v) =>
+                                    setState(() => _useDocuSign = v),
+                                title: const Text('Use DocuSign (Certified)'),
+                                subtitle: const Text(
+                                    'Send a DocuSign envelope to signer email'),
+                                activeThumbColor: FlownetColors.electricBlue,
                               ),
+                              if (_useDocuSign) ...[
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  decoration: const InputDecoration(
+                                    labelText: 'Signer Email',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(Icons.email),
+                                  ),
+                                  onChanged: (v) => _signerEmail = v,
+                                ),
+                              ] else ...[
+                                SignatureCaptureWidget(
+                                  key: _signatureKey,
+                                  existingSignature: _report?.digitalSignature,
+                                  allowSignatureReuse: true,
+                                  showAuditInfo: true,
+                                  reportId: _report?.id,
+                                ),
+                              ],
                             ] else ...[
                               SignatureCaptureWidget(
                                 key: _signatureKey,
                                 existingSignature: _report?.digitalSignature,
+                                allowSignatureReuse: true,
+                                showAuditInfo: true,
+                                reportId: _report?.id,
                               ),
                             ],
-                          ] else ...[
-                            SignatureCaptureWidget(
-                              key: _signatureKey,
-                              existingSignature: _report?.digitalSignature,
-                            ),
                           ],
-                          ],
-                          
+
                           // Change Request Details (required for request changes)
                           if (_selectedAction == 'request_changes') ...[
                             const SizedBox(height: 16),
@@ -857,11 +846,12 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                                 labelText: 'Change Request Details *',
                                 border: OutlineInputBorder(),
                                 prefixIcon: Icon(Icons.edit_note),
-                                helperText: 'Please provide clear details about what changes are needed',
+                                helperText:
+                                    'Please provide clear details about what changes are needed',
                               ),
                               maxLines: 6,
                               validator: (value) {
-                                if (_selectedAction == 'request_changes' && 
+                                if (_selectedAction == 'request_changes' &&
                                     (value == null || value.trim().isEmpty)) {
                                   return 'Change request details are required';
                                 }
@@ -872,34 +862,41 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton.icon(
-                                onPressed: _isSubmitting ? null : _generateChangeRequestSuggestion,
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : _generateChangeRequestSuggestion,
                                 icon: const Icon(Icons.auto_awesome),
                                 label: const Text('Suggest with AI'),
                               ),
                             ),
                           ],
-                          
+
                           const SizedBox(height: 24),
-                          
+
                           // Submit Button
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton.icon(
                               onPressed: _isSubmitting ? null : _handleApproval,
-                              icon: Icon(_selectedAction == 'approve' 
-                                  ? Icons.check_circle 
-                                  : Icons.edit_note,),
-                              label: Text(_isSubmitting 
-                                  ? 'Submitting...' 
-                                  : _selectedAction == 'approve' 
-                                      ? 'Approve Report' 
-                                      : 'Request Changes',),
+                              icon: Icon(
+                                _selectedAction == 'approve'
+                                    ? Icons.check_circle
+                                    : Icons.edit_note,
+                              ),
+                              label: Text(
+                                _isSubmitting
+                                    ? 'Submitting...'
+                                    : _selectedAction == 'approve'
+                                        ? 'Approve Report'
+                                        : 'Request Changes',
+                              ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _selectedAction == 'approve'
                                     ? Colors.green
                                     : Colors.orange,
                                 foregroundColor: FlownetColors.pureWhite,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                               ),
                             ),
                           ),
@@ -907,7 +904,7 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                       ),
                     ),
                   ],
-                  
+
                   // Approved Status Banner with Signatures
                   if (isApproved) ...[
                     const SizedBox(height: 32),
@@ -921,18 +918,20 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 32),
+                          Icon(Icons.check_circle,
+                              color: Colors.green, size: 32),
                           SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               'This report has been approved and sealed. No further changes are allowed.',
-                              style: TextStyle(color: Colors.green, fontSize: 16),
+                              style:
+                                  TextStyle(color: Colors.green, fontSize: 16),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    
+
                     // Display all digital signatures
                     if (_signatures.isNotEmpty) ...[
                       const SizedBox(height: 24),
@@ -945,25 +944,30 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                         ),
                       ),
                       const SizedBox(height: 16),
-                      
+
                       // Display each signature
                       ..._signatures.map((sig) {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 16),
                           child: SignatureDisplayWidget(
                             signatureData: sig['signature_data'] as String?,
-                            signerName: sig['signer_name'] as String? ?? 'Unknown',
-                            signerRole: sig['signer_role'] as String? ?? 'unknown',
-                            signedDate: DateTime.parse(sig['signed_at'] as String),
-                            title: _getSignatureTitle(sig['signer_role'] as String?),
+                            signerName:
+                                sig['signer_name'] as String? ?? 'Unknown',
+                            signerRole:
+                                sig['signer_role'] as String? ?? 'unknown',
+                            signedDate:
+                                DateTime.parse(sig['signed_at'] as String),
+                            title: _getSignatureTitle(
+                                sig['signer_role'] as String?),
                             isVerified: sig['is_valid'] as bool? ?? true,
-                            signatureType: sig['signature_type'] as String? ?? 'manual',
+                            signatureType:
+                                sig['signature_type'] as String? ?? 'manual',
                           ),
                         );
                       }),
                     ],
                   ],
-                  
+
                   // Change Requested Status
                   if (_report?.status == ReportStatus.changeRequested) ...[
                     const SizedBox(height: 32),
@@ -980,7 +984,8 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                         children: [
                           const Row(
                             children: [
-                              Icon(Icons.edit_note, color: Colors.orange, size: 32),
+                              Icon(Icons.edit_note,
+                                  color: Colors.orange, size: 32),
                               SizedBox(width: 12),
                               Text(
                                 'Changes Requested',
@@ -997,7 +1002,8 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
                             'This report has been reopened for changes. Please review the feedback and update the report accordingly.',
                             style: TextStyle(color: Colors.orange),
                           ),
-                          if (_reviews.isNotEmpty && _reviews.last['feedback'] != null) ...[
+                          if (_reviews.isNotEmpty &&
+                              _reviews.last['feedback'] != null) ...[
                             const SizedBox(height: 12),
                             Container(
                               padding: const EdgeInsets.all(12),
@@ -1021,4 +1027,3 @@ class _ClientReviewWorkflowScreenState extends ConsumerState<ClientReviewWorkflo
     );
   }
 }
-

@@ -111,12 +111,13 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/deliverables', deliverablesRoutes);
 app.use('/api/v1/sprints', sprintsRoutes);
 app.use('/api/v1/projects', projectsRoutes);
+const { optionalAuthenticateToken } = require('./middleware/auth');
 app.use('/api/v1/signoff', authenticateToken, signoffRoutes);
-app.use('/api/v1/sign-off-reports', authenticateToken, signoffRoutes);
+app.use('/api/v1/sign-off-reports', optionalAuthenticateToken, signoffRoutes);
 const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
-app.use('/api/v1/ai', aiLimiter, aiRoutes);
-app.use('/api/ai', aiLimiter, aiRoutes);
-app.use('/ai', aiLimiter, aiRoutes);
+app.use('/api/v1/ai', authenticateToken, aiLimiter, aiRoutes);
+app.use('/api/ai', authenticateToken, aiLimiter, aiRoutes);
+app.use('/ai', authenticateToken, aiLimiter, aiRoutes);
 app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/profile', profileRoutes);
@@ -308,6 +309,16 @@ async function startServer() {
     if (!syncOk) {
       console.warn('⚠️ Database sync failed; continuing without alter sync');
     }
+
+    try {
+      if (sequelize.getDialect() === 'postgres') {
+        await sequelize.query("ALTER TABLE sprints ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)");
+        await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id UUID");
+        await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by UUID");
+      }
+    } catch (e) {
+      console.warn('⚠️ Unable to ensure sprints.created_by column; continuing', e?.message || e);
+    }
     
     // Sync database (use with caution in production)
     if (process.env.NODE_ENV === 'development') {
@@ -337,12 +348,14 @@ async function startServer() {
       const dbConnectionString = process.env.DATABASE_URL;
       if (dbConnectionString) {
         databaseNotificationService.initialize(dbConnectionString)
-          .then(() => {
-            console.log('✅ Database notification service initialized');
-            
-            // Integrate socket service with database notification service
-            databaseNotificationService.setSocketService(socketService);
-            console.log('✅ Real-time services integrated successfully');
+          .then((ok) => {
+            if (ok) {
+              console.log('✅ Database notification service initialized');
+              databaseNotificationService.setSocketService(socketService);
+              console.log('✅ Real-time services integrated successfully');
+            } else {
+              console.warn('⚠️ Database notification service unavailable; continuing without LISTEN/NOTIFY');
+            }
           })
           .catch(error => {
             console.error('❌ Failed to initialize database notification service:', error);
@@ -363,12 +376,12 @@ async function startServer() {
   console.log(`🔗 API v1 endpoints: http://localhost:${PORT}/api/v1/`);
       console.log(`🔌 WebSocket endpoint: ws://localhost:${PORT}`);
       console.log(`🔧 IoT enabled: ${String(process.env.IOT_ENABLED || '').toLowerCase() === 'true'}`);
-      const hasOpenAI = !!process.env.OPENAI_API_KEY;
-      console.log(hasOpenAI ? '✅ OpenAI API key detected' : '⚠️ OpenAI API key missing');
-      if (hasOpenAI) {
+      const hasOpenRouter = !!(process.env.OPENROUTER_API_KEY || process.env.OpenRouter_API_KEY);
+      console.log(hasOpenRouter ? '✅ OpenRouter API key detected' : '⚠️ OpenRouter API key missing');
+      if (hasOpenRouter) {
         console.log(`🤖 AI chat endpoint ready: http://localhost:${PORT}/api/v1/ai/chat`);
       } else {
-        console.warn('AI features disabled until OPENAI_API_KEY is set');
+        console.warn('AI features disabled until OPENROUTER_API_KEY is set');
       }
 
       const schedulerService = require('./services/schedulerService');

@@ -9,6 +9,12 @@ class EmailService {
       auth: {
         user: process.env.SMTP_USER,
         pass: (process.env.SMTP_PASS || '').replace(/\s+/g, '')
+      },
+      connectionTimeout: parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '10000', 10),
+      greetingTimeout: parseInt(process.env.SMTP_GREETING_TIMEOUT_MS || '10000', 10),
+      socketTimeout: parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || '15000', 10),
+      tls: {
+        rejectUnauthorized: false
       }
     });
     this.fromName = process.env.SMTP_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Flownet Workspaces';

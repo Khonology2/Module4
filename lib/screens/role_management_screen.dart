@@ -589,20 +589,27 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Change Role for ${user.name}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: UserRole.values.map((role) {
-            return ListTile(
-              leading: Icon(role.icon, color: role.color),
-              title: Text(role.displayName),
-              subtitle: Text(role.description),
-              trailing: user.role == role ? const Icon(Icons.check) : null,
-              onTap: () {
-                Navigator.of(context).pop();
-                _changeUserRole(user, role);
-              },
-            );
-          }).toList(),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.6,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: UserRole.values.map((role) {
+                return ListTile(
+                  leading: Icon(role.icon, color: role.color),
+                  title: Text(role.displayName),
+                  subtitle: Text(role.description),
+                  trailing: user.role == role ? const Icon(Icons.check) : null,
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _changeUserRole(user, role);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
         ),
         actions: [
           TextButton(

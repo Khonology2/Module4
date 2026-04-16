@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/notification_item.dart';
 import '../services/notification_service.dart';
 import '../services/auth_service.dart';
+import '../services/realtime_service.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/app_scaffold.dart';
 import 'notification_detail_screen.dart';
@@ -11,19 +12,53 @@ class EnhancedNotificationsScreen extends ConsumerStatefulWidget {
   const EnhancedNotificationsScreen({super.key});
 
   @override
-  ConsumerState<EnhancedNotificationsScreen> createState() => _EnhancedNotificationsScreenState();
+  ConsumerState<EnhancedNotificationsScreen> createState() =>
+      _EnhancedNotificationsScreenState();
 }
 
-class _EnhancedNotificationsScreenState extends ConsumerState<EnhancedNotificationsScreen> {
+class _EnhancedNotificationsScreenState
+    extends ConsumerState<EnhancedNotificationsScreen> {
   final NotificationService _notificationService = NotificationService();
   final AuthService _authService = AuthService();
+  final RealtimeService _realtime = RealtimeService();
   List<NotificationItem> _notifications = [];
   bool _isLoading = true;
+  late Function(dynamic) _notificationListener;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
     _loadNotifications();
+    _setupRealtimeListener();
+  }
+
+  void _setupRealtimeListener() {
+    // Initialize realtime service with auth token
+    final token = _authService.accessToken;
+    if (token != null) {
+      _realtime.initialize(authToken: token);
+    }
+
+    _notificationListener = (data) {
+      if (_disposed) return;
+
+      debugPrint('🔔 Notification screen received: $data');
+
+      // Handle new notifications
+      if (data is Map && (data['id'] != null || data['notification'] != null)) {
+        _loadNotifications(); // Refresh the list
+      }
+
+      // Handle notification count updates
+      if (data is Map && data['unreadCount'] != null) {
+        // This will be handled by the NotificationCenterWidget
+        return;
+      }
+    };
+
+    _realtime.on('notification_received', _notificationListener);
+    _realtime.on('notifications_updated', _notificationListener);
   }
 
   Future<void> _loadNotifications() async {
@@ -46,6 +81,14 @@ class _EnhancedNotificationsScreenState extends ConsumerState<EnhancedNotificati
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _realtime.off('notification_received', _notificationListener);
+    _realtime.off('notifications_updated', _notificationListener);
+    super.dispose();
   }
 
   @override
@@ -110,7 +153,6 @@ class _EnhancedNotificationsScreenState extends ConsumerState<EnhancedNotificati
               ? FlownetColors.graphiteGray
               : FlownetColors.slate)
           .withAlpha((0.65 * 255).toInt()),
-
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: _getNotificationTypeColor(notification.type),
@@ -123,7 +165,8 @@ class _EnhancedNotificationsScreenState extends ConsumerState<EnhancedNotificati
         title: Text(
           notification.title,
           style: TextStyle(
-            fontWeight: notification.isRead ? FontWeight.normal : FontWeight.bold,
+            fontWeight:
+                notification.isRead ? FontWeight.normal : FontWeight.bold,
             color: FlownetColors.pureWhite,
           ),
         ),
@@ -152,7 +195,8 @@ class _EnhancedNotificationsScreenState extends ConsumerState<EnhancedNotificati
         trailing: notification.isRead
             ? null
             : IconButton(
-                icon: const Icon(Icons.mark_email_read, color: FlownetColors.electricBlue),
+                icon: const Icon(Icons.mark_email_read,
+                    color: FlownetColors.electricBlue),
                 onPressed: () => _markAsRead(notification.id),
                 tooltip: 'Mark as read',
               ),
@@ -165,7 +209,7 @@ class _EnhancedNotificationsScreenState extends ConsumerState<EnhancedNotificati
   Widget _buildSummaryCards() {
     final unreadCount = _notifications.where((n) => !n.isRead).length;
     final totalCount = _notifications.length;
-    
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
@@ -196,7 +240,6 @@ class _EnhancedNotificationsScreenState extends ConsumerState<EnhancedNotificati
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: color.withAlpha((0.55 * 255).toInt()),
-
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -293,7 +336,7 @@ class _EnhancedNotificationsScreenState extends ConsumerState<EnhancedNotificati
         _notifications[index] = _notifications[index].copyWith(isRead: true);
       }
     });
-try {
+    try {
       final token = _authService.accessToken;
       if (token != null) {
         _notificationService.setAuthToken(token);
@@ -308,7 +351,8 @@ try {
   Future<void> _markAllAsRead() async {
     // Optimistic update
     setState(() {
-      _notifications = _notifications.map((n) => n.copyWith(isRead: true)).toList();
+      _notifications =
+          _notifications.map((n) => n.copyWith(isRead: true)).toList();
     });
 
     try {
@@ -349,7 +393,8 @@ try {
     final wasRead = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => NotificationDetailScreen(notification: notification),
+        builder: (context) =>
+            NotificationDetailScreen(notification: notification),
       ),
     );
 

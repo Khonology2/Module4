@@ -60,7 +60,8 @@ class RealtimeService {
       _socket = io.io(
         baseHost,
         io.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
+          .setPath('/socket.io/')
           .disableAutoConnect() // Don't auto-connect, we'll connect manually
           .setAuth({'token': token})
           .setExtraHeaders({'Authorization': 'Bearer $token'})

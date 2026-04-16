@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/date_utils.dart' as app_date_utils;
 import 'package:go_router/go_router.dart';
 import '../models/epic.dart';
 import '../services/epic_service.dart';
@@ -312,7 +313,7 @@ class _EpicManagementScreenState extends State<EpicManagementScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
+    return app_date_utils.DateUtils.formatDate(date);
   }
 
   Color _getStatusColor(String status) {

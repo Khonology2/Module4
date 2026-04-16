@@ -55,7 +55,8 @@ class ProjectMember {
         (e) => e.name == json['role']?.toString(),
         orElse: () => ProjectRole.viewer,
       ),
-      assignedAt: DateTime.parse(json['assignedAt']?.toString() ?? DateTime.now().toIso8601String()),
+      assignedAt: DateTime.parse(
+          json['assignedAt']?.toString() ?? DateTime.now().toIso8601String()),
     );
   }
 }
@@ -66,6 +67,7 @@ class Project {
   final String key;
   final String description;
   final String? clientName;
+  final String? clientOwnerName;
   final ProjectStatus status;
   final ProjectPriority priority;
   final String projectType;
@@ -88,6 +90,7 @@ class Project {
     required this.key,
     required this.description,
     this.clientName,
+    this.clientOwnerName,
     required this.status,
     required this.priority,
     required this.projectType,
@@ -111,6 +114,7 @@ class Project {
     String? key,
     String? description,
     String? clientName,
+    String? clientOwnerName,
     ProjectStatus? status,
     ProjectPriority? priority,
     String? projectType,
@@ -133,6 +137,7 @@ class Project {
       key: key ?? this.key,
       description: description ?? this.description,
       clientName: clientName ?? this.clientName,
+      clientOwnerName: clientOwnerName ?? this.clientOwnerName,
       status: status ?? this.status,
       priority: priority ?? this.priority,
       projectType: projectType ?? this.projectType,
@@ -159,6 +164,8 @@ class Project {
       'description': description,
       'clientName': clientName,
       'client_name': clientName,
+      'clientOwnerName': clientOwnerName,
+      'client_owner_name': clientOwnerName,
       'status': status.name,
       'priority': priority.name,
       'projectType': projectType,
@@ -199,17 +206,23 @@ class Project {
       return [];
     }
 
-    final startStr = asString(json['startDate']) ?? asString(json['start_date']);
+    final startStr =
+        asString(json['startDate']) ?? asString(json['start_date']);
     final endStr = asString(json['endDate']) ?? asString(json['end_date']);
-    final createdAtStr = asString(json['createdAt']) ?? asString(json['created_at']);
-    final updatedAtStr = asString(json['updatedAt']) ?? asString(json['updated_at']);
+    final createdAtStr =
+        asString(json['createdAt']) ?? asString(json['created_at']);
+    final updatedAtStr =
+        asString(json['updatedAt']) ?? asString(json['updated_at']);
 
     return Project(
       id: asString(json['id']) ?? '',
       name: asString(json['name']) ?? '',
-      key: asString(json['key'] ?? json['projectKey'] ?? json['project_key']) ?? '',
+      key: asString(json['key'] ?? json['projectKey'] ?? json['project_key']) ??
+          '',
       description: asString(json['description']) ?? '',
       clientName: asString(json['clientName'] ?? json['client_name']),
+      clientOwnerName:
+          asString(json['clientOwnerName'] ?? json['client_owner_name']),
       status: ProjectStatus.values.firstWhere(
         (e) => e.name == asString(json['status']),
         orElse: () => ProjectStatus.planning,
@@ -218,17 +231,20 @@ class Project {
         (e) => e.name == asString(json['priority']),
         orElse: () => ProjectPriority.medium,
       ),
-      projectType: asString(json['projectType'] ?? json['project_type']) ?? 'software',
+      projectType:
+          asString(json['projectType'] ?? json['project_type']) ?? 'software',
       startDate: startStr != null && startStr.isNotEmpty
           ? DateTime.parse(startStr)
           : DateTime.now(),
-      endDate: endStr != null && endStr.isNotEmpty ? DateTime.parse(endStr) : null,
+      endDate:
+          endStr != null && endStr.isNotEmpty ? DateTime.parse(endStr) : null,
       tags: asStringList(json['tags']),
       members: (json['members'] as List<dynamic>?)
               ?.map((m) => ProjectMember.fromJson(Map<String, dynamic>.from(m)))
               .toList() ??
           [],
-      deliverableIds: asStringList(json['deliverableIds'] ?? json['deliverable_ids']),
+      deliverableIds:
+          asStringList(json['deliverableIds'] ?? json['deliverable_ids']),
       sprintIds: asStringList(json['sprintIds'] ?? json['sprint_ids']),
       createdBy: asString(json['createdBy'] ?? json['created_by']) ?? '',
       createdAt: createdAtStr != null && createdAtStr.isNotEmpty
@@ -309,7 +325,8 @@ class Project {
 
   bool get isOverdue {
     if (endDate == null) return false;
-    return DateTime.now().isAfter(endDate!) && status != ProjectStatus.completed;
+    return DateTime.now().isAfter(endDate!) &&
+        status != ProjectStatus.completed;
   }
 
   int get daysUntilEnd {
@@ -345,6 +362,15 @@ class Project {
     } catch (e) {
       return null;
     }
+  }
+
+  String get formattedEndDate {
+    if (endDate == null) return 'No end date';
+    return '${endDate!.day.toString().padLeft(2, '0')}/${endDate!.month.toString().padLeft(2, '0')}/${endDate!.year}';
+  }
+
+  String get formattedStartDate {
+    return '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year}';
   }
 
   Map<String, dynamic> get auditMetadata {

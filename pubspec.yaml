@@ -72,7 +72,7 @@ dependencies:
   
   # Email
   mailer: ^6.0.1
-  firebase_core: ^4.1.1
+  firebase_core: ^2.24.2
   http: ^1.5.0
   http_parser: ^4.1.2
   web_socket_channel: ^2.4.0
@@ -94,14 +94,12 @@ flutter:
 
   
   assets:
-    - assets/Icons/khono_bg.png  # Background image
-    - assets/Icons/khono.png
-    - assets/Icons/logo.png
-    - assets/logo.png
-    - assets/fonts/
-    - assets/Icons/Red_Khono_Discs.png
-    - assets/Icons/images/auth_background.png
+    - assets/Icons/
     - assets/icons/
+    - "assets/Icons/Project Management/Project Management_Red.png"
+    - "assets/Icons/Project Management/Project Management_White.png"
+    - assets/fonts/
+    - assets/logo.png
 
   fonts:
     - family: Poppins

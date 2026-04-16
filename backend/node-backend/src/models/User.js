@@ -85,6 +85,22 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: 'sender_id',
       as: 'notifications_sent'
     });
+
+    // Project associations
+    User.hasMany(models.Project, {
+      foreignKey: 'owner_id',
+      as: 'owned_projects'
+    });
+
+    User.hasMany(models.Project, {
+      foreignKey: 'created_by',
+      as: 'created_projects'
+    });
+
+    User.hasMany(models.ProjectMember, {
+      foreignKey: 'user_id',
+      as: 'project_memberships'
+    });
   };
 
   // Real-time event hooks

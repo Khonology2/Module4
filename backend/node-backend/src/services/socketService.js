@@ -598,6 +598,13 @@ class SocketService {
     });
   }
 
+  sendToRole(role, event, data) {
+    this.io.to(`role:${role}`).emit(event, {
+      ...data,
+      timestamp: new Date()
+    });
+  }
+
   broadcastToAll(event, data) {
     this.io.emit(event, {
       ...data,

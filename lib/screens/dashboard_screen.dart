@@ -8,7 +8,10 @@ import '../widgets/sprint_performance_chart.dart';
 import '../providers/dashboard_provider.dart';
 import '../widgets/notification_center_widget.dart';
 import '../services/backend_api_service.dart';
+import '../services/auth_service.dart';
 import '../widgets/app_modal.dart';
+import '../models/user.dart';
+import '../models/user_role.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -18,28 +21,74 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  User? _currentUser;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardNotifierProvider.notifier).loadDashboardData();
+      _loadCurrentUser();
     });
+  }
+
+  Future<void> _loadCurrentUser() async {
+    try {
+      debugPrint('=== Loading current user for dashboard ===');
+      final user = AuthService().currentUser;
+      debugPrint(
+          'AuthService().currentUser: ${user?.name}, role: ${user?.role.displayName}');
+
+      if (user != null) {
+        setState(() {
+          _currentUser = user;
+        });
+        debugPrint(
+            '✅ User loaded successfully: ${user.name}, Role: ${user.role.displayName}');
+      } else {
+        debugPrint('❌ User is null, attempting to refresh...');
+        // Try to refresh the user
+        await AuthService().refreshCurrentUser();
+        final refreshedUser = AuthService().currentUser;
+        debugPrint(
+            'After refresh - user: ${refreshedUser?.name}, role: ${refreshedUser?.role.displayName}');
+
+        if (refreshedUser != null) {
+          setState(() {
+            _currentUser = refreshedUser;
+          });
+          debugPrint(
+              '✅ User refreshed successfully: ${refreshedUser.name}, Role: ${refreshedUser.role.displayName}');
+        } else {
+          debugPrint('❌ Failed to load user after refresh');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading current user: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final dashboardState = ref.watch(dashboardNotifierProvider);
+    final canCreate = AuthService().canCreateDeliverable();
+    debugPrint(
+        '🏗️ Building dashboard - _currentUser: ${_currentUser?.name}, title: ${_currentUser != null ? '${_currentUser!.role.displayName} Dashboard' : 'Flow-Space Dashboard'}');
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Flow-Space Dashboard'),
+        title: Text(_currentUser != null
+            ? '${_currentUser!.role.displayName} Dashboard'
+            : 'Flow-Space Dashboard'),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_task),
-            onPressed: () => context.go('/deliverable-setup'),
-            tooltip: 'Create Deliverable',
-          ),
+          if (canCreate)
+            IconButton(
+              icon: const Icon(Icons.add_task),
+              onPressed: () => context.go('/deliverable-setup'),
+              tooltip: 'Create Deliverable',
+            ),
           IconButton(
             icon: const Icon(Icons.folder),
             onPressed: () => context.go('/projects'),
@@ -113,13 +162,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ],
                   ),
                 ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          _showCreateDeliverableDialog();
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('New Deliverable'),
-      ),
+      floatingActionButton: canCreate
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                _showCreateDeliverableDialog();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('New Deliverable'),
+            )
+          : null,
     );
   }
 

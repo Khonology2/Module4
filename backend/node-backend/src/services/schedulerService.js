@@ -2,6 +2,25 @@ const { sequelize, User, Notification, ApprovalRequest, Project } = require('../
 const { QueryTypes, Op } = require('sequelize');
 
 class SchedulerService {
+  async ensureSignOffReportsTable() {
+    try {
+      await sequelize.query(
+        "CREATE TABLE IF NOT EXISTS sign_off_reports (\n" +
+          "  id SERIAL PRIMARY KEY,\n" +
+          "  deliverable_id VARCHAR(255),\n" +
+          "  created_by VARCHAR(255),\n" +
+          "  status VARCHAR(50) DEFAULT 'draft',\n" +
+          "  content JSONB,\n" +
+          "  created_at TIMESTAMP DEFAULT NOW(),\n" +
+          "  updated_at TIMESTAMP DEFAULT NOW()\n" +
+          ")"
+      );
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /**
    * Run all scheduled tasks (Reminders & Escalations)
    * Can be called by the automated scheduler or manually via API
@@ -18,10 +37,13 @@ class SchedulerService {
 
     try {
       // --- 1. Reminders for Reports ---
-      const dueReports = await sequelize.query(
-        "SELECT id, created_by, status, content, updated_at FROM sign_off_reports WHERE status = 'submitted' AND updated_at <= NOW() - INTERVAL '1 day'",
-        { type: QueryTypes.SELECT }
-      );
+      const reportsTableReady = await this.ensureSignOffReportsTable();
+      const dueReports = reportsTableReady
+        ? await sequelize.query(
+            "SELECT id, created_by, status, content, updated_at FROM sign_off_reports WHERE status = 'submitted' AND updated_at <= NOW() - INTERVAL '1 day'",
+            { type: QueryTypes.SELECT }
+          )
+        : [];
 
       const clientReviewers = await User.findAll({ where: { role: { [Op.in]: ['clientReviewer', 'ClientReviewer', 'clientreviewer'] }, is_active: true } });
       
@@ -156,10 +178,12 @@ class SchedulerService {
       const interval = `INTERVAL '${timeoutHours} hours'`;
       
       // Escalation: Reports
-      const stalledReports = await sequelize.query(
-        `SELECT id, created_by, status, content, updated_at FROM sign_off_reports WHERE status = 'submitted' AND updated_at <= NOW() - ${interval}`,
-        { type: QueryTypes.SELECT }
-      );
+      const stalledReports = reportsTableReady
+        ? await sequelize.query(
+            `SELECT id, created_by, status, content, updated_at FROM sign_off_reports WHERE status = 'submitted' AND updated_at <= NOW() - ${interval}`,
+            { type: QueryTypes.SELECT }
+          )
+        : [];
 
       // Escalation: Approvals
       let stalledApprovals = [];

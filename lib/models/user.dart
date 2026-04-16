@@ -92,6 +92,9 @@ class User {
           displayName = '$firstName $lastName'.trim();
         }
       }
+      if (displayName.isEmpty) {
+        displayName = json['email']?.toString() ?? '';
+      }
 
       // Handle role mapping
        final roleStr = json['role']?.toString().toLowerCase().replaceAll(RegExp(r'[\s_-]'), '') ?? '';
@@ -158,6 +161,7 @@ class User {
   bool get isClient => role == UserRole.client;
   bool get isClientReviewer => role == UserRole.clientReviewer;
   bool get isSystemAdmin => role == UserRole.systemAdmin;
+  bool get isStakeholder => role == UserRole.stakeholder;
 
   // UI helper methods
   String get roleDisplayName => role.displayName;

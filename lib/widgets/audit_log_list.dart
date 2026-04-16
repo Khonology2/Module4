@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/audit_log_entry.dart';
+import '../utils/date_utils.dart' as app_date_utils;
 
 class AuditLogList extends StatelessWidget {
   final List<AuditLogEntry> logs;
@@ -164,6 +165,6 @@ class AuditLogList extends StatelessWidget {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    return app_date_utils.DateUtils.formatDateTime(date);
   }
 }

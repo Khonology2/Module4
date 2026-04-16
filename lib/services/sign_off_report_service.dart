@@ -26,15 +26,17 @@ class SignOffReportService {
         return ApiResponse.error('Not authenticated');
       }
 
-      final uri = Uri.parse(_baseUrl).replace(queryParameters: {
-        if (status != null) 'status': status,
-        if (search != null) 'search': search,
-        if (deliverableId != null) 'deliverableId': deliverableId,
-        if (projectId != null) 'projectId': projectId,
-        if (sprintId != null) 'sprintId': sprintId,
-        if (from != null) 'from': from,
-        if (to != null) 'to': to,
-      },);
+      final uri = Uri.parse(_baseUrl).replace(
+        queryParameters: {
+          if (status != null) 'status': status,
+          if (search != null) 'search': search,
+          if (deliverableId != null) 'deliverableId': deliverableId,
+          if (projectId != null) 'projectId': projectId,
+          if (sprintId != null) 'sprintId': sprintId,
+          if (from != null) 'from': from,
+          if (to != null) 'to': to,
+        },
+      );
 
       final response = await http.get(
         uri,
@@ -46,7 +48,8 @@ class SignOffReportService {
 
       // Check if response is HTML (error pages) instead of JSON
       final contentType = response.headers['content-type'] ?? '';
-      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
+      if (contentType.contains('text/html') ||
+          response.body.trim().startsWith('<!DOCTYPE')) {
         String errorMsg = 'Server returned HTML instead of JSON';
         if (response.statusCode == 404) {
           errorMsg = 'Endpoint not found (404). Check the API endpoint path.';
@@ -70,11 +73,18 @@ class SignOffReportService {
         try {
           final decoded = jsonDecode(response.body);
           if (decoded is Map<String, dynamic>) {
-            return ApiResponse.error(decoded['error'] ?? decoded['message'] ?? 'Failed to load sign-off reports', response.statusCode);
+            return ApiResponse.error(
+                decoded['error'] ??
+                    decoded['message'] ??
+                    'Failed to load sign-off reports',
+                response.statusCode);
           }
-          return ApiResponse.error('Failed to load sign-off reports', response.statusCode);
+          return ApiResponse.error(
+              'Failed to load sign-off reports', response.statusCode);
         } catch (e) {
-          return ApiResponse.error('Failed to load sign-off reports (${response.statusCode})', response.statusCode);
+          return ApiResponse.error(
+              'Failed to load sign-off reports (${response.statusCode})',
+              response.statusCode);
         }
       }
     } catch (e) {
@@ -156,7 +166,8 @@ class SignOffReportService {
 
       // Check if response is HTML (error pages) instead of JSON
       final contentType = response.headers['content-type'] ?? '';
-      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
+      if (contentType.contains('text/html') ||
+          response.body.trim().startsWith('<!DOCTYPE')) {
         String errorMsg = 'Server returned HTML instead of JSON';
         if (response.statusCode == 404) {
           errorMsg = 'Report not found (404)';
@@ -174,9 +185,15 @@ class SignOffReportService {
       } else {
         try {
           final data = jsonDecode(response.body);
-          return ApiResponse.error(data['error'] ?? data['message'] ?? 'Failed to load sign-off report', response.statusCode);
+          return ApiResponse.error(
+              data['error'] ??
+                  data['message'] ??
+                  'Failed to load sign-off report',
+              response.statusCode);
         } catch (e) {
-          return ApiResponse.error('Failed to load sign-off report (${response.statusCode})', response.statusCode);
+          return ApiResponse.error(
+              'Failed to load sign-off report (${response.statusCode})',
+              response.statusCode);
         }
       }
     } catch (e) {
@@ -202,7 +219,8 @@ class SignOffReportService {
 
       // Check if response is HTML (error pages) instead of JSON
       final contentType = response.headers['content-type'] ?? '';
-      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
+      if (contentType.contains('text/html') ||
+          response.body.trim().startsWith('<!DOCTYPE')) {
         String errorMsg = 'Server returned HTML instead of JSON';
         if (response.statusCode == 404) {
           errorMsg = 'Audit history not found (404)';
@@ -214,16 +232,23 @@ class SignOffReportService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        final auditData = (decoded is Map<String, dynamic> && decoded.containsKey('data'))
-            ? decoded['data']
-            : decoded;
+        final auditData =
+            (decoded is Map<String, dynamic> && decoded.containsKey('data'))
+                ? decoded['data']
+                : decoded;
         return ApiResponse.success({'audit': auditData}, response.statusCode);
       } else {
         try {
           final data = jsonDecode(response.body);
-          return ApiResponse.error(data['error'] ?? data['message'] ?? 'Failed to load audit history', response.statusCode);
+          return ApiResponse.error(
+              data['error'] ??
+                  data['message'] ??
+                  'Failed to load audit history',
+              response.statusCode);
         } catch (e) {
-          return ApiResponse.error('Failed to load audit history (${response.statusCode})', response.statusCode);
+          return ApiResponse.error(
+              'Failed to load audit history (${response.statusCode})',
+              response.statusCode);
         }
       }
     } catch (e) {
@@ -260,7 +285,8 @@ class SignOffReportService {
   }
 
   // Approve report
-  Future<ApiResponse> approveReport(String reportId, {String? comment, String? digitalSignature}) async {
+  Future<ApiResponse> approveReport(String reportId,
+      {String? comment, String? digitalSignature}) async {
     try {
       final token = _authService.accessToken;
       if (token == null) {
@@ -348,7 +374,8 @@ class SignOffReportService {
   }
 
   // Request changes
-  Future<ApiResponse> requestChanges(String reportId, String changeRequestDetails) async {
+  Future<ApiResponse> requestChanges(
+      String reportId, String changeRequestDetails) async {
     try {
       final token = _authService.accessToken;
       if (token == null) {
@@ -405,7 +432,8 @@ class SignOffReportService {
           'reportTitle': reportTitle,
           'reportContent': reportContent,
           if (sprintIds != null) 'sprintIds': sprintIds,
-          if (sprintPerformanceData != null) 'sprintPerformanceData': sprintPerformanceData,
+          if (sprintPerformanceData != null)
+            'sprintPerformanceData': sprintPerformanceData,
           if (knownLimitations != null) 'knownLimitations': knownLimitations,
           if (nextSteps != null) 'nextSteps': nextSteps,
         }),
@@ -413,7 +441,8 @@ class SignOffReportService {
 
       // Check if response is HTML (error pages) instead of JSON
       final contentType = response.headers['content-type'] ?? '';
-      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
+      if (contentType.contains('text/html') ||
+          response.body.trim().startsWith('<!DOCTYPE')) {
         String errorMsg = 'Server returned HTML instead of JSON';
         if (response.statusCode == 404) {
           errorMsg = 'Endpoint not found (404). Check the API endpoint path.';
@@ -429,9 +458,15 @@ class SignOffReportService {
       } else {
         try {
           final data = jsonDecode(response.body);
-          return ApiResponse.error(data['error'] ?? data['message'] ?? 'Failed to create sign-off report', response.statusCode);
+          return ApiResponse.error(
+              data['error'] ??
+                  data['message'] ??
+                  'Failed to create sign-off report',
+              response.statusCode);
         } catch (e) {
-          return ApiResponse.error('Failed to create sign-off report (${response.statusCode})', response.statusCode);
+          return ApiResponse.error(
+              'Failed to create sign-off report (${response.statusCode})',
+              response.statusCode);
         }
       }
     } catch (e) {
@@ -465,7 +500,8 @@ class SignOffReportService {
           if (reportTitle != null) 'reportTitle': reportTitle,
           if (reportContent != null) 'reportContent': reportContent,
           if (sprintIds != null) 'sprintIds': sprintIds,
-          if (sprintPerformanceData != null) 'sprintPerformanceData': sprintPerformanceData,
+          if (sprintPerformanceData != null)
+            'sprintPerformanceData': sprintPerformanceData,
           if (knownLimitations != null) 'knownLimitations': knownLimitations,
           if (nextSteps != null) 'nextSteps': nextSteps,
         }),
@@ -476,11 +512,11 @@ class SignOffReportService {
         return ApiResponse.success(data, response.statusCode);
       } else {
         final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to update sign-off report');
+        return ApiResponse.error(
+            data['error'] ?? 'Failed to update sign-off report');
       }
     } catch (e) {
       return ApiResponse.error('Error updating sign-off report: $e');
     }
   }
 }
-

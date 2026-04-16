@@ -74,6 +74,7 @@ class Deliverable {
   final DateTime? approvedAt;
   final String? approvedBy;
   final String? submittedBy;
+  final String? submittedByName;
   final DateTime? submittedAt;
   final String? assignedTo;
   final String? assignedToName;
@@ -102,6 +103,7 @@ class Deliverable {
     this.approvedAt,
     this.approvedBy,
     this.submittedBy,
+    this.submittedByName,
     this.submittedAt,
     this.assignedTo,
     this.assignedToName,
@@ -131,6 +133,7 @@ class Deliverable {
     DateTime? approvedAt,
     String? approvedBy,
     String? submittedBy,
+    String? submittedByName,
     DateTime? submittedAt,
     String? assignedTo,
     String? assignedToName,
@@ -158,6 +161,7 @@ class Deliverable {
       approvedAt: approvedAt ?? this.approvedAt,
       approvedBy: approvedBy ?? this.approvedBy,
       submittedBy: submittedBy ?? this.submittedBy,
+      submittedByName: submittedByName ?? this.submittedByName,
       submittedAt: submittedAt ?? this.submittedAt,
       assignedTo: assignedTo ?? this.assignedTo,
       assignedToName: assignedToName ?? this.assignedToName,
@@ -188,6 +192,7 @@ class Deliverable {
       'approvedAt': approvedAt?.toIso8601String(),
       'approvedBy': approvedBy,
       'submittedBy': submittedBy,
+      'submittedByName': submittedByName,
       'submittedAt': submittedAt?.toIso8601String(),
       'assignedTo': assignedTo,
       'assignedToName': assignedToName,
@@ -257,19 +262,39 @@ class Deliverable {
 
     // Handle sprintIds which might come as 'sprintIds' (List) or 'sprint_id' (String)
     List<String> parseSprintIds(Map<String, dynamic> json) {
-      if (json['sprintIds'] != null) {
-        return List<String>.from(json['sprintIds']);
+      final ids = <String>{};
+
+      void add(dynamic v) {
+        final s = v?.toString();
+        if (s != null && s.trim().isNotEmpty) ids.add(s.trim());
       }
-      if (json['sprint_ids'] != null) {
-        return List<String>.from(json['sprint_ids']);
+
+      void addFromList(dynamic v) {
+        if (v is List) {
+          for (final item in v) {
+            add(item);
+          }
+        }
       }
-      if (json['sprint_id'] != null) {
-        return [json['sprint_id'].toString()];
+
+      addFromList(json['sprintIds']);
+      addFromList(json['sprint_ids']);
+
+      add(json['sprint_id']);
+      add(json['sprintId']);
+
+      final contributing = json['contributing_sprints'] ?? json['contributingSprints'] ?? json['sprints'];
+      if (contributing is List) {
+        for (final item in contributing) {
+          if (item is Map) {
+            add(item['id'] ?? item['sprint_id'] ?? item['sprintId']);
+          } else {
+            add(item);
+          }
+        }
       }
-      if (json['sprintId'] != null) {
-        return [json['sprintId'].toString()];
-      }
-      return [];
+
+      return ids.toList();
     }
     
     // Handle camelCase and snake_case keys
@@ -358,6 +383,7 @@ class Deliverable {
           : (json['approved_at'] != null ? DateTime.parse(json['approved_at'].toString()) : null),
       approvedBy: json['approvedBy']?.toString() ?? json['approved_by']?.toString(),
       submittedBy: json['submittedBy']?.toString() ?? json['submitted_by']?.toString(),
+      submittedByName: json['submittedByName']?.toString() ?? json['submitted_by_name']?.toString(),
       submittedAt: json['submittedAt'] != null
           ? DateTime.parse(json['submittedAt'].toString())
           : (json['submitted_at'] != null ? DateTime.parse(json['submitted_at'].toString()) : null),

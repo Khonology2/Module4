@@ -194,6 +194,8 @@ class AuthService {
   bool canViewTeamDashboard() => hasPermission('view_team_dashboard');
   bool canViewClientReview() => hasPermission('view_client_review');
   bool canManageUsers() => hasPermission('manage_users');
+  bool canManageProjects() => hasPermission('manage_projects');
+  bool canCreateSprints() => hasPermission('create_sprint');
   bool canViewAuditLogs() => hasPermission('view_audit_logs');
   bool canOverrideReadinessGate() => hasPermission('override_readiness_gate');
   bool canViewAllDeliverables() => hasPermission('view_all_deliverables');
@@ -203,6 +205,7 @@ class AuthService {
   bool get isDeliveryLead => _currentUser?.isDeliveryLead ?? false;
   bool get isClientReviewer => _currentUser?.isClientReviewer ?? false;
   bool get isSystemAdmin => _currentUser?.isSystemAdmin ?? false;
+  bool get isStakeholder => _currentUser?.isStakeholder ?? false;
   bool get isClient => _currentUser?.role == UserRole.client;
 
   bool _isClientRole(UserRole role) {
@@ -295,10 +298,14 @@ class AuthService {
     switch (r) {
       case '/dashboard':
         return _isAuthenticated; // All authenticated users can access dashboard
+      case '/smtp-config':
+      case '/environment-management':
+        return _currentUser?.isSystemAdmin ?? false;
       case '/deliverable-setup':
       case '/enhanced-deliverable-setup':
         return canCreateDeliverable();
       case '/role-management':
+        return hasPermission('manage_users');
       case '/approvals':
       case '/approval-requests':
         return hasPermission('view_approvals');
@@ -318,6 +325,10 @@ class AuthService {
         return hasPermission('view_team_dashboard');
       case '/sprint-board':
         return hasPermission('view_sprints');
+      case '/sprint-report':
+        return hasPermission('view_sprints');
+      case '/project-workspace':
+        return hasPermission('manage_projects');
       case '/system-metrics':
         return hasPermission('view_team_dashboard') ||
             (_currentUser?.isSystemAdmin ?? false);
@@ -332,4 +343,6 @@ class AuthService {
         return true;
     }
   }
+
+  Future<dynamic> authenticateWithJwtToken(String token, tokenData) async {}
 }
