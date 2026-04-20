@@ -95,6 +95,9 @@ flutter:
   
   assets:
     - assets/icons/
+    - assets/Icons/
+    - assets/dashboard_team_member/
+    - assets/Icons/Project_Direction_Acceleration/Project_Direction_Acceleration_White Badge_Red.png
     - assets/fonts/
     - assets/Icons/Red_Khono_Discs.png
     - assets/Icons/images/auth_background.png

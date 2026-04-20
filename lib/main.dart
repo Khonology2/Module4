@@ -68,7 +68,7 @@ void main() async {
     // Initialize API Services
     await BackendApiService().initialize();
     await AuthService().initialize();
-    await VersionService.getVersionDetailsFromAsset();
+    await VersionService.getVersionDetailsFromAsset(forceRefresh: true);
     // RealAuthService removed - using AuthService instead
     
     // Test SMTP connection on startup (optional)

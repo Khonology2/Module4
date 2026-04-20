@@ -44,7 +44,7 @@ class ProfessionalVersionDisplay extends StatelessWidget {
           : CrossAxisAlignment.center,
         children: [
           FutureBuilder<Map<String, dynamic>>(
-            future: VersionService.getVersionDetailsFromAsset(),
+            future: VersionService.getVersionDetailsFromAsset(forceRefresh: true),
             builder: (context, snapshot) {
               final versionInfo =
                   snapshot.data ?? VersionService.getVersionDetails();

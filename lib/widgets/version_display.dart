@@ -14,7 +14,7 @@ class VersionDisplay extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: FutureBuilder<Map<String, dynamic>>(
-        future: VersionService.getVersionDetailsFromAsset(),
+        future: VersionService.getVersionDetailsFromAsset(forceRefresh: true),
         builder: (context, snapshot) {
           final versionInfo = snapshot.data ?? VersionService.getVersionDetails();
           final version = versionInfo['version'].toString();
