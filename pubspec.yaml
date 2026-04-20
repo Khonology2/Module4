@@ -97,6 +97,7 @@ flutter:
     - assets/icons/
     - assets/Icons/
     - assets/dashboard_team_member/
+    - assets/Team_member_sidebar/
     - assets/Icons/Project_Direction_Acceleration/Project_Direction_Acceleration_White Badge_Red.png
     - assets/fonts/
     - assets/Icons/Red_Khono_Discs.png
