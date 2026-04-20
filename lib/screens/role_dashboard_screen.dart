@@ -19,6 +19,7 @@ import '../widgets/background_image.dart';
 import '../widgets/notification_center_widget.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/interactive_header_icon.dart';
+import '../utils/app_icons.dart';
 import '../theme/flownet_theme.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
@@ -543,7 +544,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                         width: sideSlot,
                         child: Align(
                           alignment: Alignment.centerRight,
-                          child: _buildCrHeaderTrailingActions(),
+                          child: _buildDashboardHeaderTrailingActions(),
                         ),
                       ),
                     ],
@@ -687,14 +688,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
               _buildCrReviewMetricsRow(),
               const SizedBox(height: 14),
               Expanded(child: _buildCrFourPanelGrid()),
-              const SizedBox(height: 10),
-              Text(
-                'Ver 2026.03.AA1_SIT',
-                style: TextStyle(
-                  color: FlownetColors.textTertiary,
-                  fontSize: 11,
-                ),
-              ),
             ],
           ),
         );
@@ -720,13 +713,17 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       height: 1.2,
     );
     final name = _dashboardHeaderUserDisplayName();
+    final role = _currentUser!.role;
+    final titleText = (role == UserRole.client || role == UserRole.clientReviewer)
+        ? 'Client Reviewer Dashboard'
+        : '${role.displayName} Dashboard';
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Flexible(
           flex: 2,
           child: Text(
-            '${_currentUser!.role.displayName} Dashboard',
+            titleText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -797,8 +794,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           child: Tooltip(
             message: 'Profile',
             child: InteractiveHeaderIcon(
-              inactiveAsset: 'assets/Icons/header_profile_inactive.png',
-              activeAsset: 'assets/Icons/header_profile_active.png',
+              inactiveAsset: AppIcons.accountProfileBadgeAsset,
+              activeAsset: AppIcons.accountProfileBadgeAsset,
               routeActive: onProfile,
               size: 44,
             ),
@@ -814,7 +811,21 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     ];
   }
 
-  Widget _buildCrHeaderTrailingActions() {
+  /// Client roles: bell only (reference header). Others: profile + bell.
+  Widget _buildDashboardHeaderTrailingActions() {
+    final role = _currentUser!.role;
+    if (role == UserRole.clientReviewer || role == UserRole.client) {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          NotificationCenterWidget(
+            showLabel: false,
+            showBackground: false,
+            circularLightButton: true,
+          ),
+        ],
+      );
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: _headerProfileAndNotificationChildren(),

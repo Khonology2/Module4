@@ -11,6 +11,7 @@ import '../services/backend_api_service.dart';
 import '../services/auth_service.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
+import '../utils/app_icons.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -107,18 +108,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'logout',
                 child: Row(
                   children: [
-                    Icon(Icons.logout),
-                    SizedBox(width: 8),
-                    Text('Logout'),
+                    AppIcons.getIconWidget(
+                      'logout',
+                      fallbackIcon: Icons.logout,
+                      isActive: true,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('Logout'),
                   ],
                 ),
               ),
             ],
-            child: const Icon(Icons.account_circle_outlined),
+            child: AppIcons.accountProfileBadge(size: 28),
           ),
         ],
       ),

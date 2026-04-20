@@ -47,6 +47,16 @@ class _InteractiveHeaderIconState extends State<InteractiveHeaderIcon> {
               height: widget.size,
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) {
+                debugPrint(
+                  'InteractiveHeaderIcon failed asset=$asset error=$error',
+                );
+                return Icon(
+                  Icons.person_outline,
+                  size: widget.size,
+                  color: Colors.white70,
+                );
+              },
             ),
             if (widget.overlay != null) widget.overlay!,
           ],

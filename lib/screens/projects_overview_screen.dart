@@ -72,17 +72,23 @@ class _ProjectsOverviewScreenState extends State<ProjectsOverviewScreen> {
         // Title and Search/Filter Section
         Row(
           children: [
-            Container(
+            SizedBox(
               width: 40,
               height: 40,
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.folder_outlined,
-                color: Colors.white,
-                size: 24,
+              child: Image.asset(
+                'assets/Icons/projects_nav_active.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Container(
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.folder_outlined,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 16),
@@ -259,23 +265,29 @@ class _ProjectsOverviewScreenState extends State<ProjectsOverviewScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
             ),
-            child: const Column(
+            child: Column(
               children: [
-                Icon(
-                  Icons.folder_outlined,
-                  size: 48,
-                  color: Colors.grey,
+                Image.asset(
+                  'assets/Icons/projects_nav_inactive.png',
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.folder_outlined,
+                    size: 48,
+                    color: Colors.grey,
+                  ),
                 ),
-                SizedBox(height: 16),
-                Text(
+                const SizedBox(height: 16),
+                const Text(
                   'No projects found',
                   style: TextStyle(
                     fontSize: 18,
                     color: Colors.grey,
                   ),
                 ),
-                SizedBox(height: 8),
-                Text(
+                const SizedBox(height: 8),
+                const Text(
                   'Create your first project to get started',
                   style: TextStyle(
                     fontSize: 14,

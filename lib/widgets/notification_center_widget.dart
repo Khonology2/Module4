@@ -5,6 +5,7 @@ import '../services/notification_service.dart';
 import '../services/realtime_service.dart';
 import '../services/auth_service.dart';
 import '../theme/flownet_theme.dart';
+import '../utils/app_icons.dart';
 import 'interactive_header_icon.dart';
 
 class NotificationCenterWidget extends StatefulWidget {
@@ -168,12 +169,21 @@ class _NotificationCenterWidgetState extends State<NotificationCenterWidget> {
       children: [
         Stack(
           children: [
-            Icon(
-              Icons.notifications_outlined,
-              color: widget.showBackground
-                  ? FlownetColors.pureWhite
-                  : Colors.white,
-              size: 24, // Standard icon size
+            Image.asset(
+              AppIcons.notificationsHeaderAsset,
+              width: 24,
+              height: 24,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  Icons.notifications_outlined,
+                  color: widget.showBackground
+                      ? FlownetColors.pureWhite
+                      : Colors.white,
+                  size: 24,
+                );
+              },
             ),
             if (_unreadCount > 0)
               Positioned(
@@ -245,8 +255,8 @@ class _NotificationCenterWidgetState extends State<NotificationCenterWidget> {
           child: Tooltip(
             message: 'Notifications',
             child: InteractiveHeaderIcon(
-              inactiveAsset: 'assets/Icons/header_notifications_inactive.png',
-              activeAsset: 'assets/Icons/header_notifications_active.png',
+              inactiveAsset: AppIcons.notificationsHeaderAsset,
+              activeAsset: AppIcons.notificationsHeaderAsset,
               routeActive: onNotifications,
               size: 44,
               overlay: _unreadCount > 0
@@ -309,10 +319,19 @@ class _NotificationCenterWidgetState extends State<NotificationCenterWidget> {
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
                 children: [
-                  const Icon(
-                    Icons.notifications_outlined,
-                    color: FlownetColors.pureWhite,
-                    size: 22,
+                  Image.asset(
+                    AppIcons.notificationsHeaderAsset,
+                    width: 22,
+                    height: 22,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.notifications_outlined,
+                        color: FlownetColors.pureWhite,
+                        size: 22,
+                      );
+                    },
                   ),
                   if (_unreadCount > 0)
                     Positioned(

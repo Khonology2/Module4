@@ -3,23 +3,219 @@ import 'package:flutter/material.dart';
 /// Utility class for managing app icons.
 /// Provides a centralized way to get icons by name with fallback support.
 class AppIcons {
+  /// Sidebar “Account Profile” + header profile control (single badge art).
+  /// Space-free path so assets load reliably on web and all platforms.
+  static const String accountProfileBadgeAsset =
+      'assets/Icons/account_profile_white_badge_blue.png';
+
+  /// Sidebar Dashboard nav (active + inactive — same art per design).
+  static const String dashboardSidebarAsset =
+      'assets/Icons/dashboard_white_badge_blue.png';
+
+  /// Dashboard row icon — direct [Image.asset] (same pattern as [accountProfileBadge]).
+  static Widget dashboardSidebarBadge({double size = 24.0}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        dashboardSidebarAsset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            'AppIcons.dashboardSidebarBadge failed path=$dashboardSidebarAsset error=$error',
+          );
+          return Icon(Icons.dashboard_outlined, size: size);
+        },
+      ),
+    );
+  }
+
+  /// Sidebar Projects nav (Project Management white badge; active + inactive).
+  static const String projectsSidebarAsset =
+      'assets/Icons/projects_white_badge_blue.png';
+
+  static Widget projectsSidebarBadge({double size = 24.0}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        projectsSidebarAsset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            'AppIcons.projectsSidebarBadge failed path=$projectsSidebarAsset error=$error',
+          );
+          return Icon(Icons.folder_outlined, size: size);
+        },
+      ),
+    );
+  }
+
+  /// Sidebar Deliverables nav (Send Paper Plane white badge; active + inactive).
+  static const String deliverablesSidebarAsset =
+      'assets/Icons/deliverables_white_badge_blue.png';
+
+  static Widget deliverablesSidebarBadge({double size = 24.0}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        deliverablesSidebarAsset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            'AppIcons.deliverablesSidebarBadge failed path=$deliverablesSidebarAsset error=$error',
+          );
+          return Icon(Icons.rocket_launch_outlined, size: size);
+        },
+      ),
+    );
+  }
+
+  /// Sidebar Timeline nav (Time Allocation / clock-check white badge; active + inactive).
+  static const String timelineSidebarAsset =
+      'assets/Icons/timeline_white_badge_blue.png';
+
+  static Widget timelineSidebarBadge({double size = 24.0}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        timelineSidebarAsset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            'AppIcons.timelineSidebarBadge failed path=$timelineSidebarAsset error=$error',
+          );
+          return Icon(Icons.calendar_today_outlined, size: size);
+        },
+      ),
+    );
+  }
+
+  /// Sidebar Approval Requests nav (Search/Seek white badge; active + inactive).
+  static const String approvalRequestsSidebarAsset =
+      'assets/Icons/approval_requests_white_badge_blue.png';
+
+  static Widget approvalRequestsSidebarBadge({double size = 24.0}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        approvalRequestsSidebarAsset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            'AppIcons.approvalRequestsSidebarBadge failed path=$approvalRequestsSidebarAsset error=$error',
+          );
+          return Icon(Icons.assignment_outlined, size: size);
+        },
+      ),
+    );
+  }
+
+  /// Sidebar Repository nav (Task Management white badge; active + inactive).
+  static const String repositorySidebarAsset =
+      'assets/Icons/repository_white_badge_blue.png';
+
+  static Widget repositorySidebarBadge({double size = 24.0}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        repositorySidebarAsset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            'AppIcons.repositorySidebarBadge failed path=$repositorySidebarAsset error=$error',
+          );
+          return Icon(Icons.folder_outlined, size: size);
+        },
+      ),
+    );
+  }
+
+  /// Sidebar Reports nav (document + charts white badge; active + inactive).
+  static const String reportsSidebarAsset =
+      'assets/Icons/reports_white_badge_blue.png';
+
+  static Widget reportsSidebarBadge({double size = 24.0}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        reportsSidebarAsset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            'AppIcons.reportsSidebarBadge failed path=$reportsSidebarAsset error=$error',
+          );
+          return Icon(Icons.assessment_outlined, size: size);
+        },
+      ),
+    );
+  }
+
+  /// Header notifications bell (white badge; active/hover use same art as [InteractiveHeaderIcon]).
+  static const String notificationsHeaderAsset =
+      'assets/Icons/notifications_white_badge_blue.png';
+
+  /// Profile / “Account Profile” control (sidebar, menus). Uses [Image.asset]
+  /// directly so it does not depend on the icon map lookup.
+  ///
+  /// **Note:** After adding or changing this asset, do a **full restart**
+  /// (not hot reload) so Flutter picks up the updated asset manifest.
+  static Widget accountProfileBadge({double size = 24.0}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        accountProfileBadgeAsset,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint(
+            'AppIcons.accountProfileBadge failed path=$accountProfileBadgeAsset error=$error',
+          );
+          return Icon(
+            Icons.person_outline,
+            size: size,
+          );
+        },
+      ),
+    );
+  }
+
   static String _getIconPath(String iconName, bool isActive) {
     // Map app iconName keys to the exact icon filenames.
     // NOTE: icon files use a double extension: *.png.png
     final iconPaths = <String, Map<String, String>>{
       'dashboard': {
-        'active': 'assets/Icons/sidebar_dashboard_active.png',
-        'inactive': 'assets/Icons/sidebar_dashboard_inactive.png',
+        'active': dashboardSidebarAsset,
+        'inactive': dashboardSidebarAsset,
       },
-      // Projects folder icon (all roles)
       'projects': {
-        'active': 'assets/Icons/Project Management/Project Management_Red.png',
-        'inactive': 'assets/Icons/Project Management/Project Management_White.png',
+        'active': projectsSidebarAsset,
+        'inactive': projectsSidebarAsset,
       },
-      // Deliverables rocket icon (all roles)
       'deliverables': {
-        'active': 'assets/Icons/Deliverables_rocket_active.png',
-        'inactive': 'assets/Icons/Deliverables_rocket_inactive.png',
+        'active': deliverablesSidebarAsset,
+        'inactive': deliverablesSidebarAsset,
       },
       'sprints': {
         'active': 'assets/Icons/Sprints console active.png.png',
@@ -30,20 +226,20 @@ class AppIcons {
         'inactive': 'assets/Icons/Notifications inactive.png.png',
       },
       'repository': {
-        'active': 'assets/Icons/Repository_Project active.png',
-        'inactive': 'assets/Icons/Repository_Project inactive.png',
+        'active': 'assets/Icons/Group 308.png',
+        'inactive': 'assets/Icons/Group 232.png',
       },
       'approval_requests': {
-        'active': 'assets/Icons/Approval Requests active.png.png',
-        'inactive': 'assets/Icons/Approval Requests inactive.png.png',
+        'active': approvalRequestsSidebarAsset,
+        'inactive': approvalRequestsSidebarAsset,
       },
       'approvals': {
         'active': 'assets/Icons/Data_Approvals active.png.png',
         'inactive': 'assets/Icons/Data_Approvals inactive.png.png',
       },
       'reports': {
-        'active': 'assets/Icons/Reports active.png.png',
-        'inactive': 'assets/Icons/Reports inactive.png.png',
+        'active': reportsSidebarAsset,
+        'inactive': reportsSidebarAsset,
       },
       'role_management': {
         'active': 'assets/Icons/Role Managemet active.png.png',
@@ -54,16 +250,16 @@ class AppIcons {
         'inactive': 'assets/Icons/Settings inactive.png.png',
       },
       'account': {
-        'active': 'assets/Icons/Profile page active.png.png',
-        'inactive': 'assets/Icons/Profile page inactive.png.png',
+        'active': accountProfileBadgeAsset,
+        'inactive': accountProfileBadgeAsset,
       },
       'logout': {
-        'active': 'assets/Icons/Logout button active.png.png',
-        'inactive': 'assets/Icons/Logout button inactive.png.png',
+        'active': 'assets/Icons/Logout_KhonoBuzz.png',
+        'inactive': 'assets/Icons/Logout_KhonoBuzz.png',
       },
       'timeline': {
-        'active': 'assets/Icons/Timeline Page active.png.png',
-        'inactive': 'assets/Icons/Timeline Page inactive.png.png',
+        'active': timelineSidebarAsset,
+        'inactive': timelineSidebarAsset,
       },
       // AI Assistant: inactive = light/white treatment (unselected); active = red (selected route)
       'ai_assistant': {
@@ -71,8 +267,8 @@ class AppIcons {
         'inactive': 'assets/Icons/ai_assistant_inactive.png',
       },
       'teams': {
-        'active': 'assets/Icons/sidebar_dashboard_active.png',
-        'inactive': 'assets/Icons/sidebar_dashboard_inactive.png',
+        'active': dashboardSidebarAsset,
+        'inactive': dashboardSidebarAsset,
       },
       'urgent_notifications': {
         'active': 'assets/Icons/Urgent Notifications active.png.png',
@@ -122,6 +318,27 @@ class AppIcons {
     double size = 24.0,
     Color? color,
   }) {
+    if (iconName == 'dashboard') {
+      return dashboardSidebarBadge(size: size);
+    }
+    if (iconName == 'projects') {
+      return projectsSidebarBadge(size: size);
+    }
+    if (iconName == 'deliverables') {
+      return deliverablesSidebarBadge(size: size);
+    }
+    if (iconName == 'timeline') {
+      return timelineSidebarBadge(size: size);
+    }
+    if (iconName == 'approval_requests') {
+      return approvalRequestsSidebarBadge(size: size);
+    }
+    if (iconName == 'repository') {
+      return repositorySidebarBadge(size: size);
+    }
+    if (iconName == 'reports') {
+      return reportsSidebarBadge(size: size);
+    }
     final assetPath = _getIconPath(iconName, isActive);
     if (assetPath.isNotEmpty) {
       return Image.asset(

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/flownet_theme.dart';
 import '../services/auth_service.dart';
+import '../services/version_service.dart';
+import '../models/user_role.dart';
 import '../utils/app_icons.dart';
 import 'background_image.dart';
 import 'notification_center_widget.dart';
@@ -40,6 +42,11 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
   static const double _collapsedWidth = 80;
   static const double _logoMinCollapsedSize = 44;
   static const double _logoExpandedSize = 64;
+  /// Client portal: solid accent for active nav row (#C10D00).
+  static const Color _clientReviewerActiveRed = Color(0xFFC10D00);
+  static const String _clientPortalSidebarLogoExpanded =
+      'assets/Icons/khono.png';
+  static const String _sidebarDiscLogo = 'assets/Icons/Red_Khono_Discs.png';
 
   double _logoSizeFor(double screenWidth) {
     // Responsive "breakpoints" so the logo stays readable on all widths.
@@ -57,6 +64,55 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     final userRole = currentUser != null
         ? currentUser.role.toString().toLowerCase()
         : '';
+
+    if (authService.isClientUser) {
+      const crItems = <_NavItem>[
+        _NavItem(
+          label: 'Dashboard',
+          icon: Icons.dashboard_outlined,
+          iconName: 'dashboard',
+          route: '/dashboard',
+        ),
+        _NavItem(
+          label: 'Projects',
+          icon: Icons.folder_outlined,
+          iconName: 'projects',
+          route: '/projects',
+        ),
+        _NavItem(
+          label: 'Deliverables',
+          icon: Icons.assignment_outlined,
+          iconName: 'deliverables',
+          route: '/deliverables-overview',
+        ),
+        _NavItem(
+          label: 'Timeline',
+          icon: Icons.calendar_today_outlined,
+          iconName: 'timeline',
+          route: '/timeline',
+        ),
+        _NavItem(
+          label: 'Approval Requests',
+          icon: Icons.assignment_outlined,
+          iconName: 'approval_requests',
+          route: '/approval-requests',
+        ),
+        _NavItem(
+          label: 'Repository',
+          icon: Icons.folder_outlined,
+          iconName: 'repository',
+          route: '/repository',
+        ),
+        _NavItem(
+          label: 'Reports',
+          icon: Icons.assessment_outlined,
+          iconName: 'reports',
+          route: '/report-repository',
+        ),
+      ];
+      // Full nav for client portal (reference UI); route guards enforce access.
+      return crItems;
+    }
 
     final List<_NavItem> allItems = [
       const _NavItem(
@@ -223,12 +279,12 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     return combinedItems.where((item) {
       if (item.requiredPermission == 'HIDE_FROM_SIDEBAR') return false;
 
-      if (userRole.contains('client') &&
+      if (currentUser?.role == UserRole.client &&
           (item.label == 'Projects' || item.label == 'Deliverables')) {
         return false;
       }
 
-      if (authService.isClientReviewer || authService.isClient) {
+      if (authService.isClient) {
         if (item.route == '/projects' ||
             item.route == '/sprint-console' ||
             item.route == '/deliverables-overview') {
@@ -301,6 +357,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     final isDesktop = MediaQuery.of(context).size.width > 768;
     final screenWidth = MediaQuery.of(context).size.width;
     final logoSize = _logoSizeFor(screenWidth);
+    final isClientPortal = AuthService().isClientUser;
 
     if (isDesktop) {
       return Scaffold(
@@ -338,76 +395,185 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                     ),
                     child: Column(
                         children: [
-                          // Header with logo and collapse toggle
+                          // Header: client portal = centered wordmark + subtitle; collapsed = short mark
                           Padding(
                             padding: const EdgeInsets.only(
-                                left: 12, right: 12, top: 24, bottom: 16,),
-                            child: SizedBox(
-                              height: logoSize,
-                              child: Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  // Centered logo (universal home navigation)
-                                  Material(
-                                    type: MaterialType.transparency,
-                                    child: InkWell(
-                                      onTap: () => context.go('/dashboard'),
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(6),
-                                        child: Image.asset(
-                                          'assets/Icons/Red_Khono_Discs.png',
-                                          width: logoSize,
-                                          height: logoSize,
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  // Collapse toggle (kept intact, aligned right)
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: IconButton(
-                                      onPressed: _toggleSidebar,
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      icon: Icon(
-                                        _collapsed
-                                            ? Icons.chevron_right
-                                            : Icons.chevron_left,
-                                        color: FlownetColors.textSecondary,
-                                        size: 20,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              left: 12,
+                              right: 12,
+                              top: 24,
+                              bottom: 16,
                             ),
+                            child: isClientPortal && !_collapsed
+                                ? SizedBox(
+                                    height: 100,
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 4,
+                                            right: 36,
+                                          ),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Center(
+                                                child: Material(
+                                                  type: MaterialType
+                                                      .transparency,
+                                                  child: InkWell(
+                                                    onTap: () => context
+                                                        .go('/dashboard'),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            12),
+                                                    child: ConstrainedBox(
+                                                      constraints:
+                                                          const BoxConstraints(
+                                                        maxWidth: 232,
+                                                      ),
+                                                      child: Image.asset(
+                                                        _clientPortalSidebarLogoExpanded,
+                                                        height: screenWidth >=
+                                                                1024
+                                                            ? 40
+                                                            : 34,
+                                                        fit: BoxFit.contain,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                'Welcome to Deliverable & Sprint Sign-Off Hub',
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  color:
+                                                      FlownetColors.pureWhite,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w400,
+                                                  height: 1.25,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: 0,
+                                          right: 0,
+                                          child: IconButton(
+                                            onPressed: _toggleSidebar,
+                                            padding: EdgeInsets.zero,
+                                            constraints:
+                                                const BoxConstraints(),
+                                            icon: Icon(
+                                              _collapsed
+                                                  ? Icons.chevron_right
+                                                  : Icons.chevron_left,
+                                              color:
+                                                  FlownetColors.textSecondary,
+                                              size: 20,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : SizedBox(
+                                    height: logoSize,
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        Material(
+                                          type: MaterialType.transparency,
+                                          child: InkWell(
+                                            onTap: isClientPortal && _collapsed
+                                                ? _toggleSidebar
+                                                : () =>
+                                                    context.go('/dashboard'),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(6),
+                                              child: isClientPortal &&
+                                                      _collapsed
+                                                  ? Tooltip(
+                                                      message: 'Expand sidebar',
+                                                      waitDuration:
+                                                          const Duration(
+                                                        milliseconds: 400,
+                                                      ),
+                                                      child: Image.asset(
+                                                        _sidebarDiscLogo,
+                                                        width: logoSize,
+                                                        height: logoSize,
+                                                        fit: BoxFit.contain,
+                                                      ),
+                                                    )
+                                                  : Image.asset(
+                                                      _sidebarDiscLogo,
+                                                      width: logoSize,
+                                                      height: logoSize,
+                                                      fit: BoxFit.contain,
+                                                    ),
+                                            ),
+                                          ),
+                                        ),
+                                        if (!(isClientPortal && _collapsed))
+                                          Align(
+                                            alignment: Alignment.centerRight,
+                                            child: IconButton(
+                                              onPressed: _toggleSidebar,
+                                              padding: EdgeInsets.zero,
+                                              constraints:
+                                                  const BoxConstraints(),
+                                              icon: Icon(
+                                                _collapsed
+                                                    ? Icons.chevron_right
+                                                    : Icons.chevron_left,
+                                                color: FlownetColors
+                                                    .textSecondary,
+                                                size: 20,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
                           ),
-                          // Navigation items (pill-style highlight like reference UI)
+                          // Navigation items
                           Expanded(
                             child: ListView.builder(
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                               itemCount: _navItems.length,
-                              itemExtent: 56, // Match Busisiwe sidebar height
+                              itemExtent: 56,
                               cacheExtent: 200,
                               addAutomaticKeepAlives: true,
                               itemBuilder: (context, index) {
                                 final item = _navItems[index];
                                 final active =
                                     routeLocation.startsWith(item.route);
+                                final cr = isClientPortal;
+                                final activeBg = cr && active
+                                    ? _clientReviewerActiveRed
+                                    : active
+                                        ? Colors.white.withAlpha(
+                                            (0.08 * 255).round(),
+                                          )
+                                        : Colors.transparent;
+                                final iconColor = cr
+                                    ? FlownetColors.pureWhite
+                                    : active
+                                        ? FlownetColors.pureWhite
+                                        : FlownetColors.textSecondary;
                                 return Container(
                                   margin: const EdgeInsets.symmetric(
                                     horizontal: 8,
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    // Active item: soft pill-shaped dark highlight, no red border
-                                    color: active
-                                        ? Colors.white.withAlpha(
-                                            (0.08 * 255).round(),
-                                          )
-                                        : Colors.transparent,
+                                    color: activeBg,
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: Material(
@@ -438,9 +604,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                                                 fallbackIcon: item.icon,
                                                 isActive: active,
                                                 size: 20,
-                                                color: active
-                                                    ? FlownetColors.pureWhite
-                                                    : FlownetColors.textSecondary,
+                                                color: iconColor,
                                               ),
                                             ),
                                             if (!_collapsed) ...[
@@ -448,12 +612,15 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                                               Expanded(
                                                 child: Text(
                                                   item.label,
-                                                  style: const TextStyle(
+                                                  style: TextStyle(
                                                     color: Colors.white,
                                                     fontSize: 14,
-                                                    fontWeight: FontWeight.w500,
+                                                    fontWeight: cr && active
+                                                        ? FontWeight.w600
+                                                        : FontWeight.w500,
                                                   ),
-                                                  overflow: TextOverflow.ellipsis,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                               ),
                                             ],
@@ -466,13 +633,62 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                               },
                             ),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                            child: _buildLogoutButton(),
-                          ),
-                          SidebarVersionDisplay(
-                            isSidebarCollapsed: _collapsed,
-                          ),
+                          if (isClientPortal) ...[
+                            Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: Colors.white.withValues(alpha: 0.12),
+                            ),
+                            if (_collapsed)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 6),
+                                child: Column(
+                                  children: [
+                                    Tooltip(
+                                      message: 'Account Profile',
+                                      child: IconButton(
+                                        onPressed: () =>
+                                            context.go('/profile'),
+                                        icon: AppIcons.accountProfileBadge(
+                                          size: 26,
+                                        ),
+                                      ),
+                                    ),
+                                    Tooltip(
+                                      message: 'Logout',
+                                      child: IconButton(
+                                        onPressed: () =>
+                                            _handleLogout(context),
+                                        icon: AppIcons.getIconWidget(
+                                          'logout',
+                                          fallbackIcon: Icons.logout,
+                                          isActive: true,
+                                          size: 26,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else ...[
+                              _buildClientReviewerAccountRow(),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                                child: _buildClientReviewerLogoutRow(),
+                              ),
+                            ],
+                            _buildClientReviewerVersionPill(),
+                          ] else ...[
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                              child: _buildLogoutButton(),
+                            ),
+                            SidebarVersionDisplay(
+                              isSidebarCollapsed: _collapsed,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -497,22 +713,38 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
       return Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              onTap: () => context.go('/dashboard'),
-              borderRadius: BorderRadius.circular(10),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Image.asset(
-                  'assets/Icons/Red_Khono_Discs.png',
-                  width: 32,
-                  height: 32,
-                  fit: BoxFit.contain,
+          title: isClientPortal
+              ? Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    onTap: () => context.go('/dashboard'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Image.asset(
+                        _clientPortalSidebarLogoExpanded,
+                        height: 26,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                )
+              : Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    onTap: () => context.go('/dashboard'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Image.asset(
+                        _sidebarDiscLogo,
+                        width: 32,
+                        height: 32,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
           centerTitle: false,
           actions: [
             if (routeLocation != '/dashboard')
@@ -521,47 +753,56 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                 onPressed: () => Navigator.of(context).pop(),
                 tooltip: 'Back',
               ),
-            // Profile (same branded header assets + hover as role dashboard)
-            IconButton(
-              onPressed: () => context.go('/profile'),
-              tooltip: 'Profile',
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              icon: Builder(
-                builder: (context) {
-                  final path = GoRouterState.of(context).uri.path;
-                  final onProfile =
-                      path == '/profile' || path.startsWith('/profile/');
-                  return InteractiveHeaderIcon(
-                    inactiveAsset: 'assets/Icons/header_profile_inactive.png',
-                    activeAsset: 'assets/Icons/header_profile_active.png',
-                    routeActive: onProfile,
-                    size: 40,
-                  );
-                },
+            if (!isClientPortal) ...[
+              IconButton(
+                onPressed: () => context.go('/profile'),
+                tooltip: 'Profile',
+                padding: const EdgeInsets.all(4),
+                constraints:
+                    const BoxConstraints(minWidth: 48, minHeight: 48),
+                icon: Builder(
+                  builder: (context) {
+                    final path = GoRouterState.of(context).uri.path;
+                    final onProfile =
+                        path == '/profile' || path.startsWith('/profile/');
+                    return InteractiveHeaderIcon(
+                      inactiveAsset: AppIcons.accountProfileBadgeAsset,
+                      activeAsset: AppIcons.accountProfileBadgeAsset,
+                      routeActive: onProfile,
+                      size: 40,
+                    );
+                  },
+                ),
               ),
-            ),
-            // Settings Icon
-            IconButton(
-              onPressed: () => context.go('/settings'),
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'Settings',
-              color: FlownetColors.pureWhite,
-              iconSize: 20,
-            ),
+              IconButton(
+                onPressed: () => context.go('/settings'),
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings',
+                color: FlownetColors.pureWhite,
+                iconSize: 20,
+              ),
+            ],
             const NotificationCenterWidget(
               showLabel: false,
               showBackground: false,
               circularLightButton: true,
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: () => context.go('/profile?mode=view'),
-              icon: const Icon(Icons.account_circle_outlined),
-              tooltip: 'Account',
-              color: FlownetColors.pureWhite,
-              iconSize: 22,
-            ),
+            if (isClientPortal)
+              IconButton(
+                onPressed: () => context.go('/settings'),
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings',
+                color: FlownetColors.pureWhite,
+                iconSize: 20,
+              ),
+            if (!isClientPortal) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => context.go('/profile?mode=view'),
+                tooltip: 'Account',
+                icon: AppIcons.accountProfileBadge(size: 26),
+              ),
+            ],
           ],
         ),
         body: BackgroundImage(
@@ -576,9 +817,9 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
           child: SafeArea(
             child: Column(
               children: [
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                if (isClientPortal)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
                     child: Material(
                       type: MaterialType.transparency,
                       child: InkWell(
@@ -586,36 +827,119 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                           Navigator.pop(context);
                           context.go('/dashboard');
                         },
-                        borderRadius: BorderRadius.circular(14),
-                        child: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Image.asset(
-                            'assets/Icons/Red_Khono_Discs.png',
-                            width: 72,
-                            height: 72,
-                            fit: BoxFit.contain,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Column(
+                          children: [
+                            Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 260,
+                                ),
+                                child: Image.asset(
+                                  _clientPortalSidebarLogoExpanded,
+                                  height: 40,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Welcome to Deliverable & Sprint Sign-Off Hub',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: FlownetColors.pureWhite,
+                                fontSize: 11,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16.0),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.pop(context);
+                            context.go('/dashboard');
+                          },
+                          borderRadius: BorderRadius.circular(14),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Image.asset(
+                              _sidebarDiscLogo,
+                              width: 72,
+                              height: 72,
+                              fit: BoxFit.contain,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
                 const Divider(color: FlownetColors.slate),
                 Expanded(
                   child: ListView.builder(
                     itemCount: _navItems.length,
-                    itemExtent: 56, // Fixed height for better performance
-                    cacheExtent: 200, // Cache more items for smoother scrolling
-                    addAutomaticKeepAlives: true, // Keep state of list items
+                    itemExtent: 56,
+                    cacheExtent: 200,
+                    addAutomaticKeepAlives: true,
                     itemBuilder: (context, index) {
                       final item = _navItems[index];
                       final active = routeLocation.startsWith(item.route);
+                      final cr = isClientPortal;
+                      if (cr) {
+                        return Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: active
+                                ? _clientReviewerActiveRed
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: ListTile(
+                            leading: AppIcons.getIconWidget(
+                              item.iconName,
+                              fallbackIcon: item.icon,
+                              isActive: active,
+                              size: 24,
+                              color: FlownetColors.pureWhite,
+                            ),
+                            title: Text(
+                              item.label,
+                              style: TextStyle(
+                                color: FlownetColors.pureWhite,
+                                fontWeight: active
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              if (!routeLocation.startsWith(item.route)) {
+                                context.go(item.route);
+                              }
+                            },
+                          ),
+                        );
+                      }
                       return Container(
                         margin: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2,),
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: active
-                              ? FlownetColors.crimsonRed.withAlpha((0.1 * 255).round())
+                              ? FlownetColors.crimsonRed
+                                  .withAlpha((0.1 * 255).round())
                               : null,
                           borderRadius: BorderRadius.circular(12),
                           border: active
@@ -659,12 +983,28 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                     },
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: ListTile(
-                    leading: const Icon(
-                      Icons.logout,
-                      color: FlownetColors.textSecondary,
+                if (isClientPortal) ...[
+                  const Divider(
+                    height: 1,
+                    color: FlownetColors.slate,
+                  ),
+                  ListTile(
+                    leading: AppIcons.accountProfileBadge(size: 28),
+                    title: const Text(
+                      'Account Profile',
+                      style: TextStyle(color: FlownetColors.pureWhite),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/profile');
+                    },
+                  ),
+                  ListTile(
+                    leading: AppIcons.getIconWidget(
+                      'logout',
+                      fallbackIcon: Icons.logout,
+                      isActive: true,
+                      size: 28,
                     ),
                     title: const Text(
                       'Logout',
@@ -675,7 +1015,27 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                       _handleLogout(context);
                     },
                   ),
-                ),
+                  _buildClientReviewerVersionPill(),
+                ] else
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: ListTile(
+                      leading: AppIcons.getIconWidget(
+                        'logout',
+                        fallbackIcon: Icons.logout,
+                        isActive: true,
+                        size: 28,
+                      ),
+                      title: const Text(
+                        'Logout',
+                        style: TextStyle(color: FlownetColors.pureWhite),
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _handleLogout(context);
+                      },
+                    ),
+                  ),
               ],
             ),
           ),
@@ -689,6 +1049,102 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     await AuthService().signOut();
     if (!mounted) return;
     router.go('/');
+  }
+
+  Widget _buildClientReviewerAccountRow() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => context.go('/profile'),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            child: Row(
+              children: [
+                AppIcons.accountProfileBadge(size: 26),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Account Profile',
+                    style: TextStyle(
+                      color: FlownetColors.pureWhite,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClientReviewerLogoutRow() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _handleLogout(context),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          child: Row(
+            children: [
+              AppIcons.getIconWidget(
+                'logout',
+                fallbackIcon: Icons.logout,
+                isActive: true,
+                size: 26,
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Logout',
+                style: TextStyle(
+                  color: FlownetColors.pureWhite,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClientReviewerVersionPill() {
+    if (_collapsed) return const SizedBox.shrink();
+    final version =
+        VersionService.getVersionDetails()['version'].toString().trim();
+    final label =
+        version.toUpperCase().startsWith('VER') ? version : 'Ver $version';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16, left: 12, right: 12),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w400,
+              color: Colors.white.withValues(alpha: 0.65),
+              letterSpacing: 0.3,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
   }
 
   /// Desktop sidebar logout: icon-only when collapsed (matches nav row height/spacing);

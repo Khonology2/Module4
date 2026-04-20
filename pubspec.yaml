@@ -100,6 +100,17 @@ flutter:
     - assets/Icons/images/auth_background.png
     - assets/Icons/ai_assistant_fab.png
     - assets/Icons/ai_assistant_icon.png
+    - assets/Icons/projects_nav_active.png
+    - assets/Icons/projects_nav_inactive.png
+    - assets/Icons/account_profile_white_badge_blue.png
+    - assets/Icons/dashboard_white_badge_blue.png
+    - assets/Icons/projects_white_badge_blue.png
+    - assets/Icons/deliverables_white_badge_blue.png
+    - assets/Icons/timeline_white_badge_blue.png
+    - assets/Icons/approval_requests_white_badge_blue.png
+    - assets/Icons/repository_white_badge_blue.png
+    - assets/Icons/reports_white_badge_blue.png
+    - assets/Icons/notifications_white_badge_blue.png
     - assets/Icons/
     - assets/logo.png
 
