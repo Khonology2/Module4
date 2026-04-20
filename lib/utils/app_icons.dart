@@ -174,6 +174,9 @@ class AppIcons {
   static const String notificationsHeaderAsset =
       'assets/Icons/notifications_white_badge_blue.png';
 
+  /// Client Reviewer dashboard card headers — right-side bell next to badge count.
+  static const String smallBellAsset = 'assets/icons/small_bell.png';
+
   /// Profile / “Account Profile” control (sidebar, menus). Uses [Image.asset]
   /// directly so it does not depend on the icon map lookup.
   ///

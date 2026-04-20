@@ -555,6 +555,9 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                                 final active =
                                     routeLocation.startsWith(item.route);
                                 final cr = isClientPortal;
+                                // Match Client Reviewer sidebar logout icon (see footer IconButton).
+                                final double navIconSize = cr ? 26.0 : 23.0;
+                                final double navIconBox = cr ? 26.0 : 27.0;
                                 final activeBg = cr && active
                                     ? _clientReviewerActiveRed
                                     : active
@@ -597,13 +600,13 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                                               : MainAxisAlignment.start,
                                           children: [
                                             SizedBox(
-                                              width: 24,
-                                              height: 24,
+                                              width: navIconBox,
+                                              height: navIconBox,
                                               child: AppIcons.getIconWidget(
                                                 item.iconName,
                                                 fallbackIcon: item.icon,
                                                 isActive: active,
-                                                size: 20,
+                                                size: navIconSize,
                                                 color: iconColor,
                                               ),
                                             ),
@@ -906,12 +909,16 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: ListTile(
-                            leading: AppIcons.getIconWidget(
-                              item.iconName,
-                              fallbackIcon: item.icon,
-                              isActive: active,
-                              size: 24,
-                              color: FlownetColors.pureWhite,
+                            leading: SizedBox(
+                              width: 26,
+                              height: 26,
+                              child: AppIcons.getIconWidget(
+                                item.iconName,
+                                fallbackIcon: item.icon,
+                                isActive: active,
+                                size: 26,
+                                color: FlownetColors.pureWhite,
+                              ),
                             ),
                             title: Text(
                               item.label,

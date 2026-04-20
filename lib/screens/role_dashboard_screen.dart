@@ -846,10 +846,20 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           final row = Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                Icons.notifications_active,
-                color: FlownetColors.crimsonRed,
-                size: 40,
+              Image.asset(
+                'assets/icons/custom_bell.png',
+                width: 60,
+                height: 60,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.high,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    Icons.notifications_active,
+                    color: FlownetColors.crimsonRed,
+                    size: 60,
+                  );
+                },
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -959,29 +969,29 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       _CrMetricSpec(
         'Submitted',
         '${m['submitted'] ?? 0}',
-        Icons.send_rounded,
+        'assets/icons/review_metrics_submitted.png',
       ),
       _CrMetricSpec(
         'Approved',
         '${m['approved'] ?? 0}',
-        Icons.check_rounded,
+        'assets/icons/review_metrics_approved.png',
       ),
       _CrMetricSpec(
         'Changes Requested',
         '${m['changes'] ?? 0}',
-        Icons.warning_amber_rounded,
+        'assets/icons/review_metrics_changes_requested.png',
       ),
       _CrMetricSpec(
         'Rejected',
         '${m['rejected'] ?? 0}',
-        Icons.close_rounded,
+        'assets/icons/review_metrics_rejected.png',
       ),
       _CrMetricSpec(
         'Average Review Time',
         m['avg_review_time'] is String
             ? (m['avg_review_time'] as String)
             : (m['avg_review_time']?.toString() ?? '—'),
-        Icons.schedule_rounded,
+        'assets/icons/review_metrics_avg_review_time.png',
       ),
     ];
     return SizedBox(
@@ -1044,14 +1054,16 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           Positioned(
             right: 0,
             bottom: 0,
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: const BoxDecoration(
-                color: FlownetColors.crimsonRed,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(spec.icon, color: FlownetColors.pureWhite, size: 18),
+            child: Image.asset(
+              spec.imageAsset,
+              width: 40,
+              height: 40,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) {
+                return const SizedBox(width: 40, height: 40);
+              },
             ),
           ),
         ],
@@ -1124,14 +1136,43 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   Widget _buildCrPanelHeader({
-    required IconData leadingIcon,
+    IconData? leadingIcon,
+    String? leadingImageAsset,
+    double leadingImageWidth = 22,
+    double leadingImageHeight = 22,
     required String title,
     required int badgeCount,
     String? route,
   }) {
+    assert(
+      leadingIcon != null || leadingImageAsset != null,
+      'Provide leadingIcon or leadingImageAsset',
+    );
+    final Widget leading = leadingImageAsset != null
+        ? Image.asset(
+            leadingImageAsset,
+            width: leadingImageWidth,
+            height: leadingImageHeight,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.high,
+            errorBuilder: (context, error, stackTrace) {
+              return Icon(
+                leadingIcon ?? Icons.warning_amber_rounded,
+                color: FlownetColors.crimsonRed,
+                size: 22,
+              );
+            },
+          )
+        : Icon(
+            leadingIcon!,
+            color: FlownetColors.crimsonRed,
+            size: 22,
+          );
     final titleRow = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(leadingIcon, color: FlownetColors.crimsonRed, size: 22),
+        leading,
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -1145,8 +1186,21 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         Stack(
           clipBehavior: Clip.none,
           children: [
-            Icon(Icons.notifications_none_rounded,
-                color: FlownetColors.textSecondary, size: 22),
+            Image.asset(
+              AppIcons.smallBellAsset,
+              width: 35,
+              height: 35,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  Icons.notifications_none_rounded,
+                  color: FlownetColors.textSecondary,
+                  size: 35,
+                );
+              },
+            ),
             if (badgeCount > 0)
               Positioned(
                 right: -4,
@@ -1186,7 +1240,9 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildCrPanelHeader(
-            leadingIcon: Icons.warning_amber_rounded,
+            leadingImageAsset: 'assets/icons/pending_approvals.png',
+            leadingImageWidth: 40,
+            leadingImageHeight: 40,
             title: 'Pending Approvals',
             badgeCount: _pendingReports.length,
             route: '/report-repository',
@@ -1416,6 +1472,9 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return _buildCrPanelShell(
       header: _buildCrPanelHeader(
         leadingIcon: Icons.folder_special_outlined,
+        leadingImageAsset: 'assets/icons/projects_overview.png',
+        leadingImageWidth: 40,
+        leadingImageHeight: 40,
         title: 'Projects Overview',
         badgeCount: _dashboardProjects.length,
         route: '/projects',
@@ -1474,6 +1533,9 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return _buildCrPanelShell(
       header: _buildCrPanelHeader(
         leadingIcon: Icons.send_rounded,
+        leadingImageAsset: 'assets/icons/recent_submissions.png',
+        leadingImageWidth: 40,
+        leadingImageHeight: 40,
         title: 'Recent Submissions',
         badgeCount: _pendingReports.length,
         route: '/report-repository',
@@ -1527,6 +1589,9 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return _buildCrPanelShell(
       header: _buildCrPanelHeader(
         leadingIcon: Icons.fact_check_outlined,
+        leadingImageAsset: 'assets/icons/recent_history.png',
+        leadingImageWidth: 40,
+        leadingImageHeight: 40,
         title: 'Review History',
         badgeCount: _filteredAuditLogs.length,
         route: '/report-repository',
@@ -3433,6 +3498,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
 class _CrMetricSpec {
   final String title;
   final String valueText;
-  final IconData icon;
-  const _CrMetricSpec(this.title, this.valueText, this.icon);
+  /// Review Metrics Overview badge art (red circle assets include their own background).
+  final String imageAsset;
+  const _CrMetricSpec(this.title, this.valueText, this.imageAsset);
 }
