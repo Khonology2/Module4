@@ -7,8 +7,13 @@
       "author": "Tiyane-Prince",
       "message": "chore(backend): expand 12h dummy seed with demo narrative content",
       "timestamp": "2026-04-21T08:28:22+02:00"
+    },
+    {
+      "author": "Nathi2266",
+      "message": "Update version display widgets to use force refresh option for fetching version details",
+      "timestamp": "2026-04-20T13:46:26+02:00"
     }
   ],
-  "total_commits": 1,
-  "date_range": "2026-04-21"
+  "total_commits": 2,
+  "date_range": "2026-04-20"
 }
