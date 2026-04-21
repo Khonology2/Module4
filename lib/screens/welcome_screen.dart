@@ -41,7 +41,7 @@ class WelcomeScreen extends StatelessWidget {
 
                   // Red subtitle
                   Text(
-                    'Your Growth Journey, Simplified',
+                    'Your Growth Journey, Simplified with FlowPilot',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: const Color(0xFFC10D00),
                           fontWeight: FontWeight.w600,

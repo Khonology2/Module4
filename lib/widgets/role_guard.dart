@@ -3,6 +3,38 @@ import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../theme/flownet_theme.dart';
 
+class _RouteHistory {
+  static String? lastAllowedPath;
+
+  static String _currentPath(BuildContext context) {
+    try {
+      final router = GoRouter.maybeOf(context);
+      final uri = router?.routeInformationProvider.value.uri;
+      if (uri != null) return uri.path;
+    } catch (_) {}
+    return ModalRoute.of(context)?.settings.name?.toString() ?? '/';
+  }
+
+  static void markAllowed(BuildContext context) {
+    final path = _currentPath(context);
+    if (path.isNotEmpty) {
+      lastAllowedPath = path;
+    }
+  }
+
+  static void goBack(BuildContext context) {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+      return;
+    }
+    final fallback = (lastAllowedPath != null && lastAllowedPath!.isNotEmpty)
+        ? lastAllowedPath!
+        : '/dashboard';
+    GoRouter.of(context).go(fallback);
+  }
+}
+
 class RoleGuard extends StatelessWidget {
   final Widget child;
   final String requiredPermission;
@@ -22,6 +54,7 @@ class RoleGuard extends StatelessWidget {
     final authService = AuthService();
     
     if (authService.hasPermission(requiredPermission)) {
+      _RouteHistory.markAllowed(context);
       return child;
     }
 
@@ -65,14 +98,7 @@ class RoleGuard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () {
-              final nav = Navigator.of(context);
-              if (nav.canPop()) {
-                nav.pop();
-              } else {
-                GoRouter.of(context).go('/');
-              }
-            },
+            onPressed: () => _RouteHistory.goBack(context),
             style: ElevatedButton.styleFrom(
               backgroundColor: FlownetColors.electricBlue,
               foregroundColor: FlownetColors.pureWhite,
@@ -100,6 +126,7 @@ class RouteGuard extends StatelessWidget {
     final authService = AuthService();
     
     if (authService.canAccessRoute(route)) {
+      _RouteHistory.markAllowed(context);
       return child;
     }
 
@@ -131,14 +158,7 @@ class RouteGuard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () {
-              final nav = Navigator.of(context);
-              if (nav.canPop()) {
-                nav.pop();
-              } else {
-                GoRouter.of(context).go('/');
-              }
-            },
+            onPressed: () => _RouteHistory.goBack(context),
             style: ElevatedButton.styleFrom(
               backgroundColor: FlownetColors.electricBlue,
               foregroundColor: FlownetColors.pureWhite,

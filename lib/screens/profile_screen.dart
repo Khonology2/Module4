@@ -50,7 +50,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _loadProfileData() async {
     try {
       final profile = await ProfileService.getUserProfile();
-      setState(() {
+      setState(() async {
         _firstNameController.text = profile['first_name'] ?? '';
         _lastNameController.text = profile['last_name'] ?? '';
         _emailController.text = profile['email'] ?? '';
@@ -58,18 +58,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         _titleController.text = profile['job_title'] ?? '';
         _departmentController.text = profile['company'] ?? '';
         _bioController.text = profile['bio'] ?? '';
-        final rawUrl = (profile['profile_picture'] ?? profile['profileImageUrl'] ?? profile['profile_image_url'])?.toString();
+        final rawUrl = (profile['profile_picture'] ??
+                profile['profileImageUrl'] ??
+                profile['profile_image_url'])
+            ?.toString();
         final uid = (profile['user_id'] ?? profile['userId'])?.toString();
-        if (rawUrl != null && rawUrl.isNotEmpty && uid != null && uid.isNotEmpty) {
+        if (rawUrl != null &&
+            rawUrl.isNotEmpty &&
+            uid != null &&
+            uid.isNotEmpty) {
           final base = Uri.parse(Environment.apiBaseUrl);
-          final apiPic = '${base.scheme}://${base.host}:${base.port.toString()}/api/v1/profile/$uid/picture';
+          final apiPic =
+              '${base.scheme}://${base.host}:${base.port.toString()}/api/v1/profile/$uid/picture';
           _profileImageUrl = apiPic;
+          await _fetchProfileImageBytes(uid);
         }
       });
-      final uid = (profile['user_id'] ?? profile['userId'])?.toString();
-      if (uid != null && uid.isNotEmpty) {
-        await _fetchProfileImageBytes(uid);
-      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to load profile: $e')),
@@ -84,7 +88,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _fetchProfileImageBytes(String userId) async {
     try {
       final base = Uri.parse(Environment.apiBaseUrl);
-      final url = '${base.scheme}://${base.host}:${base.port.toString()}/api/v1/profile/$userId/picture?t=${DateTime.now().millisecondsSinceEpoch}';
+      final url =
+          '${base.scheme}://${base.host}:${base.port.toString()}/api/v1/profile/$userId/picture?t=${DateTime.now().millisecondsSinceEpoch}';
       final token = AuthService().accessToken;
       final headers = <String, String>{
         'Accept': 'image/*',
@@ -111,7 +116,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           }
         });
         // Upload image to backend
-        final result = await ProfileService.uploadProfilePicture(imageBytes, (pickedFile.name.isNotEmpty ? pickedFile.name : 'profile_picture.jpg'));
+        final result = await ProfileService.uploadProfilePicture(
+            imageBytes,
+            (pickedFile.name.isNotEmpty
+                ? pickedFile.name
+                : 'profile_picture.jpg'));
         final rawUrl = result['url']?.toString();
         if (rawUrl != null && rawUrl.isNotEmpty) {
           final base = Uri.parse(Environment.apiBaseUrl);
@@ -119,17 +128,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             final user = await AuthService().getCurrentUser();
             final uid = user?.id;
             if (uid != null && uid.isNotEmpty) {
-              final apiPic = '${base.scheme}://${base.host}:${base.port.toString()}/api/v1/profile/$uid/picture?t=${DateTime.now().millisecondsSinceEpoch}';
+              final apiPic =
+                  '${base.scheme}://${base.host}:${base.port.toString()}/api/v1/profile/$uid/picture?t=${DateTime.now().millisecondsSinceEpoch}';
               setState(() {
                 _profileImageUrl = apiPic;
               });
             } else {
-              final full = rawUrl.startsWith('http') ? rawUrl : '${base.scheme}://${base.host}:${base.port.toString()}$rawUrl';
-              setState(() { _profileImageUrl = full; });
+              final full = rawUrl.startsWith('http')
+                  ? rawUrl
+                  : '${base.scheme}://${base.host}:${base.port.toString()}$rawUrl';
+              setState(() {
+                _profileImageUrl = full;
+              });
             }
           } catch (_) {}
           await ProfileService.saveUserProfile({'profile_picture': rawUrl});
-          try { await AuthService().refreshCurrentUser(); } catch (_) {}
+          try {
+            await AuthService().refreshCurrentUser();
+          } catch (_) {}
         }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile picture updated')),
@@ -165,8 +181,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile saved successfully')),
       );
-      try { await AuthService().refreshCurrentUser(); } catch (_) {}
-      setState(() { _isEditMode = false; });
+      try {
+        await AuthService().refreshCurrentUser();
+      } catch (_) {}
+      setState(() {
+        _isEditMode = false;
+      });
       await _loadProfileData();
       if (!context.mounted) return;
       context.go('/profile?mode=view');
@@ -208,7 +228,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       centered: false,
       scrollable: false,
       appBar: AppBar(
-        title: const Text('My Profile', style: TextStyle(color: Colors.white)),
+        title: const Text('Profile', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -245,24 +265,36 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 // Profile Picture Section
                 Stack(
                   children: [
-Builder(builder: (context) {
+                    Builder(builder: (context) {
                       ImageProvider<Object>? avatarImage;
                       if (_profileImageBytes != null) {
-                        avatarImage = MemoryImage(_profileImageBytes!) as ImageProvider<Object>;
+                        avatarImage = MemoryImage(_profileImageBytes!)
+                            as ImageProvider<Object>;
                       } else if (_profileImageUrl != null) {
                         // Only use NetworkImage if URL looks like an image and not an API endpoint
-                        if ((_profileImageUrl!.toLowerCase().contains('.jpg') || 
-                            _profileImageUrl!.toLowerCase().contains('.jpeg') || 
-                            _profileImageUrl!.toLowerCase().contains('.png') || 
-                            _profileImageUrl!.toLowerCase().contains('.gif') ||
-                            _profileImageUrl!.toLowerCase().contains('.webp')) &&
+                        if ((_profileImageUrl!.toLowerCase().contains('.jpg') ||
+                                _profileImageUrl!
+                                    .toLowerCase()
+                                    .contains('.jpeg') ||
+                                _profileImageUrl!
+                                    .toLowerCase()
+                                    .contains('.png') ||
+                                _profileImageUrl!
+                                    .toLowerCase()
+                                    .contains('.gif') ||
+                                _profileImageUrl!
+                                    .toLowerCase()
+                                    .contains('.webp')) &&
                             !_profileImageUrl!.contains('/api/v1/profile/')) {
-                          avatarImage = NetworkImage(_profileImageUrl!) as ImageProvider<Object>;
+                          avatarImage = NetworkImage(_profileImageUrl!)
+                              as ImageProvider<Object>;
                         } else {
-                          avatarImage = null; // Don't try to load non-image URLs or API endpoints
+                          avatarImage =
+                              null; // Don't try to load non-image URLs or API endpoints
                         }
                       } else if (_profileImage != null) {
-                        avatarImage = FileImage(_profileImage!) as ImageProvider<Object>;
+                        avatarImage =
+                            FileImage(_profileImage!) as ImageProvider<Object>;
                       } else {
                         avatarImage = null;
                       }
@@ -280,44 +312,45 @@ Builder(builder: (context) {
                     }),
                     if (_isEditMode)
                       Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.camera_alt, size: 20, color: Colors.white),
-                          onPressed: () {
-                            showAppModalBottomSheet(
-                              context: context,
-                              builder: (context) => Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ListTile(
-                                    leading: const Icon(Icons.photo_library),
-                                    title: const Text('Choose from Gallery'),
-                                    onTap: () {
-                                      Navigator.pop(context);
-                                      _pickImage(ImageSource.gallery);
-                                    },
-                                  ),
-                                  ListTile(
-                                    leading: const Icon(Icons.camera_alt),
-                                    title: const Text('Take Photo'),
-                                    onTap: () {
-                                      Navigator.pop(context);
-                                      _pickImage(ImageSource.camera);
-                                    },
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.camera_alt,
+                                size: 20, color: Colors.white),
+                            onPressed: () {
+                              showAppModalBottomSheet(
+                                context: context,
+                                builder: (context) => Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ListTile(
+                                      leading: const Icon(Icons.photo_library),
+                                      title: const Text('Choose from Gallery'),
+                                      onTap: () {
+                                        Navigator.pop(context);
+                                        _pickImage(ImageSource.gallery);
+                                      },
+                                    ),
+                                    ListTile(
+                                      leading: const Icon(Icons.camera_alt),
+                                      title: const Text('Take Photo'),
+                                      onTap: () {
+                                        Navigator.pop(context);
+                                        _pickImage(ImageSource.camera);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 24),

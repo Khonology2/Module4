@@ -39,6 +39,7 @@ const mockAuthenticateToken = jest.fn((req, res, next) => {
 
 jest.mock('../../middleware/auth', () => ({
   authenticateToken: mockAuthenticateToken,
+  requireRole: () => (_req, _res, next) => next(),
 }));
 
 // Setup app

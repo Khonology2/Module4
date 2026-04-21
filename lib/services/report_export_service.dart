@@ -42,6 +42,7 @@ class ReportExportService {
     try {
       // Fetch signatures first
       final signatures = await _fetchSignatures(report.id);
+      final sanitizedContent = SignOffReport.sanitizeReportContent(report.reportContent);
       
       final pdf = pw.Document();
       
@@ -94,7 +95,7 @@ class ReportExportService {
               ),
               pw.SizedBox(height: 5),
               pw.Text(
-                report.reportContent,
+                sanitizedContent,
                 style: const pw.TextStyle(fontSize: 12),
               ),
               pw.SizedBox(height: 15),
@@ -157,6 +158,7 @@ class ReportExportService {
                   final signerRole = sig['signer_role'] as String? ?? 'Unknown';
                   final signedAt = sig['signed_at'] as String?;
                   final signatureData = sig['signature_data'] as String?;
+                  final signatureType = (sig['signature_type'] as String?) ?? 'manual';
                   final signatureHash = sig['signature_hash'] as String? ?? '';
                   
                   return pw.Container(
@@ -182,7 +184,19 @@ class ReportExportService {
                             child: pw.ClipRRect(
                               horizontalRadius: 4,
                               verticalRadius: 4,
-                              child: _buildSignatureImage(signatureData),
+                              child: signatureType.toLowerCase() == 'typed'
+                                  ? pw.Center(
+                                      child: pw.Text(
+                                        signatureData.trim(),
+                                        textAlign: pw.TextAlign.center,
+                                        style: pw.TextStyle(
+                                          fontSize: 14,
+                                          fontStyle: pw.FontStyle.italic,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                      ),
+                                    )
+                                  : _buildSignatureImage(signatureData),
                             ),
                           ),
                         // Signature Details
@@ -361,6 +375,7 @@ class ReportExportService {
   Future<void> printReport(SignOffReport report) async {
     try {
       final pdf = pw.Document();
+      final sanitizedContent = SignOffReport.sanitizeReportContent(report.reportContent);
       
       pdf.addPage(
         pw.MultiPage(
@@ -377,7 +392,7 @@ class ReportExportService {
               ),
               pw.SizedBox(height: 10),
               pw.Text(
-                report.reportContent,
+                sanitizedContent,
                 style: const pw.TextStyle(fontSize: 12),
               ),
             ];

@@ -5,11 +5,17 @@ import '../theme/flownet_theme.dart';
 class AddEventModal extends StatefulWidget {
   final String? projectId;
   final Function(TimelineEvent)? onEventAdded;
+  final DateTime? initialDate;
+  final DateTime? initialStartTime;
+  final DateTime? initialEndTime;
 
   const AddEventModal({
     super.key,
     this.projectId,
     this.onEventAdded,
+    this.initialDate,
+    this.initialStartTime,
+    this.initialEndTime,
   }) : super();
 
   @override
@@ -30,7 +36,15 @@ class AddEventModalState extends State<AddEventModal> {
   @override
   void initState() {
     super.initState();
-    _selectedDate = DateTime.now();
+    _selectedDate = widget.initialDate ?? DateTime.now();
+
+    // If a specific start time was provided (from week/day slot), pre-fill time fields.
+    if (widget.initialStartTime != null) {
+      _isAllDay = false;
+      _startTime = widget.initialStartTime;
+      _endTime = widget.initialEndTime ??
+          widget.initialStartTime!.add(const Duration(hours: 1));
+    }
   }
 
   @override

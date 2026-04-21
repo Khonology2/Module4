@@ -8,18 +8,22 @@ import '../models/user_role.dart';
 import '../services/backend_api_service.dart';
 import '../services/auth_service.dart';
 import '../services/sign_off_report_service.dart';
+import '../services/user_data_service.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/flownet_logo.dart';
 import '../widgets/sprint_performance_chart.dart';
 import '../widgets/audit_history_widget.dart';
 import 'client_review_workflow_screen.dart';
+import '../utils/user_label_utils.dart';
 
 class ReportViewScreen extends ConsumerStatefulWidget {
   final String reportId;
+  final bool showPostSubmitBanner;
   
   const ReportViewScreen({
     super.key,
     required this.reportId,
+    this.showPostSubmitBanner = false,
   });
 
   @override
@@ -31,11 +35,31 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
   Deliverable? _deliverable;
   bool _isLoading = true;
   final SignOffReportService _reportService = SignOffReportService(AuthService());
+  final UserDataService _userDataService = UserDataService();
 
   @override
   void initState() {
     super.initState();
     _loadReportData();
+  }
+
+  Future<Deliverable?> _enrichDeliverableWithSubmittedByName({
+    required Deliverable? deliverable,
+    required SignOffReport report,
+  }) async {
+    if (deliverable == null) return null;
+    if (deliverable.submittedByName != null && deliverable.submittedByName!.trim().isNotEmpty) {
+      return deliverable;
+    }
+
+    final submittedById = (deliverable.submittedBy ?? report.submittedBy ?? '').toString();
+    if (submittedById.trim().isEmpty) return deliverable;
+
+    final user = await _userDataService.getUserById(submittedById);
+    final name = user?.name.trim() ?? '';
+    if (name.isEmpty) return deliverable;
+
+    return deliverable.copyWith(submittedByName: name);
   }
 
   Future<void> _loadReportData() async {
@@ -58,6 +82,11 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
             loadedDeliverable = Deliverable.fromJson(dJson);
           }
         }
+
+        loadedDeliverable = await _enrichDeliverableWithSubmittedByName(
+          deliverable: loadedDeliverable,
+          report: loadedReport,
+        );
         
         setState(() {
           _report = loadedReport;
@@ -81,9 +110,10 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
   }
 
   void _navigateToEdit() {
-    if (_report != null && _report!.deliverableId.isNotEmpty) {
-      context.go('/report-builder/${_report!.deliverableId}');
-    }
+    if (_report == null) return;
+    final deliverableId = _report!.deliverableId;
+    if (deliverableId.isEmpty) return;
+    context.go('/report-editor/$deliverableId?reportId=${Uri.encodeComponent(_report!.id)}');
   }
 
   void _showAuditHistory() {
@@ -128,6 +158,27 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
         ),
       ),
     );
+  }
+
+  String _formatRole(String? raw) {
+    final r = (raw ?? '').trim();
+    if (r.isEmpty) return '';
+    final norm = r.toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
+    for (final role in UserRole.values) {
+      final rn = role.name.toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
+      if (rn == norm) {
+        return role.displayName;
+      }
+    }
+    return r;
+  }
+
+  String _formatActor({required String? name, required String? role}) {
+    final n = (name ?? '').trim();
+    final r = _formatRole(role);
+    if (n.isEmpty) return '';
+    if (r.isEmpty) return n;
+    return '$n ($r)';
   }
 
   Future<void> _submitClientFeedback(String feedback, bool requestChanges) async {
@@ -339,6 +390,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
 
     final userRole = AuthService().currentUser?.role;
     final isClientReviewer = userRole == UserRole.clientReviewer;
+    final canEdit = !isClientReviewer && _report!.status != ReportStatus.approved;
 
     return Scaffold(
       backgroundColor: FlownetColors.charcoalBlack,
@@ -394,8 +446,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
               ),
             ),
 
-          // Edit Button
-           if (_report!.status != ReportStatus.approved)
+          if (canEdit)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: TextButton.icon(
@@ -414,6 +465,31 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (widget.showPostSubmitBanner)
+              Card(
+                color: FlownetColors.graphiteGray,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.mark_email_read, color: FlownetColors.electricBlue),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'This is the submitted version of the report.',
+                          style: TextStyle(color: FlownetColors.pureWhite, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      if (canEdit)
+                        TextButton(
+                          onPressed: _navigateToEdit,
+                          child: const Text('Edit'),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            if (widget.showPostSubmitBanner) const SizedBox(height: 16),
             // Header
             Text(
               'Report View',
@@ -474,7 +550,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
             ),
             const SizedBox(height: 16),
             if (_deliverable == null) ...[
-               buildStatusItem('Linked Deliverable ID', _report!.deliverableId),
+               buildStatusItem('Linked Deliverable', 'Unknown Deliverable'),
             ] else ...[
               Row(
                 children: [
@@ -493,17 +569,64 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
                     child: buildStatusItem('Due Date', formatDate(_deliverable!.dueDate)),
                   ),
                   Expanded(
-                    child: buildStatusItem('Submitted By', _deliverable!.submittedBy ?? 'Unknown'),
+                    child: buildStatusItem(
+                      'Submitted By',
+                      _formatActor(
+                        name: _report!.submittedByName ?? _report!.submittedBy,
+                        role: _report!.submittedByRole,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ],
             const SizedBox(height: 8),
-              if (_report!.preparedByName != null && _report!.preparedByName!.isNotEmpty) ...[
-                buildStatusItem('Prepared By', _report!.preparedByName!),
-                const SizedBox(height: 8),
-              ],
+              buildStatusItem(
+                'Prepared By',
+                _formatActor(
+                  name: _report!.preparedByName ?? _report!.createdBy,
+                  role: _report!.preparedByRole,
+                ),
+              ),
+              const SizedBox(height: 8),
               buildStatusItem('Report Status', _report!.status.toString().split('.').last.toUpperCase()),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: buildStatusItem('Created', formatDate(_report!.createdAt))),
+                  Expanded(child: buildStatusItem('Submitted', _report!.submittedAt != null ? formatDate(_report!.submittedAt!) : '')),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: buildStatusItem(
+                      'Reviewed By',
+                      _formatActor(
+                        name: _report!.reviewedByName ?? _report!.reviewedBy,
+                        role: _report!.reviewedByRole,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: buildStatusItem('Reviewed', _report!.reviewedAt != null ? formatDate(_report!.reviewedAt!) : '')),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: buildStatusItem(
+                      'Approved By',
+                      _formatActor(
+                        name: _report!.approvedByName ?? _report!.approvedBy,
+                        role: _report!.approvedByRole,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: buildStatusItem('Approved', _report!.approvedAt != null ? formatDate(_report!.approvedAt!) : '')),
+                ],
+              ),
           ],
         ),
       ),
@@ -511,6 +634,10 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
   }
 
   Widget buildStatusItem(String label, String value) {
+    final trimmed = value.trim();
+    final normalized = trimmed.isEmpty || trimmed.toLowerCase() == 'unknown' || trimmed.toLowerCase() == 'unknown user'
+        ? '—'
+        : value;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -522,7 +649,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
           ),
         ),
         Text(
-          value,
+          normalized,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 14,
@@ -572,7 +699,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
              _buildHistoryItem(
                details: _report!.changeRequestDetails!,
                date: _report!.reviewedAt,
-               user: _report!.reviewedBy,
+               user: _report!.reviewedByName ?? _report!.reviewedBy,
                isLatest: true,
              ),
              if (historyList.isNotEmpty) const Divider(color: Colors.orange, height: 24),
@@ -582,7 +709,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
              return _buildHistoryItem(
                details: i['details'] ?? '',
                date: i['requestedAt'] != null ? DateTime.parse(i['requestedAt']) : null,
-               user: i['requestedBy'],
+               user: i['requestedByName'] ?? i['requestedBy'],
                isLatest: false,
              );
           }),
@@ -626,7 +753,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
         if (user != null) ...[
            const SizedBox(height: 4),
            Text(
-             'Requested by: $user',
+            'Requested by: ${UserLabelUtils.sanitizeUserLabel(user, emptyIsUnknown: true)}',
              style: const TextStyle(color: Colors.white38, fontSize: 11, fontStyle: FontStyle.italic),
            ),
         ],

@@ -6,7 +6,7 @@ Run this in a **new terminal window**:
 
 ```powershell
 cd backend
-.\start-server-8000.ps1
+.\start-server.ps1
 ```
 
 The server will start on `http://localhost:8000`

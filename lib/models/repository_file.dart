@@ -77,7 +77,7 @@ class RepositoryFile {
   factory RepositoryFile.fromJson(Map<String, dynamic> json) {
     return RepositoryFile(
       id: json['id']?.toString() ?? '',
-      name: json['name'] ?? '',
+      name: json['name'] ?? json['file_name'] ?? '',
       fileType: json['file_type'] ?? json['fileType'] ?? '',
       uploadDate: DateTime.parse(json['uploaded_at'] ?? json['uploadDate']),
       uploadedBy: json['uploaded_by']?.toString() ?? json['uploadedBy']?.toString() ?? '',

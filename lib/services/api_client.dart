@@ -14,8 +14,9 @@ class ApiClient {
   ApiClient._internal();
 
 static String get _baseUrlWithVersion => Environment.apiBaseUrl;
-  static const Duration _timeout = Duration(seconds: 45); // Increased timeout for Render
+  static const Duration _timeout = Duration(seconds: 90); // Increased timeout for Render cold starts
 
+  bool _initialized = false;
   String? _accessToken;
   String? _refreshToken;
   DateTime? _tokenExpiry;
@@ -39,9 +40,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
   // Initialize API client
   Future<void> initialize() async {
+    if (_initialized) return;
     await _loadStoredTokens();
     DebugHelper.logEnvironmentInfo();
     debugPrint('API Client initialized with base URL: $_baseUrlWithVersion');
+    _initialized = true;
   }
 
   // Token management
@@ -126,14 +129,29 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
   // HTTP Methods
   Future<ApiResponse> get(String endpoint, {Map<String, String>? queryParams, bool requireAuth = true}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
     if (!requireAuth) {
       // Make unauthenticated request
       return await _makeUnauthenticatedRequest('GET', endpoint, queryParams: queryParams);
     }
+
+    // Check auth
+    if (isAuthenticated && !_isTokenValid()) {
+      final refreshed = await _refreshAccessToken();
+      if (!refreshed) {
+        return ApiResponse.error('Authentication expired. Please login again.');
+      }
+    }
+
     return await _makeRequest('GET', endpoint, queryParams: queryParams);
   }
 
   Future<ApiResponse> post(String endpoint, {Map<String, dynamic>? body, Map<String, String>? queryParams, bool requireAuth = true}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
     if (!requireAuth && queryParams != null && queryParams.containsKey('token')) {
       // For token-based requests, we can skip auth but still need to pass token
       // The token will be in query params, so we'll make a special request
@@ -143,10 +161,14 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   }
 
   Future<ApiResponse> put(String endpoint, {Map<String, dynamic>? body, Map<String, String>? queryParams}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
     return await _makeRequest('PUT', endpoint, body: body, queryParams: queryParams);
   }
 
   Future<ApiResponse> delete(String endpoint, {Map<String, String>? queryParams}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
     return await _makeRequest('DELETE', endpoint, queryParams: queryParams);
   }
 
@@ -513,10 +535,39 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   // Authentication methods
   Future<ApiResponse> login(String email, String password) async {
 
-    final response = await post('/auth/login', body: {
-      'email': email,
-      'password': password,
-    },);
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
+    // Add retry logic for Render cold starts
+    ApiResponse response = ApiResponse.error('Initial response not set');
+    int attempts = 0;
+    const maxAttempts = 2;
+
+    while (attempts < maxAttempts) {
+      try {
+        debugPrint('🔐 Login attempt ${attempts + 1} for: $email');
+        response = await post('/auth/login', body: {
+          'email': email,
+          'password': password,
+        },);
+
+        // If we get a response (success or error), break
+        if (response.statusCode != 0) {
+          break;
+        }
+      } catch (e) {
+        debugPrint('🔐 Login attempt ${attempts + 1} failed: $e');
+        attempts++;
+        
+        // If last attempt, rethrow
+        if (attempts >= maxAttempts) {
+          rethrow;
+        }
+        
+        // Wait before retry (for backend to wake up)
+        await Future.delayed(const Duration(seconds: 3));
+      }
+    }
 
     if (response.isSuccess && response.data != null) {
       final data = response.data!;
@@ -563,12 +614,23 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
   Future<ApiResponse> logout() async {
 
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
     final response = await post('/auth/logout');
     await clearTokens();
     return response;
   }
 
   Future<ApiResponse> getCurrentUser() async {
+
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
+    // Don't call /auth/me if we don't have an access token
+    if (_accessToken == null) {
+      return ApiResponse.error('No access token available. Please login first.');
+    }
 
     return await get('/auth/me');
   }

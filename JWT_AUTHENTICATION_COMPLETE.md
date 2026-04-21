@@ -125,7 +125,7 @@ gAAAAABpb7s7Wv1I5AwhUYcW746Vsz4EdL8o6vLstFhxPItPDIYCFhHNRzVi8tqcAisxWg1McQx1SuLy
 
 ### **For Production:**
 1. Ensure environment variables are set
-2. Backend runs on port 3001
+2. Backend runs on port 8000
 3. Flutter app connects to backend API
 4. Users authenticate with JWT tokens
 5. Role-based dashboards are displayed

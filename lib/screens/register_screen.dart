@@ -289,10 +289,87 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 if (value == null || value.isEmpty) {
                                   return 'Please enter your email';
                                 }
+
+                                final email = value.toLowerCase().trim();
+
+                                // Basic email format validation
                                 if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                                    .hasMatch(value)) {
+                                    .hasMatch(email)) {
                                   return 'Please enter a valid email';
                                 }
+
+                                final [username, domain] = email.split('@');
+
+                                // Check for disposable email domains
+                                final disposableDomains = [
+                                  '10minutemail.com',
+                                  'tempmail.org',
+                                  'guerrillamail.com',
+                                  'mailinator.com',
+                                  'yopmail.com',
+                                  'temp-mail.org',
+                                  'throwaway.email',
+                                  'maildrop.cc',
+                                  'fakeemail.com',
+                                  'tempemail.org',
+                                  'sharklasers.com',
+                                  'getairmail.com'
+                                ];
+
+                                if (disposableDomains.any((disposable) =>
+                                    domain.contains(disposable))) {
+                                  return 'Disposable email addresses are not allowed';
+                                }
+
+                                // Check for valid domain structure
+                                if (domain.contains('..') ||
+                                    !domain.contains('.')) {
+                                  return 'Invalid email domain';
+                                }
+
+                                // Enhanced username validation
+                                final suspiciousUsernamePatterns = [
+                                  RegExp(
+                                      r'^(test|fake|dummy|sample|example|demo|user|admin|support|info|contact)',
+                                      caseSensitive: false),
+                                  RegExp(
+                                      r'^[a-z]+\d{3,}$'), // usernames ending with 3+ numbers
+                                  RegExp(
+                                      r'^[a-z]{1,2}\d{2,}$'), // short usernames with numbers
+                                  RegExp(
+                                      r'^(no|not|fake|invalid|nonexistent|random|temp|temporal)',
+                                      caseSensitive: false),
+                                  RegExp(
+                                      r'^.{1,3}\d{2,}$'), // very short usernames with numbers
+                                  RegExp(
+                                      r'^[a-z]{20,}$'), // unusually long usernames
+                                  RegExp(r'^(test|demo|sample)\d*@',
+                                      caseSensitive: false),
+                                ];
+
+                                if (suspiciousUsernamePatterns.any(
+                                    (pattern) => pattern.hasMatch(username))) {
+                                  return 'This email address appears to be invalid or non-existent';
+                                }
+
+                                // Check for obviously fake combinations
+                                final fakeCombinations = [
+                                  RegExp(
+                                      r'^(test|fake|dummy|sample|example|demo)@(gmail|yahoo|outlook|hotmail)\.com$',
+                                      caseSensitive: false),
+                                  RegExp(
+                                      r'^(user|admin|support|info|contact)@(gmail|yahoo|outlook|hotmail)\.com$',
+                                      caseSensitive: false),
+                                  RegExp(
+                                      r'^[a-z]{1,3}\d{2,}@(gmail|yahoo|outlook|hotmail)\.com$',
+                                      caseSensitive: false),
+                                ];
+
+                                if (fakeCombinations.any(
+                                    (pattern) => pattern.hasMatch(email))) {
+                                  return 'This email address appears to be invalid or non-existent';
+                                }
+
                                 return null;
                               },
                             ),
@@ -494,9 +571,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFFC10D00),
                                   foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
+                                  shape: const StadiumBorder(),
                                   elevation: 2,
                                 ),
                                 child: _isLoading
@@ -511,7 +586,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         ),
                                       )
                                     : const Text(
-                                        'Create Account',
+                                        'CREATE ACCOUNT',
                                         style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
@@ -534,7 +609,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 TextButton(
                                   onPressed: () => context.go('/login'),
                                   child: const Text(
-                                    'Sign In',
+                                    'SIGN IN',
                                     style: TextStyle(
                                       color: Color(0xFFC10D00),
                                       fontWeight: FontWeight.w600,
@@ -692,14 +767,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       debugPrint('📊 Registration result: $result');
 
       if (result['success'] == true && mounted) {
-        _errorHandler.showSuccessSnackBar(context, 'Registration successful!');
+        _errorHandler.showSuccessSnackBar(
+            context, 'Registration successful! You can now login.');
         if (mounted) {
-          context.go(
-            '/email-verification',
-            extra: {
-              'email': _emailController.text.trim(),
-            },
-          );
+          context.go('/login');
         }
       } else if (mounted) {
         final errorMessage =

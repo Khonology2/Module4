@@ -102,6 +102,7 @@ Future.microtask(() async {
   Future<List<core.ApprovalRequest>> _mergeSignOffFallback(List<core.ApprovalRequest> base) async {
     try {
       final reportsRespSubmitted = await _reportService.getSignOffReports(status: 'submitted');
+      final reportsRespUnderReview = await _reportService.getSignOffReports(status: 'under_review');
       final reportsRespApproved = await _reportService.getSignOffReports(status: 'approved');
       final reportsRespChanges = await _reportService.getSignOffReports(status: 'change_requested');
 
@@ -125,6 +126,27 @@ Future.microtask(() async {
           final reviewedAt = DateTime.tryParse(reviewedAtStr);
           final comment = (m['clientComment'] ?? m['client_comment'] ?? m['changeRequestDetails'] ?? m['change_request_details'] ?? '').toString();
           final deliverableId = (m['deliverableId'] ?? m['deliverable_id'] ?? '').toString();
+          final deliverableTitle = (m['deliverableTitle'] ??
+                  m['deliverable_title'] ??
+                  m['deliverableName'] ??
+                  m['deliverable_name'] ??
+                  (m['deliverable'] is Map
+                      ? (m['deliverable']['title'] ??
+                              m['deliverable']['name'] ??
+                              m['deliverable']['deliverableTitle'])
+                          ?.toString()
+                      : null) ??
+                  '')
+              .toString();
+          final deliverableDescription = (m['deliverableDescription'] ??
+                  m['deliverable_description'] ??
+                  (m['deliverable'] is Map
+                      ? (m['deliverable']['description'] ??
+                              m['deliverable']['deliverableDescription'])
+                          ?.toString()
+                      : null) ??
+                  '')
+              .toString();
           String status = statusOverride;
           final s = (m['status'] ?? '').toString().toLowerCase();
           if (s.isNotEmpty) {
@@ -150,6 +172,8 @@ Future.microtask(() async {
             priority: 'medium',
             category: 'Sign-off Report',
             deliverableId: deliverableId.isNotEmpty ? deliverableId : null,
+            deliverableTitle: deliverableTitle.isNotEmpty ? deliverableTitle : null,
+            deliverableDescription: deliverableDescription.isNotEmpty ? deliverableDescription : null,
             evidenceLinks: [],
             definitionOfDone: [],
           ));
@@ -157,6 +181,7 @@ Future.microtask(() async {
       }
 
       if (reportsRespSubmitted.isSuccess) addFrom(reportsRespSubmitted.data, 'pending');
+      if (reportsRespUnderReview.isSuccess) addFrom(reportsRespUnderReview.data, 'pending');
       if (reportsRespApproved.isSuccess) addFrom(reportsRespApproved.data, 'approved');
       if (reportsRespChanges.isSuccess) addFrom(reportsRespChanges.data, 'rejected');
 
@@ -530,10 +555,17 @@ Future.microtask(() async {
               const SizedBox(height: 8),
               Text(request.description, style: const TextStyle(color: FlownetColors.pureWhite)),
               
-              if (request.deliverableId != null) ...[
+              if (request.deliverableTitle != null) ...[
                 const SizedBox(height: 16),
-                const Text('Deliverable ID:', style: TextStyle(color: FlownetColors.coolGray)),
-                Text(request.deliverableId!, style: const TextStyle(color: FlownetColors.pureWhite)),
+                const Text('Deliverable:', style: TextStyle(color: FlownetColors.coolGray)),
+                Text(request.deliverableTitle!, style: const TextStyle(color: FlownetColors.pureWhite)),
+                if ((request.deliverableDescription ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    request.deliverableDescription!,
+                    style: const TextStyle(color: FlownetColors.coolGray),
+                  ),
+                ],
               ],
               
               if (request.evidenceLinks?.isNotEmpty ?? false) ...[
@@ -640,7 +672,7 @@ Future.microtask(() async {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Deliverable: ${request.deliverableId ?? 'N/A'}'),
+        title: Text('Deliverable: ${request.deliverableTitle ?? 'Unknown Deliverable'}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

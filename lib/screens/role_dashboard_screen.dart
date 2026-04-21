@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../services/realtime_service.dart';
 import '../services/backend_api_service.dart';
 import '../services/api_service.dart';
+import '../services/user_data_service.dart';
 import '../services/sign_off_report_service.dart';
 import '../services/notification_service.dart';
 import '../models/notification_item.dart';
@@ -16,6 +17,8 @@ import '../screens/deliverables_metrics/deliverables_metrics_screen.dart';
 import '../widgets/sprint_performance_chart.dart';
 import '../widgets/background_image.dart';
 import '../widgets/app_modal.dart';
+import '../utils/date_utils.dart' as app_date_utils;
+import '../utils/user_label_utils.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 
@@ -42,11 +45,53 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   List<Map<String, dynamic>> _auditLogs = [];
   List<Map<String, dynamic>> _filteredAuditLogs = [];
   final BackendApiService _backendService = BackendApiService();
+  final UserDataService _userDataService = UserDataService();
   List<Map<String, dynamic>> _pendingReports = [];
   bool _isLoadingPendingReports = false;
   String? _pendingReportsError;
   Map<String, dynamic> _teamMetrics = {};
   bool _isLoadingTeamMetrics = false;
+
+  // Cache for user names to avoid repeated API calls
+  final Map<String, String> _userNamesCache = {};
+
+  // Method to get user name by ID with caching
+  Future<String> _getUserNameById(String userId) async {
+    if (userId.trim().isEmpty) {
+      return UserLabelUtils.unknownUserLabel;
+    }
+
+    // Check cache first
+    if (_userNamesCache.containsKey(userId)) {
+      return _userNamesCache[userId]!;
+    }
+
+    // Current user is already loaded; prefer that over a network round trip.
+    if (_currentUser != null && _currentUser!.id == userId) {
+      final currentUserName = _currentUser!.name.trim().isNotEmpty
+          ? _currentUser!.name.trim()
+          : _currentUser!.email.trim();
+      if (currentUserName.isNotEmpty) {
+        _userNamesCache[userId] = currentUserName;
+        return currentUserName;
+      }
+    }
+
+    try {
+      final user = await _userDataService.getUserById(userId);
+      if (user != null) {
+        final userName = user.name.isNotEmpty ? user.name : user.email;
+        _userNamesCache[userId] = userName;
+        return userName;
+      }
+    } catch (e) {
+      debugPrint('Error fetching user name for $userId: $e');
+    }
+
+    // Fallback to showing the ID
+    _userNamesCache[userId] = UserLabelUtils.unknownUserLabel;
+    return UserLabelUtils.unknownUserLabel;
+  }
 
   // Missing variables
   String _selectedChartType = 'velocity';
@@ -121,10 +166,36 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       final items = await ApiService.getDeliverables();
       _dashboardDeliverables = items;
 
+      // Pre-populate user cache for better performance
+      await _preloadUserNames(items);
+
       _computeTeamMetrics();
     } finally {
       if (mounted) setState(() => _isLoadingDashboardDeliverables = false);
     }
+  }
+
+  // Preload user names for all deliverables to avoid multiple API calls
+  Future<void> _preloadUserNames(
+      List<Map<String, dynamic>> deliverables) async {
+    final Set<String> userIds = {};
+
+    for (final deliverable in deliverables) {
+      final ownerId = _getOwnerId(deliverable);
+      final assignedToId = deliverable['assigned_to']?.toString() ??
+          deliverable['assignedTo']?.toString();
+
+      if (ownerId != null && ownerId.isNotEmpty) {
+        userIds.add(ownerId);
+      }
+      if (assignedToId != null && assignedToId.isNotEmpty) {
+        userIds.add(assignedToId);
+      }
+    }
+
+    // Batch load user names
+    final futures = userIds.map((userId) => _getUserNameById(userId));
+    await Future.wait(futures);
   }
 
   Future<void> _loadDashboardProjects() async {
@@ -229,7 +300,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                 backgroundColor: Colors.red,
               ),
             );
-            router.go('/');
+            router.go(AuthService.postLogoutRoute);
           }
         }
       }
@@ -237,7 +308,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       debugPrint('❌ Error loading current user: $e');
       // If there's an error, redirect to login
       if (mounted) {
-        context.go('/');
+        context.go(AuthService.postLogoutRoute);
       }
     }
   }
@@ -324,13 +395,13 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         setState(() {
           _auditLogsError = response.error ?? 'Failed to load audit logs';
         });
-        debugPrint('❌ Error loading audit logs: \${_auditLogsError}');
+        debugPrint('❌ Error loading audit logs: $_auditLogsError');
       }
     } catch (e) {
       setState(() {
-        _auditLogsError = 'Failed to load audit logs: \$e';
+        _auditLogsError = 'Failed to load audit logs: $e';
       });
-      debugPrint('❌ Exception loading audit logs: \$e');
+      debugPrint('❌ Exception loading audit logs: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -413,24 +484,79 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   String? _getOwnerName(Map<String, dynamic> data) {
-    if (data['ownerName'] != null) return data['ownerName'].toString();
-    if (data['owner_name'] != null) return data['owner_name'].toString();
+    // Prefer explicit assignment/user-facing name fields first.
+    final directNameFields = [
+      data['assignedToName'],
+      data['assigned_to_name'],
+      data['ownerName'],
+      data['owner_name'],
+      data['createdByName'],
+      data['created_by_name'],
+      data['submittedByName'],
+      data['submitted_by_name'],
+    ];
+    for (final value in directNameFields) {
+      if (value != null) {
+        final safe = UserLabelUtils.sanitizeUserLabel(
+          value.toString(),
+          emptyIsUnknown: false,
+        );
+        if (safe.isNotEmpty) return safe;
+      }
+    }
+
+    if (data['ownerName'] != null) {
+      final safe = UserLabelUtils.sanitizeUserLabel(
+        data['ownerName'].toString(),
+        emptyIsUnknown: false,
+      );
+      return safe.isNotEmpty ? safe : null;
+    }
+    if (data['owner_name'] != null) {
+      final safe = UserLabelUtils.sanitizeUserLabel(
+        data['owner_name'].toString(),
+        emptyIsUnknown: false,
+      );
+      return safe.isNotEmpty ? safe : null;
+    }
+
+    // Map backend field names to frontend expectations
+    if (data['created_by_name'] != null) {
+      final safe = UserLabelUtils.sanitizeUserLabel(
+        data['created_by_name'].toString(),
+        emptyIsUnknown: false,
+      );
+      return safe.isNotEmpty ? safe : null;
+    }
 
     if (data['owner'] != null && data['owner'] is Map) {
       final owner = data['owner'];
       final first = owner['first_name'] ?? owner['firstName'] ?? '';
       final last = owner['last_name'] ?? owner['lastName'] ?? '';
       if (first.toString().isNotEmpty || last.toString().isNotEmpty) {
-        return '$first $last'.trim();
+        final candidate = '$first $last'.trim();
+        final safe = UserLabelUtils.sanitizeUserLabel(
+          candidate,
+          emptyIsUnknown: false,
+        );
+        return safe.isNotEmpty ? safe : null;
       }
-      return owner['email']?.toString();
+      final safe = UserLabelUtils.sanitizeUserLabel(
+        owner['email']?.toString(),
+        emptyIsUnknown: false,
+      );
+      return safe.isNotEmpty ? safe : null;
     }
     return null;
   }
 
   String? _getOwnerId(Map<String, dynamic> data) {
-    return data['ownerId']?.toString() ??
+    return data['assignedTo']?.toString() ??
+        data['assigned_to']?.toString() ??
+        data['ownerId']?.toString() ??
         data['owner_id']?.toString() ??
+        // Map backend field names to frontend expectations
+        data['created_by']?.toString() ??
         (data['owner'] != null && data['owner'] is Map
             ? data['owner']['id']?.toString()
             : null);
@@ -450,7 +576,99 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         imagePath: 'assets/Icons/khono_bg.png',
         withGlassEffect: false,
         overlayOpacity: 0.25,
-        child: _buildRoleSpecificContent(),
+        child: Column(
+          children: [
+            // Role header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Row(
+                children: [
+                  const SizedBox(
+                      width: 48), // Space for hamburger menu alignment
+                  Expanded(
+                    child: Text(
+                      '${_currentUser!.role.displayName} Dashboard',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  Builder(
+                    builder: (context) => PopupMenuButton<String>(
+                      icon: const Icon(Icons.menu, color: Colors.white),
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'profile':
+                            context.go('/profile');
+                            break;
+                          case 'notifications':
+                            context.go('/notifications');
+                            break;
+                          case 'settings':
+                            context.go('/settings');
+                            break;
+                          case 'logout':
+                            _handleLogout();
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'profile',
+                          child: Row(
+                            children: [
+                              Icon(Icons.person),
+                              SizedBox(width: 8),
+                              Text('Profile'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'notifications',
+                          child: Row(
+                            children: [
+                              Icon(Icons.notifications),
+                              SizedBox(width: 8),
+                              Text('Notifications'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'settings',
+                          child: Row(
+                            children: [
+                              Icon(Icons.settings),
+                              SizedBox(width: 8),
+                              Text('Settings'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'logout',
+                          child: Row(
+                            children: [
+                              Icon(Icons.logout),
+                              SizedBox(width: 8),
+                              Text('Logout'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Main content
+            Expanded(
+              child: _buildRoleSpecificContent(),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: _buildRoleSpecificFAB(),
     );
@@ -653,49 +871,55 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     }
   }
 
-  Widget _buildRoleSpecificFAB() {
+  Widget? _buildRoleSpecificFAB() {
+    final auth = AuthService();
+    final canCreateDeliverable = auth.canCreateDeliverable();
+    final canManageUsers = auth.canManageUsers();
+
+    if (!canCreateDeliverable && !canManageUsers) return null;
+
     return FloatingActionButton(
       onPressed: () {
-        // Show centered modal for Team Member and Delivery Lead roles
-        if (_currentUser!.role == UserRole.teamMember ||
-            _currentUser!.role == UserRole.deliveryLead) {
+        if ((_currentUser!.role == UserRole.teamMember ||
+                _currentUser!.role == UserRole.deliveryLead) &&
+            canCreateDeliverable) {
           _showCreateDeliverableModal();
-        } else {
-          // Use bottom sheet for other roles (Client, System Admin, etc.)
-          showAppModalBottomSheet(
-            context: context,
-            builder: (context) {
-              return SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.assignment_outlined),
-                      title: const Text('Create Deliverable'),
-                      onTap: () {
-                        context.go('/deliverable-setup');
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.folder),
-                      title: const Text('View Projects'),
-                      onTap: () {
-                        context.go('/projects');
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.admin_panel_settings),
-                      title: const Text('Role Management'),
-                      onTap: () {
-                        context.go('/role-management');
-                      },
-                    ),
-                  ],
+          return;
+        }
+
+        showAppModalBottomSheet(
+          context: context,
+          builder: (context) {
+            final items = <Widget>[];
+
+            if (canCreateDeliverable) {
+              items.add(
+                ListTile(
+                  leading: const Icon(Icons.assignment_outlined),
+                  title: const Text('Create Deliverable'),
+                  onTap: () => context.go('/deliverable-setup'),
                 ),
               );
-            },
-          );
-        }
+            }
+
+            if (canManageUsers) {
+              items.add(
+                ListTile(
+                  leading: const Icon(Icons.admin_panel_settings),
+                  title: const Text('Role Management'),
+                  onTap: () => context.go('/role-management'),
+                ),
+              );
+            }
+
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: items,
+              ),
+            );
+          },
+        );
       },
       backgroundColor:
           _currentUser?.roleColor ?? Theme.of(context).colorScheme.primary,
@@ -784,57 +1008,82 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
 
   Widget _buildQuickActions() {
     final canCreate = _authService.canCreateDeliverable();
-    return Row(
-      children: [
+    final tiles = <Widget>[
+      Expanded(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildActionButton(
+              icon: Icons.folder_outlined,
+              label: 'View Projects',
+              onTap: () => context.go('/projects'),
+            ),
+          ),
+        ),
+      ),
+      Expanded(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildActionButton(
+              icon: Icons.assignment_outlined,
+              label: 'View Deliverables',
+              onTap: () => context.go('/deliverables'),
+            ),
+          ),
+        ),
+      ),
+    ];
+
+    if (canCreate) {
+      tiles.insert(
+        0,
         Expanded(
           child: Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: _buildActionButton(
-                icon: Icons.assignment_outlined,
+                icon: Icons.assignment_add,
                 label: 'Create Deliverable',
                 onTap: () => context.go('/deliverable-setup'),
               ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
+      );
+      tiles.add(
         Expanded(
           child: Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: _buildActionButton(
-                icon: Icons.folder_outlined,
-                label: 'View Projects',
-                onTap: () => context.go('/projects'),
+                icon: Icons.description_outlined,
+                label: 'Build Report',
+                onTap: () {
+                  final first = _dashboardDeliverables.isNotEmpty
+                      ? _dashboardDeliverables.first
+                      : null;
+                  final sprintId =
+                      first != null ? _extractFirstSprintId(first) : null;
+                  if (sprintId != null && sprintId.isNotEmpty) {
+                    context.go('/sprint-report/$sprintId');
+                    return;
+                  }
+                  context.go('/sprint-console');
+                },
               ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        if (canCreate)
-          Expanded(
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: _buildActionButton(
-                  icon: Icons.description_outlined,
-                  label: 'Build Report',
-                  onTap: () {
-                    final first = _dashboardDeliverables.isNotEmpty
-                        ? _dashboardDeliverables.first
-                        : null;
-                    final id = first != null
-                        ? (first['id']?.toString() ??
-                            first['uuid']?.toString() ??
-                            '')
-                        : '';
-                    if (id.isNotEmpty) context.go('/report-builder/$id');
-                  },
-                ),
-              ),
-            ),
-          ),
+      );
+    }
+
+    return Row(
+      children: [
+        for (int i = 0; i < tiles.length; i++) ...[
+          if (i > 0) const SizedBox(width: 12),
+          tiles[i],
+        ]
       ],
     );
   }
@@ -938,7 +1187,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                     onPressed: id.isEmpty
                                         ? null
                                         : () =>
-                                            context.go('/report-builder/$id'),
+                                            _openSprintReportForDeliverable(d),
                                     icon: const Icon(Icons.description_outlined,
                                         size: 18),
                                     label: const Text('Report'),
@@ -1073,10 +1322,11 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                               const Spacer(),
                               IconButton(
                                 onPressed: () {
-                                  final route = id.isNotEmpty
-                                      ? '/report-editor/$id'
-                                      : '/deliverables';
-                                  context.go(route);
+                                  if (id.isNotEmpty) {
+                                    _openSprintReportForDeliverable(d);
+                                    return;
+                                  }
+                                  context.go('/deliverables');
                                 },
                                 icon: const Icon(Icons.open_in_new),
                                 tooltip: 'Open',
@@ -1125,6 +1375,10 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                 a['type'] ??
                                 'Activity';
                             final actor = a['actor'] ?? a['user'] ?? '';
+                            final safeActor = UserLabelUtils.sanitizeUserLabel(
+                              actor.toString(),
+                              emptyIsUnknown: false,
+                            );
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 4),
                               child: InkWell(
@@ -1137,7 +1391,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                         child: Text(actor.toString().isNotEmpty
-                                            ? '$action • $actor'
+                                            ? '$action • $safeActor'
                                             : action)),
                                   ],
                                 ),
@@ -1159,8 +1413,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildCardHeader(Icons.group_outlined, 'Team Metrics',
-                route: '/sprint-console'),
+            _buildCardHeader(Icons.group_outlined, 'Team Metrics', route: null),
             const SizedBox(height: 12),
             if (_isLoadingTeamMetrics)
               const Center(child: CircularProgressIndicator())
@@ -1270,7 +1523,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                 Expanded(
                     child: _buildCardHeader(
                         Icons.insights_outlined, 'Team Performance',
-                        route: '/sprint-console')),
+                        route: null)),
                 const SizedBox(width: 12),
                 DropdownButton<String>(
                   value: _selectedChartType,
@@ -1360,7 +1613,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         if (status == 'completed' || status == 'cancelled') {
           return false;
         }
-        final endStr = p['end_date']?.toString() ?? p['endDate']?.toString() ?? '';
+        final endStr =
+            p['end_date']?.toString() ?? p['endDate']?.toString() ?? '';
         if (endStr.isEmpty) return false;
         final end = DateTime.parse(endStr);
         return now.isAfter(end);
@@ -1384,7 +1638,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
               final title = p['name'] ?? 'Untitled Project';
               final status = (p['status'] ?? '').toString();
               final id = p['id']?.toString() ?? '';
-              final isOverdue = overdueProjects.any((op) => op['id'] == p['id']);
+              final isOverdue =
+                  overdueProjects.any((op) => op['id'] == p['id']);
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: InkWell(
@@ -1442,12 +1697,82 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                 r['title'] ??
                                 'Sign-Off Report')
                             .toString();
-                        final createdBy = (r['createdBy'] ??
-                                r['created_by_name'] ??
-                                r['created_by'] ??
-                                '')
-                            .toString();
+                        // Extract user information from content object if available
+                        String createdBy = '';
+                        String projectName = '';
+
+                        // Check if content is a Map and extract user info
+                        final content = r['content'];
+                        if (content is Map<String, dynamic>) {
+                          createdBy = (content['createdBy'] ??
+                                  content['created_by_name'] ??
+                                  content['created_by'] ??
+                                  content['author'] ??
+                                  content['author_name'] ??
+                                  content['submitted_by'] ??
+                                  content['submitter_name'] ??
+                                  content['owner_name'] ??
+                                  content['user_name'] ??
+                                  content['name'] ??
+                                  '')
+                              .toString();
+
+                          projectName = (content['projectName'] ??
+                                  content['project_name'] ??
+                                  content['project'] ??
+                                  content['sprint_name'] ??
+                                  content['sprintName'] ??
+                                  '')
+                              .toString();
+                        }
+
+                        // Fallback to root level fields if not found in content
+                        if (createdBy.isEmpty) {
+                          createdBy = (r['createdBy'] ??
+                                  r['created_by_name'] ??
+                                  r['created_by'] ??
+                                  r['author'] ??
+                                  r['author_name'] ??
+                                  r['submitted_by'] ??
+                                  r['submitter_name'] ??
+                                  r['owner_name'] ??
+                                  r['user_name'] ??
+                                  r['name'] ??
+                                  '')
+                              .toString();
+                        }
+
+                        // Prevent UUIDs from leaking into UI.
+                        createdBy = UserLabelUtils.sanitizeUserLabel(
+                          createdBy,
+                          emptyIsUnknown: false,
+                        );
+
+                        if (projectName.isEmpty) {
+                          projectName = (r['projectName'] ??
+                                  r['project_name'] ??
+                                  r['project'] ??
+                                  r['sprint_name'] ??
+                                  r['sprintName'] ??
+                                  '')
+                              .toString();
+                        }
+
                         final id = (r['id'] ?? r['report_id'] ?? '').toString();
+
+                        // Create user-friendly display text
+                        String displayText = title;
+                        if (createdBy.isNotEmpty && projectName.isNotEmpty) {
+                          displayText = '$title by $createdBy ($projectName)';
+                        } else if (createdBy.isNotEmpty) {
+                          displayText = '$title by $createdBy';
+                        } else if (projectName.isNotEmpty) {
+                          displayText = '$title ($projectName)';
+                        } else {
+                          // Only show ID as last resort with minimal format
+                          displayText = title;
+                        }
+
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
@@ -1465,10 +1790,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                           Icons.assignment_turned_in_outlined,
                                           size: 18),
                                       const SizedBox(width: 8),
-                                      Expanded(
-                                          child: Text(createdBy.isNotEmpty
-                                              ? '$title • $createdBy'
-                                              : title)),
+                                      Expanded(child: Text(displayText)),
                                     ],
                                   ),
                                 ),
@@ -1528,11 +1850,10 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                 final createdAtStr =
                     (r['created_at'] ?? r['createdAt'] ?? r['created'] ?? '')
                         .toString();
-                String ts = createdAtStr;
-                try {
-                  final dt = DateTime.tryParse(createdAtStr);
-                  if (dt != null) ts = '${dt.toLocal()}';
-                } catch (_) {}
+                final ts = createdAtStr.isNotEmpty
+                    ? app_date_utils.DateUtils
+                        .formatDatabaseTimestampWithTime(createdAtStr)
+                    : '';
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
@@ -1570,6 +1891,10 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                         final action =
                             a['action'] ?? a['event'] ?? a['type'] ?? 'Review';
                         final actor = a['actor'] ?? a['user'] ?? '';
+                        final safeActor = UserLabelUtils.sanitizeUserLabel(
+                          actor.toString(),
+                          emptyIsUnknown: false,
+                        );
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: InkWell(
@@ -1583,7 +1908,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                     child: Text(actor.toString().isNotEmpty
-                                        ? '$action • $actor'
+                                        ? '$action • $safeActor'
                                         : action)),
                               ],
                             ),
@@ -1655,12 +1980,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     String label = '';
     if (dueRaw != null) {
       final s = dueRaw.toString();
-      final dt = DateTime.tryParse(s);
-      if (dt != null) {
-        label = dt.toLocal().toString();
-      } else {
-        label = s;
-      }
+      label = app_date_utils.DateUtils.formatTimestamp(s);
+      if (label == 'N/A') label = '';
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1681,11 +2002,54 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   Widget _ownerChip(String? ownerName, String? ownerId) {
-    final label = (ownerName != null && ownerName.isNotEmpty)
-        ? ownerName
-        : (ownerId != null && ownerId.isNotEmpty
-            ? 'Owner $ownerId'
-            : 'Unassigned');
+    // If we have a name, use it
+    if (ownerName != null && ownerName.isNotEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.purple.withValues(alpha: 0.12),
+          border: Border.all(color: Colors.purple.withValues(alpha: 0.5)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.person_outline, size: 14),
+            const SizedBox(width: 4),
+            Text(ownerName),
+          ],
+        ),
+      );
+    }
+
+    // If we only have an ID, try to resolve it asynchronously
+    if (ownerId != null && ownerId.isNotEmpty) {
+      return FutureBuilder<String>(
+        future: _getUserNameById(ownerId),
+        builder: (context, snapshot) {
+          final label = snapshot.hasData ? snapshot.data! : 'Loading...';
+
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.purple.withValues(alpha: 0.12),
+              border: Border.all(color: Colors.purple.withValues(alpha: 0.5)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.person_outline, size: 14),
+                const SizedBox(width: 4),
+                Text(label),
+              ],
+            ),
+          );
+        },
+      );
+    }
+
+    // Fallback to Unassigned
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1693,12 +2057,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         border: Border.all(color: Colors.purple.withValues(alpha: 0.5)),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.person_outline, size: 14),
-          const SizedBox(width: 4),
-          Text(label),
+          Icon(Icons.person_outline, size: 14),
+          SizedBox(width: 4),
+          Text('Unassigned'),
         ],
       ),
     );
@@ -1854,36 +2218,104 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             }
           }
         }
-        setState(() {
-          final parsed = items.whereType<Map>().map((e) {
-            final m = e.cast<String, dynamic>();
-            final c = m['content'];
-            if (c is String) {
-              try {
-                final decoded = jsonDecode(c);
-                if (decoded is Map) {
-                  m['content'] = Map<String, dynamic>.from(decoded);
-                }
-              } catch (_) {}
-            }
-            return m;
+        final parsed = items.whereType<Map>().map((e) {
+          final m = e.cast<String, dynamic>();
+          final c = m['content'];
+          if (c is String) {
+            try {
+              final decoded = jsonDecode(c);
+              if (decoded is Map) {
+                m['content'] = Map<String, dynamic>.from(decoded);
+              }
+            } catch (_) {}
+          }
+          return m;
+        }).toList();
+
+        final pending = parsed.where((m) {
+          final content = m['content'];
+          final statusRaw = (m['status'] ??
+                  m['review_status'] ??
+                  (content is Map ? content['status'] : null) ??
+                  '')
+              .toString()
+              .toLowerCase();
+          if (statusRaw.isEmpty) {
+            return true; // Default to include when unknown
+          }
+          return statusRaw == 'submitted' ||
+              statusRaw == 'under_review' ||
+              statusRaw == 'underreview';
+        }).toList();
+
+        // Resolve likely user identifiers that are returned as UUIDs.
+        final userIdsToResolve = <String>{};
+        void collectMaybeUserId(dynamic v) {
+          final s = v?.toString().trim() ?? '';
+          if (s.isEmpty) return;
+          if (UserLabelUtils.looksLikeUuid(s)) {
+            userIdsToResolve.add(s);
+          }
+        }
+
+        for (final m in pending) {
+          collectMaybeUserId(m['createdBy']);
+          collectMaybeUserId(m['created_by']);
+          collectMaybeUserId(m['submittedBy']);
+          collectMaybeUserId(m['submitted_by']);
+
+          final content = m['content'];
+          if (content is Map<String, dynamic>) {
+            collectMaybeUserId(content['createdBy']);
+            collectMaybeUserId(content['created_by']);
+            collectMaybeUserId(content['submittedBy']);
+            collectMaybeUserId(content['submitted_by']);
+            collectMaybeUserId(content['author']);
+            collectMaybeUserId(content['author_id']);
+            collectMaybeUserId(content['userId']);
+            collectMaybeUserId(content['user_id']);
+          }
+        }
+
+        final resolvedNames = <String, String>{};
+        await Future.wait(userIdsToResolve.map((id) async {
+          resolvedNames[id] = await _getUserNameById(id);
+        }));
+
+        // Overwrite UUID fields with resolved display names so UI never shows IDs.
+        String resolve(String id) => resolvedNames[id] ?? UserLabelUtils.unknownUserLabel;
+
+        for (final m in pending) {
+          void replaceIfUuid(Map<String, dynamic> map, String key) {
+            final raw = map[key]?.toString().trim() ?? '';
+            if (raw.isEmpty) return;
+            if (!UserLabelUtils.looksLikeUuid(raw)) return;
+            map[key] = resolve(raw);
+          }
+
+          final content = m['content'];
+          if (content is Map<String, dynamic>) {
+            replaceIfUuid(content, 'createdBy');
+            replaceIfUuid(content, 'created_by');
+            replaceIfUuid(content, 'submittedBy');
+            replaceIfUuid(content, 'submitted_by');
+            replaceIfUuid(content, 'author');
+            replaceIfUuid(content, 'author_id');
+            replaceIfUuid(content, 'userId');
+            replaceIfUuid(content, 'user_id');
+          }
+
+          if (m.containsKey('createdBy')) replaceIfUuid(m, 'createdBy');
+          if (m.containsKey('created_by')) replaceIfUuid(m, 'created_by');
+          if (m.containsKey('submittedBy')) replaceIfUuid(m, 'submittedBy');
+          if (m.containsKey('submitted_by')) replaceIfUuid(m, 'submitted_by');
+        }
+
+        if (mounted) {
+          setState(() {
+            _pendingReports = pending;
           });
-          _pendingReports = parsed.where((m) {
-            final content = m['content'];
-            final statusRaw = (m['status'] ??
-                    m['review_status'] ??
-                    (content is Map ? content['status'] : null) ??
-                    '')
-                .toString()
-                .toLowerCase();
-            if (statusRaw.isEmpty) {
-              return true; // Default to include when unknown
-            }
-            return statusRaw == 'submitted' ||
-                statusRaw == 'under_review' ||
-                statusRaw == 'underreview';
-          }).toList();
-        });
+        }
         _computeTeamMetrics();
       } else {
         setState(() {
@@ -2278,6 +2710,53 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
+  String? _extractFirstSprintId(Map<String, dynamic> deliverable) {
+    final ids = <String>[];
+
+    void add(dynamic v) {
+      final s = v?.toString();
+      if (s != null && s.trim().isNotEmpty) ids.add(s.trim());
+    }
+
+    void addFromList(dynamic v) {
+      if (v is List) {
+        for (final item in v) {
+          add(item);
+        }
+      }
+    }
+
+    addFromList(deliverable['sprintIds']);
+    addFromList(deliverable['sprint_ids']);
+    add(deliverable['sprint_id']);
+    add(deliverable['sprintId']);
+
+    final contributing = deliverable['contributing_sprints'] ??
+        deliverable['contributingSprints'] ??
+        deliverable['sprints'];
+    if (contributing is List) {
+      for (final item in contributing) {
+        if (item is Map) {
+          add(item['id'] ?? item['sprint_id'] ?? item['sprintId']);
+        } else {
+          add(item);
+        }
+      }
+    }
+
+    if (ids.isEmpty) return null;
+    return ids.first;
+  }
+
+  void _openSprintReportForDeliverable(Map<String, dynamic> deliverable) {
+    final sprintId = _extractFirstSprintId(deliverable);
+    if (sprintId != null && sprintId.isNotEmpty) {
+      context.go('/sprint-report/$sprintId');
+      return;
+    }
+    context.go('/sprint-console');
+  }
+
   Widget _buildCardHeader(IconData icon, String label, {String? route}) {
     final row = Row(
       children: [
@@ -2421,5 +2900,19 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         ),
       ),
     );
+  }
+
+  void _handleLogout() async {
+    try {
+      await _authService.signOut();
+      if (mounted) {
+        context.go(AuthService.postLogoutRoute);
+      }
+    } catch (e) {
+      debugPrint('Logout error: $e');
+      if (mounted) {
+        context.go(AuthService.postLogoutRoute);
+      }
+    }
   }
 }

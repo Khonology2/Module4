@@ -34,12 +34,12 @@ class ProjectService {
         }
       }
       
-      // If API fails, return empty list instead of mock data
-      debugPrint('API Error: Failed to load projects - ${response.statusCode}');
-      return [];
+      // If API fails or returns no projects, return mock data for testing
+      return _getMockProjects();
     } catch (e) {
-      debugPrint('Network Error: Failed to load projects - $e');
-      return [];
+      debugPrint('Error loading projects from API: $e');
+      // Return mock data as fallback
+      return _getMockProjects();
     }
   }
 

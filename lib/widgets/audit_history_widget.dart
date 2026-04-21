@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/flownet_theme.dart';
 import '../services/document_service.dart';
 import '../services/sign_off_report_service.dart';
+import '../services/user_data_service.dart';
+import '../models/sign_off_report.dart';
 
 class AuditHistoryWidget extends StatefulWidget {
   final String? documentId;
@@ -25,11 +27,90 @@ class _AuditHistoryWidgetState extends State<AuditHistoryWidget> {
   List<Map<String, dynamic>> _auditLogs = [];
   bool _isLoading = false;
   String? _error;
+  final UserDataService _userDataService = UserDataService();
+  final Map<String, String> _userNameById = {};
+  SignOffReport? _report;
 
   @override
   void initState() {
     super.initState();
     _loadAuditHistory();
+  }
+
+  bool _isUnknownActor(String? s) {
+    if (s == null) return true;
+    final v = s.trim();
+    if (v.isEmpty) return true;
+    final lower = v.toLowerCase();
+    return lower == 'unknown' || lower == 'unknown user';
+  }
+
+  bool _isSubmitAction(String action) {
+    final a = action.toLowerCase();
+    return a == 'submitted' || a == 'submit_report' || a == 'submit';
+  }
+
+
+  String? _fallbackUserIdFromReportForAction(String action) {
+    final a = action.toLowerCase();
+    if (_report == null) return null;
+    if (a == 'submitted' || a == 'submit_report' || a == 'submit') {
+      final submittedBy = _report!.submittedBy?.trim();
+      if (submittedBy != null && submittedBy.isNotEmpty) return submittedBy;
+      final createdBy = _report!.createdBy.trim();
+      return createdBy.isNotEmpty ? createdBy : null;
+    }
+    if (a == 'approved' || a == 'approve_report') {
+      final reviewedBy = _report!.reviewedBy?.trim();
+      if (reviewedBy != null && reviewedBy.isNotEmpty) return reviewedBy;
+      final approvedBy = _report!.approvedBy?.trim();
+      return (approvedBy != null && approvedBy.isNotEmpty) ? approvedBy : null;
+    }
+    if (a == 'request_changes') {
+      final reviewedBy = _report!.reviewedBy?.trim();
+      return (reviewedBy != null && reviewedBy.isNotEmpty) ? reviewedBy : null;
+    }
+    return null;
+  }
+
+  Future<void> _hydrateReportAndUsers() async {
+    if (widget.reportId == null || widget.reportService == null) return;
+    final resp = await widget.reportService!.getSignOffReport(widget.reportId!);
+    if (!resp.isSuccess || resp.data == null) return;
+
+    final reportJson = resp.data is Map ? (resp.data!['data'] ?? resp.data!['report'] ?? resp.data!) : resp.data;
+    final report = SignOffReport.fromJson(reportJson);
+
+    final userIdsToResolve = <String>{};
+    for (final log in _auditLogs) {
+      final id = (log['user_id'] ?? log['userId'] ?? log['actor_id'] ?? log['actorId'])?.toString();
+      if (id != null && id.trim().isNotEmpty) {
+        userIdsToResolve.add(id.trim());
+      }
+    }
+    if (report.submittedBy != null && report.submittedBy!.trim().isNotEmpty) {
+      userIdsToResolve.add(report.submittedBy!.trim());
+    } else if (report.createdBy.trim().isNotEmpty) {
+      userIdsToResolve.add(report.createdBy.trim());
+    }
+    if (report.reviewedBy != null && report.reviewedBy!.trim().isNotEmpty) {
+      userIdsToResolve.add(report.reviewedBy!.trim());
+    }
+    if (report.approvedBy != null && report.approvedBy!.trim().isNotEmpty) {
+      userIdsToResolve.add(report.approvedBy!.trim());
+    }
+
+    for (final userId in userIdsToResolve) {
+      if (_userNameById.containsKey(userId)) continue;
+      final user = await _userDataService.getUserById(userId);
+      final name = user?.name.trim() ?? '';
+      if (name.isNotEmpty) _userNameById[userId] = name;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _report = report;
+    });
   }
 
   Future<void> _loadAuditHistory() async {
@@ -59,6 +140,7 @@ class _AuditHistoryWidgetState extends State<AuditHistoryWidget> {
             _auditLogs = (response.data!['audit'] as List?)?.cast<Map<String, dynamic>>() ?? [];
             _isLoading = false;
           });
+          await _hydrateReportAndUsers();
         } else {
           setState(() {
             _error = response.error ?? 'Failed to load audit history';
@@ -80,8 +162,12 @@ class _AuditHistoryWidgetState extends State<AuditHistoryWidget> {
         return 'Report Created';
       case 'update_report':
         return 'Report Updated';
+      case 'submitted':
+        return 'Report Submitted';
       case 'submit_report':
         return 'Report Submitted';
+      case 'approved':
+        return 'Report Approved';
       case 'approve_report':
         return 'Report Approved';
       case 'request_changes':
@@ -110,8 +196,10 @@ class _AuditHistoryWidgetState extends State<AuditHistoryWidget> {
         return Icons.add_circle;
       case 'update_report':
         return Icons.edit;
+      case 'submitted':
       case 'submit_report':
         return Icons.send;
+      case 'approved':
       case 'approve_report':
         return Icons.check_circle;
       case 'request_changes':
@@ -130,12 +218,14 @@ class _AuditHistoryWidgetState extends State<AuditHistoryWidget> {
 
   Color _getActionColor(String action) {
     switch (action) {
+      case 'approved':
       case 'approve_report':
         return FlownetColors.emeraldGreen;
       case 'request_changes':
         return FlownetColors.amberOrange;
       case 'document_delete':
         return FlownetColors.crimsonRed;
+      case 'submitted':
       case 'submit_report':
       case 'create_report':
       case 'document_upload':
@@ -223,7 +313,25 @@ class _AuditHistoryWidgetState extends State<AuditHistoryWidget> {
       itemBuilder: (context, index) {
         final log = _auditLogs[index];
         final action = log['action'] as String? ?? 'unknown';
-        final actorName = log['actor_name'] as String? ?? 'Unknown User';
+        final userId = (log['user_id'] ?? log['userId'])?.toString();
+        final actorNameRaw = (log['actor_name'] ??
+                log['actorName'] ??
+                log['user_name'] ??
+                log['userName'] ??
+                log['user_email'] ??
+                log['userEmail'])
+            ?.toString();
+        final fallbackFromUserId = userId != null ? _userNameById[userId] : null;
+        String? fallbackFromReport;
+        final reportActorId = _fallbackUserIdFromReportForAction(action);
+        if (reportActorId != null && reportActorId.isNotEmpty) {
+          fallbackFromReport = _userNameById[reportActorId];
+        }
+        final preparedByName = (_isSubmitAction(action) ? _report?.preparedByName : null)?.trim();
+        final fallbackNameFromReport = (preparedByName != null && preparedByName.isNotEmpty) ? preparedByName : null;
+        final actorName = _isUnknownActor(actorNameRaw)
+            ? (fallbackFromReport ?? fallbackNameFromReport ?? fallbackFromUserId ?? '—')
+            : actorNameRaw!;
         final createdAt = log['created_at'] != null 
             ? DateTime.parse(log['created_at']).toLocal()
             : null;

@@ -2,9 +2,10 @@
 
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../config/environment.dart';
 
 class EmailDeliveryService {
-static const String backendUrl = 'https://flow-space.onrender.com';
+static String get backendUrl => Environment.apiBaseUrl.replaceAll('/api/v1', '');
   
   // Test email delivery with multiple methods
   static Future<Map<String, dynamic>> testEmailDelivery({
