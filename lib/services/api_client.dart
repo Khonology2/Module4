@@ -157,6 +157,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       // The token will be in query params, so we'll make a special request
       return await _makeTokenBasedRequest('POST', endpoint, body: body, queryParams: queryParams);
     }
+    // Public endpoints (login, register, …) must not run refresh/clear-token logic or login fails
+    // when the user still has an expired access token in storage.
+    if (!requireAuth) {
+      return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams, publicEndpoint: true);
+    }
     return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams);
   }
 
@@ -251,10 +256,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     String endpoint, {
     Map<String, dynamic>? body,
     Map<String, String>? queryParams,
+    bool publicEndpoint = false,
   }) async {
     try {
-      // Check if token needs refresh
-      if (_accessToken != null && !_isTokenValid()) {
+      // Check if token needs refresh (skip for login/register/etc. so expired storage does not block login)
+      if (!publicEndpoint && _accessToken != null && !_isTokenValid()) {
         final refreshed = await _refreshAccessToken();
         if (!refreshed) {
           await clearTokens();
@@ -275,7 +281,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         'Accept': 'application/json',
       };
 
-      if (_accessToken != null) {
+      if (!publicEndpoint && _accessToken != null) {
         headers['Authorization'] = 'Bearer $_accessToken';
       }
       
@@ -549,7 +555,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         response = await post('/auth/login', body: {
           'email': email,
           'password': password,
-        },);
+        }, requireAuth: false);
 
         // If we get a response (success or error), break
         if (response.statusCode != 0) {
@@ -594,7 +600,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       'firstName': firstName,
       'lastName': lastName,
       'role': role,
-    },);
+    }, requireAuth: false);
 
     // Save tokens if registration is successful
     if (response.isSuccess && response.data != null) {
@@ -649,14 +655,14 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   Future<ApiResponse> forgotPassword(String email) async {
     return await post('/auth/forgot-password', body: {
       'email': email,
-    },);
+    }, requireAuth: false);
   }
 
   Future<ApiResponse> resetPassword(String token, String newPassword) async {
     return await post('/auth/reset-password', body: {
       'token': token,
       'password': newPassword,
-    },);
+    }, requireAuth: false);
   }
 
 }

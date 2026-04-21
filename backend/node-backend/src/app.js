@@ -399,8 +399,10 @@ async function startServer() {
     });
     server.on('error', (err) => {
       if (err && err.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use; another instance is running. Continuing without starting a new server.`);
-        return;
+        console.error(
+          `Port ${PORT} is already in use. Stop the other process (e.g. Task Manager → Node, or: netstat -ano | findstr :${PORT} then taskkill /PID <pid> /F), then start the API again.`
+        );
+        process.exit(1);
       }
       console.error('Server error:', err);
     });
