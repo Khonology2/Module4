@@ -113,6 +113,8 @@ flutter:
     - assets/Icons/notifications_white_badge_blue.png
     - assets/Icons/
     - assets/logo.png
+    - assets/data/
+    - frontend/assets/
 
   fonts:
     - family: Poppins

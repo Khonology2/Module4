@@ -6,15 +6,17 @@ const { Pool } = pkg;
 function createPool() {
   console.log('🛜 Using DATABASE_URL (safest approach)');
   console.log('📊 Connection URL:', process.env.DATABASE_URL ? '***CONFIGURED***' : 'NOT SET');
-  
-if (!process.env.DATABASE_URL) {
+
+  if (!process.env.DATABASE_URL) {
+    const usingRenderHost = String(process.env.DB_HOST || '').includes('render.com');
+    const sslEnabled = process.env.DB_SSL === 'true' || usingRenderHost;
     return new Pool({
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '5432', 10),
       database: process.env.DB_NAME || 'flow_space',
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'postgres',
-      ssl: false,
+      ssl: sslEnabled ? { rejectUnauthorized: false } : false,
     });
   }
 

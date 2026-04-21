@@ -353,13 +353,8 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                         'Due Date', formatDate(_deliverable!.dueDate)),
                   ),
                   Expanded(
-                    child: buildStatusItem('Submitted By', () {
-                      final name = (_report?.submittedByName ?? _report?.submittedBy ?? '').toString().trim();
-                      final role = (_report?.submittedByRole ?? '').toString().trim();
-                      if (name.isEmpty) return '—';
-                      if (role.isEmpty) return name;
-                      return '$name ($role)';
-                    }()),
+                    child: buildStatusItem(
+                        'Submitted By', _deliverable!.submittedBy ?? 'Unknown'),
                   ),
                 ],
               ),
@@ -877,8 +872,9 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                           ),
                           if (_report?.approvedBy != null)
                             Text(
-                              'Approved by: ${((_report!.approvedByName ?? _report!.approvedBy) ?? '').toString()}${((_report!.approvedByRole ?? '').toString().trim().isNotEmpty) ? ' (${_report!.approvedByRole})' : ''} on ${formatDate(_report!.approvedAt ?? DateTime.now())}',
-                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                              'Approved by: ${_report!.approvedBy} on ${formatDate(_report!.approvedAt ?? DateTime.now())}',
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 12),
                             ),
                         ],
                       ),

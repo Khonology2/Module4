@@ -18,7 +18,6 @@ app.use((req, res, next) => {
 
 // Import database configuration
 const { testConnection, syncDatabase } = require('./config/database');
-const { ensureProjectsSchema } = require('./config/ensureProjectsSchema');
 
 // Import models
 const { sequelize, User, Notification, Ticket, ApprovalRequest } = require('./models');
@@ -57,7 +56,6 @@ const analyticsService = require('./services/analyticsService');
 const { loggingService } = require('./services/loggingService');
 const socketService = require('./services/socketService');
 const { databaseNotificationService } = require('./services/DatabaseNotificationService');
-const { runExpiredDummy12hCleanup } = require('./services/dummyDataCleanupService');
 
 // Middleware
 app.use(helmet());
@@ -317,23 +315,9 @@ async function startServer() {
         await sequelize.query("ALTER TABLE sprints ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)");
         await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id UUID");
         await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by UUID");
-        await sequelize.query("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS payload JSONB");
-        await ensureProjectsSchema(sequelize);
-        console.log('✅ projects table schema aligned with API (key, client_*, etc.)');
       }
     } catch (e) {
-      console.warn('⚠️ Unable to ensure DB columns; continuing', e?.message || e);
-    }
-
-    try {
-      await runExpiredDummy12hCleanup(sequelize);
-      setInterval(() => {
-        runExpiredDummy12hCleanup(sequelize).catch((err) =>
-          console.warn('[dummy12h-cleanup]', err?.message || err),
-        );
-      }, 15 * 60 * 1000);
-    } catch (e) {
-      console.warn('⚠️ dummy 12h cleanup scheduler skipped:', e?.message || e);
+      console.warn('⚠️ Unable to ensure sprints.created_by column; continuing', e?.message || e);
     }
     
     // Sync database (use with caution in production)
@@ -347,8 +331,8 @@ async function startServer() {
       }
     }
     
-    // Bind IPv4 explicitly so clients using 127.0.0.1 and localhost both reach this process.
-    const server = app.listen(PORT, '0.0.0.0', () => {
+    // Start server first to ensure it's listening
+    const server = app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
       
@@ -415,10 +399,7 @@ async function startServer() {
     });
     server.on('error', (err) => {
       if (err && err.code === 'EADDRINUSE') {
-        console.error(
-          `Port ${PORT} is already in use. Stop the other process (or free the port), then restart.`,
-        );
-        process.exit(1);
+        console.error(`Port ${PORT} is already in use; another instance is running. Continuing without starting a new server.`);
         return;
       }
       console.error('Server error:', err);

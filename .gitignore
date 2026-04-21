@@ -51,3 +51,6 @@ fix_*.py
 
 # Daemon/Service files
 backend/daemon/
+
+flutter-web/
+web/

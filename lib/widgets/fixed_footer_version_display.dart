@@ -6,27 +6,43 @@ class FixedFooterVersionDisplay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final versionInfo = VersionService.getVersionDetails();
-    final version = versionInfo['version'].toString();
-    
     return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
+      bottom: 12,
+      left: 14,
       child: SafeArea(
         child: Container(
-          padding: const EdgeInsets.only(bottom: 16, top: 8),
-          child: Center(
-            child: Text(
-              version,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w400, // Regular weight
-                color: Colors.white.withValues(alpha: 0.65), // ~0.65 opacity
-                letterSpacing: 0.3,
-              ),
-              textAlign: TextAlign.center,
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: VersionService.getVersionDetailsFromAsset(forceRefresh: true),
+            builder: (context, snapshot) {
+              final versionInfo =
+                  snapshot.data ?? VersionService.getVersionDetails();
+              final version = versionInfo['version'].toString();
+              final tooltip = VersionService.getLatestCommitTooltip(versionInfo);
+              return Tooltip(
+                message: tooltip,
+                waitDuration: const Duration(milliseconds: 250),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF2A1C),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                textStyle: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+                child: Text(
+                  version,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withValues(alpha: 0.72),
+                    letterSpacing: 0.2,
+                  ),
+                  textAlign: TextAlign.left,
+                ),
+              );
+            },
           ),
         ),
       ),

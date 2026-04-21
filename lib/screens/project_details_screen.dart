@@ -12,10 +12,10 @@ class ProjectDetailsScreen extends ConsumerStatefulWidget {
   const ProjectDetailsScreen({super.key, required this.projectId});
 
   @override
-  ConsumerState<ProjectDetailsScreen> createState() => _ProjectDetailsScreenState();
+  ProjectDetailsScreenState createState() => ProjectDetailsScreenState();
 }
 
-class _ProjectDetailsScreenState extends ConsumerState<ProjectDetailsScreen> {
+class ProjectDetailsScreenState extends ConsumerState<ProjectDetailsScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _project;
   List<Map<String, dynamic>> _sprints = [];

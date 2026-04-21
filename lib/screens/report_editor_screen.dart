@@ -1294,151 +1294,37 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+        '🔍 Building ReportEditorScreen - isLoading: $_isLoading, deliverables: ${_deliverables.length}');
+
+    // TEMPORARY: Force show form even during loading for debugging
     return SidebarScaffold(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _deliverables.isEmpty && !_isLoadingDeliverables
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
+      child: _isLoading && _deliverables.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Debug info
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: Text(
-                        'No deliverables available. Create or link a deliverable, then open the report editor again.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: FlownetColors.coolGray,
-                          fontSize: 16,
-                        ),
+                        'Debug: isLoading=$_isLoading, deliverables=${_deliverables.length}, users=${_users.length}',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
                       ),
                     ),
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Status indicator for submitted reports
-                          if (_existingReport?.status ==
-                              ReportStatus.submitted) ...[
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.orange),
-                              ),
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.info_outline,
-                                      color: Colors.orange),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'You are editing a submitted report. Updates will be saved immediately.',
-                                      style: TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                          ],
-                          // Action buttons at the top
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: FlownetColors.graphiteGray
-                                  .withAlpha((0.3 * 255).round()),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.white
-                                    .withAlpha((0.1 * 255).round()),
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                if (widget.reportId != null &&
-                                    (_existingReport?.status ==
-                                            ReportStatus.draft ||
-                                        _existingReport?.status ==
-                                            ReportStatus.submitted))
-                                  TextButton.icon(
-                                    onPressed: _isSaving
-                                        ? null
-                                        : () => _saveReport(false),
-                                    icon: _isSaving
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: FlownetColors.electricBlue,
-                                            ),
-                                          )
-                                        : const Icon(Icons.save),
-                                    label: Text(_isSaving
-                                        ? 'Saving...'
-                                        : _existingReport?.status ==
-                                                ReportStatus.submitted
-                                            ? 'Update Report'
-                                            : 'Save Draft'),
-                                    style: TextButton.styleFrom(
-                                        foregroundColor:
-                                            FlownetColors.electricBlue),
-                                  ),
-                                if (_existingReport?.status !=
-                                    ReportStatus.submitted)
-                                  TextButton.icon(
-                                    onPressed: _isSaving
-                                        ? null
-                                        : () => _saveReport(true),
-                                    icon: _isSaving
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: FlownetColors.electricBlue,
-                                            ),
-                                          )
-                                        : const Icon(Icons.send),
-                                    label: Text(_isSaving
-                                        ? 'Submitting...'
-                                        : 'Submit'),
-                                    style: TextButton.styleFrom(
-                                        foregroundColor:
-                                            FlownetColors.electricBlue),
-                                  ),
-                                const Spacer(),
-                                IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _useAiAssist = !_useAiAssist;
-                                    });
-                                  },
-                                  icon: Icon(
-                                    _useAiAssist
-                                        ? Icons.auto_awesome
-                                        : Icons.auto_awesome_outlined,
-                                    color: _useAiAssist
-                                        ? FlownetColors.electricBlue
-                                        : FlownetColors.coolGray,
-                                  ),
-                                  tooltip: 'AI Assist',
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
+                    const SizedBox(height: 16),
 
-                    // Report title
+                    // TEST: Simple title field to verify form is working
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -1486,6 +1372,116 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+
+                    // Status indicator for submitted reports
+                    if (_existingReport?.status == ReportStatus.submitted) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.orange),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'You are editing a submitted report. Updates will be saved immediately.',
+                                style: TextStyle(
+                                  color: Colors.orange,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    // Action buttons at the top
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: FlownetColors.graphiteGray
+                            .withAlpha((0.3 * 255).round()),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withAlpha((0.1 * 255).round()),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          if (widget.reportId != null &&
+                              (_existingReport?.status == ReportStatus.draft ||
+                                  _existingReport?.status ==
+                                      ReportStatus.submitted))
+                            TextButton.icon(
+                              onPressed:
+                                  _isSaving ? null : () => _saveReport(false),
+                              icon: _isSaving
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: FlownetColors.electricBlue,
+                                      ),
+                                    )
+                                  : const Icon(Icons.save),
+                              label: Text(_isSaving
+                                  ? 'Saving...'
+                                  : _existingReport?.status ==
+                                          ReportStatus.submitted
+                                      ? 'Update Report'
+                                      : 'Save Draft'),
+                              style: TextButton.styleFrom(
+                                  foregroundColor: FlownetColors.electricBlue),
+                            ),
+                          // Only show Submit button for draft reports
+                          if (_existingReport?.status != ReportStatus.submitted)
+                            TextButton.icon(
+                              onPressed:
+                                  _isSaving ? null : () => _saveReport(true),
+                              icon: _isSaving
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: FlownetColors.electricBlue,
+                                      ),
+                                    )
+                                  : const Icon(Icons.send),
+                              label:
+                                  Text(_isSaving ? 'Submitting...' : 'Submit'),
+                              style: TextButton.styleFrom(
+                                  foregroundColor: FlownetColors.electricBlue),
+                            ),
+                          const Spacer(),
+                          // AI Assist toggle
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _useAiAssist = !_useAiAssist;
+                              });
+                            },
+                            icon: Icon(
+                              _useAiAssist
+                                  ? Icons.auto_awesome
+                                  : Icons.auto_awesome_outlined,
+                              color: _useAiAssist
+                                  ? FlownetColors.electricBlue
+                                  : FlownetColors.coolGray,
+                            ),
+                            tooltip: 'AI Assist',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
 
                     if (_changeRequestDetails != null &&
                         _changeRequestDetails!.isNotEmpty) ...[
@@ -2015,7 +2011,6 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                 ),
               ),
             ),
-        ),
     );
   }
 }

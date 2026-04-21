@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:file_picker/file_picker.dart';
 import '../models/deliverable.dart';
 import '../services/deliverable_service.dart';
 import '../services/backend_api_service.dart';
 import '../services/user_data_service.dart';
 import '../models/user.dart';
-import '../services/auth_service.dart';
-import '../services/realtime_service.dart';
 
 class DeliverableSetupScreen extends ConsumerStatefulWidget {
   const DeliverableSetupScreen({super.key});
@@ -25,16 +22,13 @@ class _DeliverableSetupScreenState
   final _descriptionController = TextEditingController();
   final _dodController = TextEditingController();
   final _evidenceLinksController = TextEditingController();
-  final _artifactDescriptionController = TextEditingController();
   final _deliverableService = DeliverableService();
 
   String _priority = 'medium';
   String _status = 'draft';
   DateTime? _dueDate;
   final List<String> _selectedSprints = [];
-  String? _pendingSprintId;
   List<Map<String, dynamic>> _availableSprints = [];
-  final List<PlatformFile> _artifactFiles = [];
   List<Map<String, dynamic>> _users = [];
   String? _ownerId;
   String? _selectedProjectId;
@@ -42,17 +36,10 @@ class _DeliverableSetupScreenState
   bool _isSaving = false;
   bool _isGenerating = false;
   bool _isLoadingUsers = false;
-  bool _isUploadingArtifacts = false;
 
   @override
   void initState() {
     super.initState();
-    try {
-      final uid = AuthService().currentUser?.id;
-      if (uid != null && ( _ownerId == null || _ownerId!.isEmpty)) {
-        _ownerId = uid;
-      }
-    } catch (_) {}
     _loadSprints();
     _loadUsers();
     _loadProjects();
@@ -134,8 +121,9 @@ class _DeliverableSetupScreenState
       // Show error message to user
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load users. Please check your connection and try again.'),
+          const SnackBar(
+            content: Text(
+                'Failed to load users. Please check your connection and try again.'),
             backgroundColor: Colors.red,
             duration: Duration(seconds: 3),
           ),
@@ -346,11 +334,9 @@ class _DeliverableSetupScreenState
             .toList(),
       );
 
-      if (!mounted) return;
-
-      if (!response.isSuccess) {
+      if (mounted) {
         setState(() => _isSaving = false);
-        
+
         if (response.isSuccess) {
           try {
             Deliverable? created;
@@ -359,22 +345,23 @@ class _DeliverableSetupScreenState
               if (m['deliverable'] is Deliverable) {
                 created = m['deliverable'] as Deliverable;
               } else if (m['deliverable'] is Map) {
-                created = Deliverable.fromJson(Map<String, dynamic>.from(m['deliverable'] as Map));
+                created = Deliverable.fromJson(
+                    Map<String, dynamic>.from(m['deliverable'] as Map));
               } else if (m['id'] != null) {
                 created = Deliverable(
                   id: m['id'].toString(),
                   title: _titleController.text,
                   description: _descriptionController.text,
-                  definitionOfDone: _dodController.text.split('\n')
+                  definitionOfDone: _dodController.text
+                      .split('\n')
                       .map((s) => s.trim())
                       .where((s) => s.isNotEmpty)
                       .map((s) => DoDItem(text: s))
                       .toList(),
                   priority: _priority,
                   status: DeliverableStatus.values.firstWhere(
-                    (e) => e.name == _status, 
-                    orElse: () => DeliverableStatus.draft
-                  ),
+                      (e) => e.name == _status,
+                      orElse: () => DeliverableStatus.draft),
                   dueDate: _dueDate ?? DateTime.now(),
                   createdBy: '',
                   assignedTo: null,
@@ -383,8 +370,11 @@ class _DeliverableSetupScreenState
                   createdByName: null,
                   assignedToName: null,
                   createdAt: DateTime.now(),
-                  evidenceLinks: _evidenceLinksController.text.isNotEmpty 
-                      ? _evidenceLinksController.text.split(',').map((e) => e.trim()).toList() 
+                  evidenceLinks: _evidenceLinksController.text.isNotEmpty
+                      ? _evidenceLinksController.text
+                          .split(',')
+                          .map((e) => e.trim())
+                          .toList()
                       : [],
                 );
               }
@@ -400,7 +390,8 @@ class _DeliverableSetupScreenState
                 try {
                   GoRouter.of(context).go('/report-editor/${created.id}');
                 } catch (_) {
-                  Navigator.of(context).pushNamed('/report-editor/${created.id}');
+                  Navigator.of(context)
+                      .pushNamed('/report-editor/${created.id}');
                 }
               }
             }
@@ -417,7 +408,8 @@ class _DeliverableSetupScreenState
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('❌ Failed to create deliverable: ${response.error ?? "Unknown error"}'),
+              content: Text(
+                  '❌ Failed to create deliverable: ${response.error ?? "Unknown error"}'),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 5),
             ),
@@ -438,98 +430,6 @@ class _DeliverableSetupScreenState
           ),
         );
       }
-    }
-  }
-
-  Future<void> _pickArtifactFiles() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        allowMultiple: true,
-        withData: true,
-        withReadStream: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-
-      final picked = result.files.where((f) {
-        final name = (f.name).toLowerCase();
-        return !name.endsWith('.json');
-      }).toList();
-
-      if (picked.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('JSON files cannot be uploaded.'), backgroundColor: Colors.red),
-        );
-        return;
-      }
-
-      setState(() {
-        for (final f in picked) {
-          final key = '${f.name}|${f.size}';
-          final exists = _artifactFiles.any((e) => '${e.name}|${e.size}' == key);
-          if (!exists) _artifactFiles.add(f);
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to pick files: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _uploadSelectedArtifacts(String deliverableId) async {
-    if (_isUploadingArtifacts) return;
-    setState(() => _isUploadingArtifacts = true);
-    try {
-      final backend = BackendApiService();
-      final description = _artifactDescriptionController.text.trim();
-      int ok = 0;
-      int failed = 0;
-      for (final f in List<PlatformFile>.from(_artifactFiles)) {
-        List<int>? bytes = f.bytes;
-        if ((bytes == null || bytes.isEmpty) && f.readStream != null) {
-          final out = <int>[];
-          await for (final chunk in f.readStream!) {
-            out.addAll(chunk);
-          }
-          bytes = out;
-        }
-        if (bytes == null || bytes.isEmpty) {
-          failed += 1;
-          continue;
-        }
-        final resp = await backend.uploadDeliverableArtifact(
-          deliverableId,
-          bytes,
-          f.name,
-          title: f.name,
-          description: description.isEmpty ? null : description,
-        );
-        if (resp.isSuccess) {
-          ok += 1;
-        } else {
-          failed += 1;
-        }
-      }
-
-      if (!mounted) return;
-      if (failed == 0 && ok > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Uploaded $ok document(s)'), backgroundColor: Colors.green),
-        );
-      } else if (ok > 0 && failed > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Uploaded $ok document(s), $failed failed'), backgroundColor: Colors.orange),
-        );
-      } else if (failed > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$failed document upload(s) failed'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isUploadingArtifacts = false);
     }
   }
 
@@ -632,24 +532,24 @@ class _DeliverableSetupScreenState
                 initialValue: _ownerId,
                 decoration: InputDecoration(
                   labelText: 'Owner',
-                  border: OutlineInputBorder(),
-                  prefixIcon: _isLoadingUsers 
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(Icons.person),
-                  helperText: _isLoadingUsers 
-                    ? 'Loading users...' 
-                    : 'Select the team member responsible for this deliverable',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: _isLoadingUsers
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.person),
+                  helperText: _isLoadingUsers
+                      ? 'Loading users...'
+                      : 'Select the team member responsible for this deliverable',
                   suffixIcon: _users.isEmpty && !_isLoadingUsers
-                    ? IconButton(
-                        icon: Icon(Icons.refresh),
-                        onPressed: _loadUsers,
-                        tooltip: 'Retry loading users',
-                      )
-                    : null,
+                      ? IconButton(
+                          icon: const Icon(Icons.refresh),
+                          onPressed: _loadUsers,
+                          tooltip: 'Retry loading users',
+                        )
+                      : null,
                 ),
                 items: [
                   const DropdownMenuItem<String>(
@@ -746,17 +646,6 @@ class _DeliverableSetupScreenState
                 onChanged: (value) {
                   setState(() {
                     _selectedProjectId = value;
-                    if (value != null && value.isNotEmpty) {
-                      _selectedSprints.removeWhere((sid) {
-                        final s = _availableSprints.firstWhere(
-                          (sp) => (sp['id']?.toString() ?? '') == sid,
-                          orElse: () => <String, dynamic>{},
-                        );
-                        final pid = (s['project_id'] ?? s['projectId'])?.toString() ?? '';
-                        return pid.isNotEmpty && pid != value;
-                      });
-                      _pendingSprintId = null;
-                    }
                   });
                 },
                 validator: (value) {
@@ -853,51 +742,6 @@ class _DeliverableSetupScreenState
                 maxLines: 2,
               ),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _artifactDescriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Document description (optional)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.description),
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: (_isSaving || _isUploadingArtifacts) ? null : _pickArtifactFiles,
-                  icon: _isUploadingArtifacts
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.upload_file),
-                  label: const Text('Upload document(s)'),
-                ),
-              ),
-              if (_artifactFiles.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                ..._artifactFiles.map((f) {
-                  final sizeKb = (f.size / 1024).toStringAsFixed(0);
-                  return Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.insert_drive_file),
-                      title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text('$sizeKb KB'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close, color: Colors.red),
-                        onPressed: () {
-                          setState(() {
-                            _artifactFiles.remove(f);
-                          });
-                        },
-                      ),
-                    ),
-                  );
-                }),
-              ],
 
               // Sprint Selection
               const Text(
@@ -916,7 +760,8 @@ class _DeliverableSetupScreenState
                     final isSelected = _selectedSprints.contains(idStr);
                     return CheckboxListTile(
                       title: Text(sprint['name']?.toString() ?? ''),
-                      subtitle: Text('${sprint['start_date']} - ${sprint['end_date']}'),
+                      subtitle: Text(
+                          '${sprint['start_date']} - ${sprint['end_date']}'),
                       value: isSelected,
                       onChanged: (value) {
                         setState(() {

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:intl/intl.dart' show DateFormat;
+import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_card.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/app_modal.dart';
-import '../widgets/ai_assistant_fab_button.dart';
 import '../models/timeline_event.dart';
 import '../services/timeline_event_service.dart';
+import '../services/timeline_sync_service.dart';
 import 'add_event_modal.dart';
 
 /// Timeline/Calendar Screen
@@ -22,12 +22,6 @@ class TimelineScreen extends StatefulWidget {
 }
 
 class _TimelineScreenState extends State<TimelineScreen> {
-  /// Insets from the physical edges; matches typical [FloatingActionButtonLocation.endFloat] feel.
-  static const double _fabStackEdge = 20;
-  static const double _fabStackGap = 14;
-  /// Extra bottom scroll padding so content clears the stacked FAB column.
-  static const double _fabStackScrollPadding = 168;
-
   // View state
   String _activeView = 'Month'; // 'Month' | 'Week' | 'Day' | 'Timeline'
   String? _hoveredView; // For subtle hover effects on view buttons
@@ -41,6 +35,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
   // Events
   final List<TimelineEvent> _events = [];
   final TimelineEventService _timelineEventService = TimelineEventService();
+  final TimelineSyncService _timelineSyncService = TimelineSyncService();
+  bool _isSyncing = false;
 
   // Calendar view constants - Professional scheduling standards
   static const int _startHour = 6; // 6 AM
@@ -59,38 +55,100 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 
   Future<void> _loadEvents() async {
-    final loaded = await _timelineEventService.loadEvents();
-    loaded.sort((a, b) => _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
-    if (!mounted) return;
-    setState(() {
-      _events
-        ..clear()
-        ..addAll(loaded);
-    });
+    // First load local events
+    final localEvents = await _timelineEventService.loadEvents();
+    
+    // Then try to sync with backend
+    await _syncWithBackend(localEvents);
+  }
+
+  Future<void> _syncWithBackend(List<TimelineEvent> localEvents) async {
+    setState(() => _isSyncing = true);
+    
+    try {
+      // Get events from backend
+      final backendEvents = await _timelineSyncService.syncTimelineEvents();
+      
+      // Merge local and backend events (backend takes precedence)
+      final allEvents = <TimelineEvent>[];
+      final seenIds = <String>{};
+      
+      // Add backend events first
+      for (final event in backendEvents) {
+        allEvents.add(event);
+        seenIds.add(event.id);
+      }
+      
+      // Add local events that don't exist in backend
+      for (final event in localEvents) {
+        if (!seenIds.contains(event.id)) {
+          allEvents.add(event);
+        }
+      }
+      
+      // Sort by start time
+      allEvents.sort((a, b) => _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
+      
+      // Save merged events to local storage
+      await _timelineEventService.saveEvents(allEvents);
+      
+      if (!mounted) return;
+      debugPrint('TimelineScreen: Total events loaded: ${allEvents.length}');
+      setState(() {
+        _events
+          ..clear()
+          ..addAll(allEvents);
+        _isSyncing = false;
+      });
+      
+    } catch (e) {
+      debugPrint('Error syncing with backend: $e');
+      // Fallback to local events only
+      if (!mounted) return;
+      setState(() {
+        _events
+          ..clear()
+          ..addAll(localEvents);
+        _isSyncing = false;
+      });
+    }
+  }
+
+  Future<void> _refreshTimeline() async {
+    await _loadEvents();
   }
 
   List<TimelineEvent> _getEventsForDay(DateTime day) {
-    return _events.where((event) {
-      DateTime? eventDate;
+    final dayEvents = _events.where((event) {
+      DateTime? eventStartDate;
+      DateTime? eventEndDate;
 
-      // For new events, use startTime date
+      // For new events, use startTime and endTime
       if (event.startTime != null) {
-        eventDate = event.startTime;
+        eventStartDate = event.startTime;
+        eventEndDate = event.endTime ?? event.startTime; // Use start time if no end time
       }
       // For legacy events, use date field
       else if (event.date != null) {
-        eventDate = event.date;
+        eventStartDate = event.date;
+        eventEndDate = event.date; // Single day event
       }
       // Fallback to dateTime
       else {
-        eventDate = event.dateTime;
+        eventStartDate = event.dateTime;
+        eventEndDate = event.dateTime;
       }
 
-      if (eventDate == null) return false;
-      return eventDate.year == day.year &&
-          eventDate.month == day.month &&
-          eventDate.day == day.day;
+      if (eventStartDate == null) return false;
+      
+      // Check if the day falls within the event's date range (inclusive)
+      final dayStart = DateTime(day.year, day.month, day.day);
+      final dayEnd = dayStart.add(const Duration(days: 1)).subtract(const Duration(milliseconds: 1));
+      
+      return dayStart.isBefore(eventEndDate!) && dayEnd.isAfter(eventStartDate);
     }).toList();
+    
+    return dayEvents;
   }
 
   List<TimelineEvent> _getEventsForWeek(DateTime weekStart) {
@@ -352,14 +410,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final padding = MediaQuery.paddingOf(context);
-    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
-    final textDir = Directionality.of(context);
-    final endSafe =
-        textDir == TextDirection.ltr ? padding.right : padding.left;
-    final bottomInset = padding.bottom + keyboard + _fabStackEdge;
-    final endInset = endSafe + _fabStackEdge;
-
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -373,116 +423,47 @@ class _TimelineScreenState extends State<TimelineScreen> {
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.topCenter,
-          children: [
-            Positioned.fill(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(
-                      24,
-                      24,
-                      24,
-                      24 +
-                          _fabStackScrollPadding +
-                          padding.bottom +
-                          keyboard,
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight - 48,
-                        maxWidth: 1400, // Desktop-first max width
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // View Switcher
-                          _buildViewSwitcher(),
-                          const SizedBox(height: 24),
-
-                          _buildTaskReminders(),
-                          const SizedBox(height: 24),
-
-                          // Calendar/Timeline Content with subtle view transition
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 220),
-                            switchInCurve: Curves.easeOut,
-                            switchOutCurve: Curves.easeIn,
-                            child: KeyedSubtree(
-                              key: ValueKey(_activeView),
-                              child: _buildCalendarContent(),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-
-                          // My Deliverables
-                          _buildMyDeliverables(),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Positioned.directional(
-              textDirection: textDir,
-              end: endInset,
-              bottom: bottomInset,
-              child: _buildTimelineFabStack(context),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// New Event above AI assistant, bottom-end, safe-area aware (see `_fabStackEdge`).
-  Widget _buildTimelineFabStack(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Material(
-          elevation: 12,
-          shadowColor: Colors.black54,
-          borderRadius: BorderRadius.circular(28),
-          color: FlownetColors.crimsonRed,
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () {
-              showAppDialog(
-                context: context,
-                builder: (context) => AddEventModal(
-                  onEventAdded: _addEvent,
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 48,
+                  maxWidth: 1400, // Desktop-first max width
                 ),
-              );
-            },
-            borderRadius: BorderRadius.circular(28),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.add, color: FlownetColors.pureWhite),
-                  const SizedBox(width: 8),
-                  Text(
-                    'New Event',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: FlownetColors.pureWhite,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // View Switcher
+                    _buildViewSwitcher(),
+                    const SizedBox(height: 24),
+
+                    _buildTaskReminders(),
+                    const SizedBox(height: 24),
+
+                    // Calendar/Timeline Content with subtle view transition
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOut,
+                      switchOutCurve: Curves.easeIn,
+                      child: KeyedSubtree(
+                        key: ValueKey(_activeView),
+                        child: _buildCalendarContent(),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // My Deliverables
+                    _buildMyDeliverables(),
+                  ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
-        const SizedBox(height: _fabStackGap),
-        // PNG already includes soft shadow; avoid an extra circular clip.
-        const AiAssistantFabButton(),
-      ],
+        floatingActionButton: _buildFAB(),
+      ),
     );
   }
 
@@ -1826,6 +1807,51 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFAB() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        // Sync button
+        FloatingActionButton.extended(
+          onPressed: _isSyncing ? null : _refreshTimeline,
+          backgroundColor: _isSyncing 
+              ? FlownetColors.coolGray 
+              : FlownetColors.electricBlue,
+          foregroundColor: FlownetColors.pureWhite,
+          icon: _isSyncing 
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(FlownetColors.pureWhite),
+                  ),
+                )
+              : const Icon(Icons.sync),
+          label: Text(_isSyncing ? 'Syncing...' : 'Sync'),
+          elevation: 4,
+        ),
+        const SizedBox(width: 12),
+        // Add event button
+        FloatingActionButton.extended(
+          onPressed: () {
+            showAppDialog(
+              context: context,
+              builder: (context) => AddEventModal(
+                onEventAdded: _addEvent,
+              ),
+            );
+          },
+          backgroundColor: FlownetColors.crimsonRed,
+          foregroundColor: FlownetColors.pureWhite,
+          icon: const Icon(Icons.add),
+          label: const Text('New Event'),
+          elevation: 8,
+        ),
+      ],
     );
   }
 

@@ -1,13 +1,11 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
-/// Frosted glass panel for dashboard cards — subtle blur, light border, readable text.
 class GlassCard extends StatelessWidget {
   final Widget child;
   final double? width;
   final double? height;
   final double borderRadius;
-  /// Backdrop blur strength (sigma); kept modest for clarity and performance.
   final double blur;
   final Color? color;
   final Border? border;
@@ -29,56 +27,40 @@ class GlassCard extends StatelessWidget {
     this.gradient,
   });
 
-  static final LinearGradient _defaultFrost = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [
-      Colors.white.withAlpha(18),
-      Colors.white.withAlpha(6),
-    ],
-  );
-
   @override
   Widget build(BuildContext context) {
-    final sigma = (blur * 0.72).clamp(4.0, 12.0);
-    final Gradient? effectiveGradient;
-    final Color? effectiveColor;
-    if (gradient != null) {
-      effectiveGradient = gradient;
-      effectiveColor = null;
-    } else if (color != null) {
-      effectiveGradient = null;
-      effectiveColor = color;
-    } else {
-      effectiveGradient = _defaultFrost;
-      effectiveColor = null;
-    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
         child: Container(
           width: width,
           height: height,
           padding: padding ?? const EdgeInsets.all(16.0),
           decoration: BoxDecoration(
-            color: effectiveColor,
-            gradient: effectiveGradient,
+            // More translucent to show the glass effect better
+            color: color ?? Colors.white.withAlpha(10),
             borderRadius: BorderRadius.circular(borderRadius),
-            border: border ??
-                Border.all(
-                  color: Colors.white.withAlpha(42),
-                  width: 1.0,
-                ),
-            boxShadow: boxShadow ??
-                [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(36),
-                    blurRadius: blur,
-                    spreadRadius: 0,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+            border: border ?? Border.all(
+              color: Colors.white.withAlpha(30),
+              width: 1.0,
+            ),
+            boxShadow: boxShadow ?? [
+              BoxShadow(
+                color: Colors.black.withAlpha(20),
+                blurRadius: blur,
+                spreadRadius: 1,
+                offset: const Offset(0, 4),
+              ),
+            ],
+            gradient: gradient ?? LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withAlpha(20),
+                Colors.white.withAlpha(5),
+              ],
+            ),
           ),
           child: child,
         ),

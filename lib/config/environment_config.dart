@@ -1,15 +1,15 @@
 class EnvironmentConfig {
-  static const String baseUrl = 'http://127.0.0.1:3001';
+  static const String baseUrl = 'http://localhost:8000';
 
   // Environment-specific configurations
   static Map<String, Map<String, String>> get environmentConfigs => {
         'DEV': {
-          'baseUrl': 'http://127.0.0.1:3001',
+          'baseUrl': 'http://localhost:8000',
           'databaseUrl': 'postgresql://localhost:5432/flowspace_dev',
           'environment': 'Development',
         },
         'SIT': {
-          'baseUrl': 'http://127.0.0.1:3001',
+          'baseUrl': 'http://localhost:8000',
           'databaseUrl': 'postgresql://localhost:5432/flowspace_sit',
           'environment': 'System Integration Testing',
         },
@@ -24,6 +24,7 @@ class EnvironmentConfig {
           'environment': 'Production',
         },
       };
+
   static Map<String, String> getCurrentConfig(String environment) {
     return environmentConfigs[environment] ?? environmentConfigs['SIT']!;
   }

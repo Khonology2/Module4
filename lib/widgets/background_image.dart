@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 class BackgroundImage extends StatelessWidget {
   final Widget child;
-  final String imagePath;
+  final String? imagePath;
   final BoxFit fit;
   final bool withGlassEffect;
   final double overlayOpacity;  // Should be between 0.0 and 1.0
@@ -18,7 +18,7 @@ class BackgroundImage extends StatelessWidget {
   const BackgroundImage({
     super.key,
     required this.child,
-    this.imagePath = 'assets/Icons/khono_bg.png',
+    this.imagePath,
     this.fit = BoxFit.cover,
     this.withGlassEffect = false,
     this.overlayOpacity = 0.06,
@@ -32,12 +32,30 @@ class BackgroundImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final String resolvedImagePath =
+        imagePath ??
+        (isDarkMode
+            ? 'assets/Icons/khono_bg.png'
+            : 'assets/Icons/light_mode_bg.png');
+    final List<Color> resolvedGradientColors =
+        gradientColors ??
+        (isDarkMode
+            ? [
+                Colors.black.withValues(alpha: 0.2),
+                Colors.black.withValues(alpha: 0.35),
+              ]
+            : [
+                Colors.transparent,
+                Colors.transparent,
+              ]);
+
     return Stack(
       children: [
         // Background image
         Positioned.fill(
           child: Image.asset(
-            imagePath,
+            resolvedImagePath,
             fit: fit,
             // Render background sharply
             filterQuality: FilterQuality.high,
@@ -52,10 +70,7 @@ class BackgroundImage extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: gradientBegin,
                   end: gradientEnd,
-                  colors: gradientColors ?? [
-                    Colors.black.withValues(alpha: 0.2),
-                    Colors.black.withValues(alpha: 0.35),
-                  ],
+                  colors: resolvedGradientColors,
                 ),
               ),
             ),
