@@ -1,79 +1,14 @@
 {
-  "version": "Ver 2026.04CD14 SIT",
-  "branch": "nathi-ui-redesign",
-  "generated_at": "2026-04-16T08:02:45Z",
+  "version": "Ver 2026.04CB1 SIT",
+  "branch": "my-merge-uuid",
+  "generated_at": "2026-04-21T08:57:36Z",
   "commits": [
     {
-      "author": "Nathi2266",
-      "message": "Enhance VersionService to support cache-busting for web and add force refresh option",
-      "timestamp": "2026-04-16T10:02:08+02:00"
-    },
-    {
-      "author": "GitHub Action",
-      "message": "Update version data [2026-04-16]",
-      "timestamp": "2026-04-16T07:58:09Z"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "Feat: - Added custom decoration and text style to tooltips in FixedFooterVersionDisplay, ProfessionalVersionDisplay, SidebarVersionDisplay, and VersionDisplay widgets for improved visibility and user experience.",
-      "timestamp": "2026-04-16T09:57:32+02:00"
-    },
-    {
-      "author": "GitHub Action",
-      "message": "Update version data [2026-04-16]",
-      "timestamp": "2026-04-16T07:51:40Z"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "chore: Update asset paths in pubspec.yaml",
-      "timestamp": "2026-04-16T09:48:13+02:00"
-    },
-    {
-      "author": "GitHub Action",
-      "message": "Update version data [2026-04-16]",
-      "timestamp": "2026-04-16T07:43:11Z"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "feat: Implement performance visualizations and system health status model",
-      "timestamp": "2026-04-16T09:42:27+02:00"
-    },
-    {
-      "author": "GitHub Action",
-      "message": "Update version data [2026-04-16]",
-      "timestamp": "2026-04-16T07:31:59Z"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "feat: Integrate version management and display across the application",
-      "timestamp": "2026-04-16T09:31:23+02:00"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "fix: Adjust font size on login button for improved readability",
-      "timestamp": "2026-04-16T08:55:37+02:00"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "feat: Revamp version control and display components for enhanced versioning information",
-      "timestamp": "2026-04-16T08:33:27+02:00"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "feat: Revamp login and registration screens with enhanced UI and gradient backgrounds",
-      "timestamp": "2026-04-16T08:23:08+02:00"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "refactor: Improve database connection logic in dbPool.js",
-      "timestamp": "2026-04-16T07:28:17+02:00"
-    },
-    {
-      "author": "Nathi2266",
-      "message": "chore: Update .gitignore to include flutter-web and web directories",
-      "timestamp": "2026-04-16T07:21:29+02:00"
+      "author": "Your Name",
+      "message": "style(delivery): restyle Delivery Manager dashboard to match Team Member layout - Apply Team Member dashboard styling to Delivery Lead dashboard - Add Approval Reminders panel with custom reminder_icon asset - Implement Team Metrics Overview with 8 KPI cards (2 rows x 4) - Use provided PNG assets for all KPI icons (deliverables, progress, completed, overdue, active sprints, active projects, pending reviews, completion rate) - Add Velocity Trend section with Revenue Forecast chart - Add 5 KPI cards under velocity chart (Average Velocity, Planned, Completed, Carry Over, Defects) - Remove duplicate Team Performance/Velocity Trend widget - Update SprintPerformanceChart to support showTitle/useCard toggles - Add asset icons to pubspec.yaml for proper bundling - Remove color tinting that was hiding PNG icons",
+      "timestamp": "2026-04-21T10:49:10+02:00"
     }
   ],
-  "total_commits": 14,
-  "date_range": "2026-04-16"
+  "total_commits": 1,
+  "date_range": "2026-04-21"
 }
