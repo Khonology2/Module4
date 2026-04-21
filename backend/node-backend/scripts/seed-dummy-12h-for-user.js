@@ -3,9 +3,10 @@
  * Cleanup runs automatically when the API server starts (dummyDataCleanupService) every 15 minutes.
  *
  * Usage (from backend/node-backend):
- *   set DUMMY_USER_EMAIL=deliverylead_20260129@example.com
+ *   set DUMMY_USER_EMAIL=you@yourdomain.com
  *   node scripts/seed-dummy-12h-for-user.js
  *
+ * Use the same email you log into the app with (owner_id + project_members). Gmail needs DUMMY_ENSURE_USER=1 if that user is not in DB yet.
  * Optional: DUMMY_REPLACE=1 — remove non-expired dummy rows for this user first (same email), then re-seed.
  * Env files (first existing → last; later files override): .env.sit, .env.development, .env.local, ../.env, .env
  * Auto-create missing user: @example.com addresses, or DUMMY_ENSURE_USER=1. Password: DUMMY_USER_PASSWORD or DeliveryLead123!
@@ -39,9 +40,74 @@ const { runExpiredDummy12hCleanup } = require('../src/services/dummyDataCleanupS
 
 const EMAIL = process.env.DUMMY_USER_EMAIL || 'deliverylead_20260129@example.com';
 const HOURS = 12;
-const COUNTS = { projects: 12, sprints: 10, deliverables: 6, notifications: 13 };
+const COUNTS = { projects: 13, sprints: 13, deliverables: 13, notifications: 13 };
 
-const PREFIX = '[DUMMY 12h]';
+const PREFIX = '[Demo 12h]';
+
+/** Narrative demo pack: each row explains a part of Flow-Space / Khono for Delivery Leads and team. */
+const DEMO_PROJECTS = [
+  { key: 'KHONO-01', name: 'Onboarding — Your First Project', desc: 'Shows how Projects list, owner, and client fields appear. You are the owner; invite teammates from Project Workspace.' },
+  { key: 'KHONO-02', name: 'Sprint Console — Planning vs Active', desc: 'Pair this project with Sprint 2: see planning/active/completed states and dates the console uses for burndown-style views.' },
+  { key: 'KHONO-03', name: 'Deliverables Board — Status Flow', desc: 'Deliverables move draft → in progress → in review → approved. Watch statuses on Deliverables Overview and in sprint links.' },
+  { key: 'KHONO-04', name: 'Timeline — Milestones & Deadlines', desc: 'Timeline pulls sprint end dates and deliverable due dates so the team sees what lands when.' },
+  { key: 'KHONO-05', name: 'Repository — Docs & Evidence', desc: 'Repository holds deliverable artifacts. Client Reviewers often validate what was uploaded here before sign-off.' },
+  { key: 'KHONO-06', name: 'Reports & Sign-off', desc: 'Sign-off reports summarize readiness. Delivery Leads prepare; Client Reviewers approve or request changes in Reports / client review flows.' },
+  { key: 'KHONO-07', name: 'Approval Requests Queue', desc: 'Formal approvals (scope, change requests) show under Approval Requests for roles with view_approvals.' },
+  { key: 'KHONO-08', name: 'Team Member — Task Slice', desc: 'As a team member you see assigned deliverables and sprint commitments; notifications nudge you on due dates.' },
+  { key: 'KHONO-09', name: 'Client Reviewer — Review Window', desc: 'Client reviewers see submissions, pending approvals, and history without full project admin noise.' },
+  { key: 'KHONO-10', name: 'Notifications Hub', desc: 'In-app notifications aggregate sprint starts, deliverable moves, and approval pings — check the bell on the header.' },
+  { key: 'KHONO-11', name: 'Metrics & Health (Demo)', desc: 'Sprint points (committed/completed) feed console cards; use this row to sanity-check numbers after seed.' },
+  { key: 'KHONO-12', name: 'Cross-project Dependency (Demo)', desc: 'Second wave of work: same user owns multiple keys (KHONO-12) so you can filter “All Projects” in the UI.' },
+  { key: 'KHONO-13', name: 'Wrap-up & Retrospective', desc: 'Last demo project: complete sprint, archive notes, and let this whole pack auto-clean after 12 hours (TTL in metadata).' },
+];
+
+const DEMO_SPRINTS = [
+  { title: 'Sprint 1 — Kickoff & backlog', blurb: 'First sprint: align backlog with project goals; Delivery Lead owns sprint creation.' },
+  { title: 'Sprint 2 — Build the course shell', blurb: 'Active development; team burns down committed points; watch Sprint Console.' },
+  { title: 'Sprint 3 — Integrations pass', blurb: 'API/auth hooks; deliverables tagged in_review when ready for peer review.' },
+  { title: 'Sprint 4 — UX polish & a11y', blurb: 'Timeline highlights due dates for UI fixes before stakeholder demo.' },
+  { title: 'Sprint 5 — Repository hardening', blurb: 'Evidence packs uploaded; Repository icons reflect doc state for auditors.' },
+  { title: 'Sprint 6 — Report draft for sign-off', blurb: 'Draft sign-off report; Client Reviewer will see it under Reports when shared.' },
+  { title: 'Sprint 7 — Change requests triage', blurb: 'Approvals queue shows formal CRs; Delivery Lead prioritises.' },
+  { title: 'Sprint 8 — Member focus week', blurb: 'Individual assignments visible on cards; mentions in notifications.' },
+  { title: 'Sprint 9 — Client UAT', blurb: 'Client Reviewer validates acceptance criteria; use client review screens.' },
+  { title: 'Sprint 10 — Notification dry-run', blurb: 'Burst of events to populate the notification center realistically.' },
+  { title: 'Sprint 11 — Metrics stabilization', blurb: 'Committed vs completed points should trend green; check sprint metrics.' },
+  { title: 'Sprint 12 — Hardening & docs', blurb: 'Cross-project visibility: same owner, different key — test filters.' },
+  { title: 'Sprint 13 — Close & retrospective', blurb: 'Final sprint before auto-expiry of this dummy pack (12h TTL).' },
+];
+
+const DEMO_DELIVERABLES = [
+  'Wireframe set v1 — course landing',
+  'API contract — auth & roles',
+  'QA checklist — deliverables board',
+  'Timeline export — stakeholder PDF',
+  'Repository README — evidence layout',
+  'Sign-off report draft — Module A',
+  'CR-104 — scope adjustment (approval)',
+  'Dev task — fix sprint card totals',
+  'UAT script — client reviewer steps',
+  'Notification copy — sprint start',
+  'Dashboard widget — points summary',
+  'Runbook — cross-project rollout',
+  'Retro notes — lessons learned',
+];
+
+const DEMO_NOTIFS = [
+  { type: 'sprint', message: `${PREFIX} Projects list: open KHONO-01 — that is the “how this app works” tour in project form.` },
+  { type: 'sprint', message: `${PREFIX} Sprint Console: KHONO-02’s sprint shows planning vs active vs completed states.` },
+  { type: 'deliverable', message: `${PREFIX} Deliverables: KHONO-03 items move draft → in review → approved on the board.` },
+  { type: 'deliverable', message: `${PREFIX} Timeline: KHONO-04 ties sprint ends and due dates into the calendar view.` },
+  { type: 'approval', message: `${PREFIX} Repository: KHONO-05 is where evidence packs live before client sign-off.` },
+  { type: 'system', message: `${PREFIX} Reports: KHONO-06 mirrors the sign-off / report repository flow for leads & reviewers.` },
+  { type: 'team', message: `${PREFIX} Approvals: KHONO-07 is the formal change-request queue (roles with view_approvals).` },
+  { type: 'sprint', message: `${PREFIX} Team member slice: KHONO-08 — assignments and sprint commitments on cards.` },
+  { type: 'deliverable', message: `${PREFIX} Client reviewer: KHONO-09 — fewer admin tiles, focus on review + history.` },
+  { type: 'repository', message: `${PREFIX} Notifications: KHONO-10 — bell icon aggregates these demo pings (13-pack).` },
+  { type: 'file', message: `${PREFIX} Metrics: KHONO-11 — committed vs completed points for sprint health cards.` },
+  { type: 'system', message: `${PREFIX} Filters: KHONO-12 — second wave so “All Projects” search has volume.` },
+  { type: 'deliverable', message: `${PREFIX} This demo pack expires 12h after seed (metadata dummy_12h_seed). KHONO-13 closes the loop.` },
+];
 
 async function ensureNotificationsPayloadColumn() {
   if (sequelize.getDialect() !== 'postgres') return;
@@ -188,19 +254,20 @@ async function main() {
     const projects = [];
     for (let i = 0; i < COUNTS.projects; i++) {
       const n = i + 1;
-      const key = `DMY12H-${String(n).padStart(2, '0')}`;
+      const def = DEMO_PROJECTS[i];
+      const desc = `${def.desc} Expires (UTC): ${expiresAt.toISOString()}.`;
       const p = await Project.create(
         {
-          name: `${PREFIX} Project ${n}`,
-          key,
-          description: `${PREFIX} Sample project ${n} for UI testing (expires ${expiresAt.toISOString()})`,
+          name: `${PREFIX} ${def.name}`,
+          key: def.key,
+          description: `${PREFIX} ${desc}`,
           status: 'active',
           owner_id: user.id,
           created_by: user.id,
           project_type: 'software',
-          client_name: 'Demo Client',
-          client_owner_name: 'Demo Owner',
-          metadata: { ...metaBase, project_index: n },
+          client_name: 'Khono Academy (demo)',
+          client_owner_name: 'Demo stakeholder',
+          metadata: { ...metaBase, project_index: n, demo_key: def.key },
         },
         { transaction: t },
       );
@@ -221,7 +288,8 @@ async function main() {
     const usePgMinimalSprints = sequelize.getDialect() === 'postgres';
 
     for (let i = 0; i < COUNTS.sprints; i++) {
-      const p = projects[i % projects.length];
+      const p = projects[i];
+      const sd = DEMO_SPRINTS[i];
       const start = new Date();
       start.setDate(start.getDate() - (14 - i));
       const end = new Date(start);
@@ -235,7 +303,7 @@ async function main() {
           {
             bind: [
               p.id,
-              `${PREFIX} Sprint ${i + 1}`,
+              `${PREFIX} ${sd.title}`,
               start,
               end,
               20 + i * 3,
@@ -252,8 +320,8 @@ async function main() {
         const sp = await Sprint.create(
           {
             project_id: p.id,
-            name: `${PREFIX} Sprint ${i + 1}`,
-            description: `${PREFIX} Sprint for ${p.name}`,
+            name: `${PREFIX} ${sd.title}`,
+            description: `${PREFIX} ${sd.blurb} (Project ${DEMO_PROJECTS[i].key})`,
             start_date: start,
             end_date: end,
             status: st,
@@ -273,8 +341,10 @@ async function main() {
     const delStatuses = ['draft', 'in_progress', 'in_review', 'submitted', 'approved', 'in_progress'];
 
     for (let i = 0; i < COUNTS.deliverables; i++) {
-      const p = projects[i % projects.length];
+      const p = projects[i];
+      const delTitle = DEMO_DELIVERABLES[i];
       const due = new Date(Date.now() + (i + 1) * 86400000);
+      const delDesc = `${PREFIX} ${DEMO_SPRINTS[i].blurb} — tied to ${DEMO_PROJECTS[i].key}.`;
 
       let dId;
       if (usePgMinimalSprints) {
@@ -283,8 +353,8 @@ async function main() {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING id`,
           {
             bind: [
-              `${PREFIX} Deliverable ${i + 1}`,
-              `${PREFIX} Test deliverable linked to ${p.name}`,
+              `${PREFIX} ${delTitle}`,
+              delDesc,
               delStatuses[i % delStatuses.length],
               p.id,
               user.id,
@@ -301,8 +371,8 @@ async function main() {
       } else {
         const d = await Deliverable.create(
           {
-            title: `${PREFIX} Deliverable ${i + 1}`,
-            description: `${PREFIX} Test deliverable linked to ${p.name}`,
+            title: `${PREFIX} ${delTitle}`,
+            description: delDesc,
             status: delStatuses[i % delStatuses.length],
             priority: ['low', 'medium', 'high'][i % 3],
             project_id: p.id,
@@ -337,24 +407,8 @@ async function main() {
       }
     }
 
-    const notifSpecs = [
-      { type: 'sprint', message: `${PREFIX} Sprint "Sprint 1" started` },
-      { type: 'sprint', message: `${PREFIX} Sprint review scheduled tomorrow` },
-      { type: 'deliverable', message: `${PREFIX} New deliverable assigned to you` },
-      { type: 'deliverable', message: `${PREFIX} Deliverable moved to in_review` },
-      { type: 'approval', message: `${PREFIX} Approval requested for sign-off` },
-      { type: 'system', message: `${PREFIX} System: project workspace synced` },
-      { type: 'team', message: `${PREFIX} Team: standup notes posted` },
-      { type: 'sprint', message: `${PREFIX} Burndown updated for active sprint` },
-      { type: 'deliverable', message: `${PREFIX} Due date approaching for deliverable` },
-      { type: 'repository', message: `${PREFIX} Repository: branch protection enabled` },
-      { type: 'file', message: `${PREFIX} New file uploaded to project docs` },
-      { type: 'system', message: `${PREFIX} Reminder: complete sprint retrospective` },
-      { type: 'deliverable', message: `${PREFIX} Deliverable approved — nice work` },
-    ];
-
     for (let i = 0; i < COUNTS.notifications; i++) {
-      const spec = notifSpecs[i] || { type: 'system', message: `${PREFIX} Notification ${i + 1}` };
+      const spec = DEMO_NOTIFS[i] || { type: 'system', message: `${PREFIX} Notification ${i + 1}` };
       const payloadObj = { ...payloadBase, index: i + 1, seed_type: spec.type };
       if (usePgMinimalSprints) {
         const title = spec.message.length > 250 ? `${spec.message.slice(0, 247)}...` : spec.message;
