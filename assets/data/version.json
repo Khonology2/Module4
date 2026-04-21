@@ -1,17 +1,17 @@
 {
-  "version": "Ver 2026.04CB1 SIT",
+  "version": "Ver 2026.04CB7 SIT",
   "branch": "tiyanebaker3",
-  "generated_at": "2026-04-21T07:28:53Z",
+  "generated_at": "2026-04-21T08:43:32Z",
   "commits": [
     {
       "author": "Tiyane-Prince",
-      "message": "chore(backend): expand 12h dummy seed with demo narrative content",
-      "timestamp": "2026-04-21T08:28:22+02:00"
+      "message": "fix(auth): public login POST + exit on API port conflict",
+      "timestamp": "2026-04-21T10:43:01+02:00"
     },
     {
-      "author": "Nathi2266",
-      "message": "Enhance profile and dashboard screens with new sidebar assets and loading state management",
-      "timestamp": "2026-04-20T14:40:36+02:00"
+      "author": "GitHub Action",
+      "message": "Update version data [2026-04-20]",
+      "timestamp": "2026-04-20T12:45:33Z"
     },
     {
       "author": "GitHub Action",
@@ -20,10 +20,25 @@
     },
     {
       "author": "Nathi2266",
+      "message": "Enhance profile and dashboard screens with new sidebar assets and loading state management",
+      "timestamp": "2026-04-20T14:40:36+02:00"
+    },
+    {
+      "author": "Nathi2266",
       "message": "Update version display widgets to use force refresh option for fetching version details",
       "timestamp": "2026-04-20T13:46:26+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-04-21]",
+      "timestamp": "2026-04-21T07:28:54Z"
+    },
+    {
+      "author": "Tiyane-Prince",
+      "message": "chore(backend): expand 12h dummy seed with demo narrative content",
+      "timestamp": "2026-04-21T08:28:22+02:00"
     }
   ],
-  "total_commits": 4,
-  "date_range": "2026-04-20"
+  "total_commits": 7,
+  "date_range": "2026-04-21"
 }
