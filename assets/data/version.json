@@ -1,29 +1,14 @@
 {
-  "version": "Ver 2026.04CB4 SIT",
-  "branch": "integration/thabang",
-  "generated_at": "2026-04-21T15:25:53Z",
+  "version": "Ver 2026.04DC1 SIT",
+  "branch": "nathi-ui-redesign",
+  "generated_at": "2026-04-22T09:33:03Z",
   "commits": [
     {
-      "author": "thabang127",
-      "message": "refactor: make sprints nav item unconditional",
-      "timestamp": "2026-04-21T17:24:59+02:00"
-    },
-    {
-      "author": "GitHub Action",
-      "message": "Update version data [2026-04-21]",
-      "timestamp": "2026-04-21T15:24:36Z"
-    },
-    {
-      "author": "GitHub Action",
-      "message": "Update version data [2026-04-21]",
-      "timestamp": "2026-04-21T11:23:50Z"
-    },
-    {
-      "author": "thabang127",
-      "message": "feat(ai-assistant): integrate signature capture for PDF export",
-      "timestamp": "2026-04-21T13:22:40+02:00"
+      "author": "Nathi2266",
+      "message": "Add new scripts for dashboard data checks and role user seeding",
+      "timestamp": "2026-04-22T11:32:36+02:00"
     }
   ],
-  "total_commits": 4,
-  "date_range": "2026-04-21"
+  "total_commits": 1,
+  "date_range": "2026-04-22"
 }
