@@ -1,0 +1,2185 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:csv/csv.dart';
+import 'package:pdf/widgets.dart' as pw;
+import '../models/user_role.dart';
+import '../models/user.dart';
+import '../services/auth_service.dart';
+import '../services/backend_api_service.dart';
+
+class RoleDashboardScreen extends StatefulWidget {
+  const RoleDashboardScreen({super.key});
+
+  @override
+  State<RoleDashboardScreen> createState() => _RoleDashboardScreenState();
+}
+
+class _RoleDashboardScreenState extends State<RoleDashboardScreen> {
+  User? _currentUser;
+  final AuthService _authService = AuthService();
+  final BackendApiService _backendApiService = BackendApiService();
+  
+  // Audit logs state
+  List<dynamic> _auditLogs = [];
+  List<dynamic> _filteredAuditLogs = [];
+  bool _isLoadingAuditLogs = false;
+  bool _isLoadingMoreAuditLogs = false;
+  String? _auditLogsError;
+  int _auditLogsPage = 1;
+  final int _auditLogsPerPage = 20;
+  bool _hasMoreAuditLogs = true;
+  
+  // Filter state variables
+  String? _selectedActionFilter;
+  String? _selectedUserFilter;
+  DateTime? _selectedStartDate;
+  DateTime? _selectedEndDate;
+  
+  // Search and sorting state
+  String _searchQuery = '';
+  String _sortField = 'created_at';
+  bool _sortAscending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentUser();
+  }
+
+  Future<void> _loadCurrentUser() async {
+    try {
+      // Get the current user from AuthService
+      final user = _authService.currentUser;
+      if (user != null) {
+        setState(() {
+          _currentUser = user;
+        });
+        debugPrint('✅ Loaded user: \${user.name} (\${user.email})');
+        // Load audit logs after user is loaded
+        _loadAuditLogs();
+      } else {
+        debugPrint('❌ No user found, redirecting to login');
+        if (mounted) {
+          context.go('/');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading current user: \$e');
+      // If there's an error, redirect to login
+      if (mounted) {
+        context.go('/');
+      }
+    }
+  }
+
+  Future<void> _loadAuditLogs({bool loadMore = false}) async {
+    if (_isLoadingAuditLogs && !loadMore) return;
+    if (_isLoadingMoreAuditLogs && loadMore) return;
+    if (!loadMore && !_hasMoreAuditLogs) return;
+    
+    final int page = loadMore ? _auditLogsPage + 1 : 1;
+    final int skip = (page - 1) * _auditLogsPerPage;
+    
+    setState(() {
+      if (loadMore) {
+        _isLoadingMoreAuditLogs = true;
+      } else {
+        _isLoadingAuditLogs = true;
+        _auditLogsError = null;
+      }
+    });
+
+    try {
+      final response = await _backendApiService.getAuditLogs(
+        skip: skip,
+        limit: _auditLogsPerPage,
+        action: _selectedActionFilter,
+        userId: _selectedUserFilter,
+      );
+      
+      if (response.isSuccess) {
+        final data = response.data;
+        final logs = data?['audit_logs'] ?? data?['items'] ?? data?['logs'] ?? [];
+        final totalCount = data?['total'] ?? data?['total_count'] ?? logs.length;
+        
+        // Apply date filtering if dates are selected
+        List<Map<String, dynamic>> filteredLogs = List<Map<String, dynamic>>.from(logs);
+        
+        if (_selectedStartDate != null || _selectedEndDate != null) {
+          filteredLogs = filteredLogs.where((log) {
+            final createdAt = log['created_at'] as String?;
+            if (createdAt == null) return false;
+            
+            try {
+              final logDate = DateTime.parse(createdAt);
+              
+              if (_selectedStartDate != null && logDate.isBefore(_selectedStartDate!)) {
+                return false;
+              }
+              if (_selectedEndDate != null && logDate.isAfter(_selectedEndDate!)) {
+                return false;
+              }
+              
+              return true;
+            } catch (e) {
+              return false;
+            }
+          }).toList();
+        }
+        
+        setState(() {
+          if (loadMore) {
+            _auditLogs.addAll(filteredLogs);
+            _auditLogsPage = page;
+            _hasMoreAuditLogs = _auditLogs.length < totalCount;
+          } else {
+            _auditLogs = filteredLogs;
+            _auditLogsPage = 1;
+            _hasMoreAuditLogs = _auditLogs.length < totalCount && filteredLogs.length == _auditLogsPerPage;
+          }
+        });
+        
+        // Apply search and sort after loading data
+        _applySearchAndSort();
+        
+        debugPrint('✅ Loaded \${filteredLogs.length} audit logs (page \$page, total \${_auditLogs.length}, has more: \$_hasMoreAuditLogs)');
+      } else {
+        setState(() {
+          _auditLogsError = response.error ?? 'Failed to load audit logs';
+        });
+        debugPrint('❌ Error loading audit logs: \${_auditLogsError}');
+      }
+    } catch (e) {
+      setState(() {
+        _auditLogsError = 'Failed to load audit logs: \$e';
+      });
+      debugPrint('❌ Exception loading audit logs: \$e');
+    } finally {
+      setState(() {
+        _isLoadingAuditLogs = false;
+        _isLoadingMoreAuditLogs = false;
+      });
+    }
+  }
+
+  Future<void> _loadMoreAuditLogs() async {
+    if (_isLoadingMoreAuditLogs || !_hasMoreAuditLogs) return;
+    await _loadAuditLogs(loadMore: true);
+  }
+
+  void _applySearchAndSort() {
+    // Apply search filter
+    List<dynamic> filtered = _auditLogs;
+    
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      filtered = filtered.where((log) {
+        final action = (log['action'] as String? ?? '').toLowerCase();
+        final userEmail = (log['user_email'] as String? ?? '').toLowerCase();
+        final entityName = (log['entity_name'] as String? ?? '').toLowerCase();
+        final entityType = (log['entity_type'] as String? ?? '').toLowerCase();
+        final userRole = (log['user_role'] as String? ?? '').toLowerCase();
+        
+        return action.contains(query) ||
+               userEmail.contains(query) ||
+               entityName.contains(query) ||
+               entityType.contains(query) ||
+               userRole.contains(query);
+      }).toList();
+    }
+    
+    // Apply sorting
+    filtered.sort((a, b) {
+      final dynamic aValue = a[_sortField];
+      final dynamic bValue = b[_sortField];
+      
+      if (aValue == null && bValue == null) return 0;
+      if (aValue == null) return _sortAscending ? -1 : 1;
+      if (bValue == null) return _sortAscending ? 1 : -1;
+      
+      if (aValue is String && bValue is String) {
+        return _sortAscending ? aValue.compareTo(bValue) : bValue.compareTo(aValue);
+      }
+      
+      if (aValue is DateTime && bValue is DateTime) {
+        return _sortAscending ? aValue.compareTo(bValue) : bValue.compareTo(aValue);
+      }
+      
+      if (aValue is String && bValue is DateTime) {
+        try {
+          final aDate = DateTime.parse(aValue);
+          return _sortAscending ? aDate.compareTo(bValue) : bValue.compareTo(aDate);
+        } catch (e) {
+          return _sortAscending ? -1 : 1;
+        }
+      }
+      
+      if (aValue is DateTime && bValue is String) {
+        try {
+          final bDate = DateTime.parse(bValue);
+          return _sortAscending ? aValue.compareTo(bDate) : bDate.compareTo(aValue);
+        } catch (e) {
+          return _sortAscending ? 1 : -1;
+        }
+      }
+      
+      return 0;
+    });
+    
+    setState(() {
+      _filteredAuditLogs = filtered;
+    });
+  }
+
+  void _handleSearch(String query) {
+    setState(() {
+      _searchQuery = query;
+    });
+    _applySearchAndSort();
+  }
+
+  void _handleSort(String field) {
+    setState(() {
+      if (_sortField == field) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortField = field;
+        _sortAscending = false;
+      }
+    });
+    _applySearchAndSort();
+  }
+
+  void _clearSearch() {
+    setState(() {
+      _searchQuery = '';
+    });
+    _applySearchAndSort();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_currentUser == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return Scaffold(
+      appBar: _buildAppBar(),
+      body: _buildRoleSpecificContent(),
+      floatingActionButton: _buildRoleSpecificFAB(),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: Text('${_currentUser!.roleDisplayName} Dashboard'),
+      backgroundColor: _currentUser!.roleColor,
+      foregroundColor: Colors.white,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.notifications_outlined),
+          onPressed: () => context.go('/notification-center'),
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings_outlined),
+          onPressed: () => _showSettingsDialog(),
+        ),
+        PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'logout') {
+              _handleLogout();
+            } else if (value == 'profile') {
+              _showProfileDialog();
+            }
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'profile',
+              child: Row(
+                children: [
+                  Icon(_currentUser!.roleIcon),
+                  const SizedBox(width: 8),
+                  const Text('Profile'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'logout',
+              child: Row(
+                children: [
+                  Icon(Icons.logout),
+                  SizedBox(width: 8),
+                  Text('Logout'),
+                ],
+              ),
+            ),
+          ],
+          child: CircleAvatar(
+            backgroundColor: Colors.white,
+            child: Icon(
+              _currentUser!.roleIcon,
+              color: _currentUser!.roleColor,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRoleSpecificContent() {
+    switch (_currentUser!.role) {
+      case UserRole.teamMember:
+        return _buildTeamMemberDashboard();
+      case UserRole.deliveryLead:
+        return _buildDeliveryLeadDashboard();
+      case UserRole.clientReviewer:
+        return _buildClientReviewerDashboard();
+      case UserRole.systemAdmin:
+        return _buildSystemAdminDashboard();
+    }
+  }
+
+  Widget _buildTeamMemberDashboard() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildWelcomeCard(),
+          const SizedBox(height: 24),
+          _buildQuickActions(),
+          const SizedBox(height: 24),
+          _buildMyDeliverables(),
+          const SizedBox(height: 24),
+          _buildRecentActivity(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveryLeadDashboard() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildWelcomeCard(),
+          const SizedBox(height: 24),
+          _buildTeamMetrics(),
+          const SizedBox(height: 24),
+          _buildSprintOverview(),
+          const SizedBox(height: 24),
+          _buildPendingReviews(),
+          const SizedBox(height: 24),
+          _buildTeamPerformance(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClientReviewerDashboard() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildWelcomeCard(),
+          const SizedBox(height: 24),
+          _buildReviewMetrics(),
+          const SizedBox(height: 24),
+          _buildPendingApprovals(),
+          const SizedBox(height: 24),
+          _buildRecentSubmissions(),
+          const SizedBox(height: 24),
+          _buildReviewHistory(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSystemAdminDashboard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildWelcomeCard(),
+        const SizedBox(height: 24),
+        _buildSystemMetrics(),
+        const SizedBox(height: 24),
+        _buildUserManagement(),
+        const SizedBox(height: 24),
+        _buildSystemHealth(),
+        const SizedBox(height: 24),
+        Expanded(child: _buildAuditLogs()),
+      ],
+    );
+  }
+
+  Widget _buildWelcomeCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 30,
+              backgroundColor: _currentUser!.roleColor,
+              child: Icon(
+                _currentUser!.roleIcon,
+                size: 30,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Welcome back, ${_currentUser!.name.split(' ').first}!',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _currentUser!.roleDescription,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Quick Actions',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.add_task,
+                    label: 'New Deliverable',
+                    onTap: () => context.go('/deliverable-setup'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.timeline,
+                    label: 'Sprint Console',
+                    onTap: () => context.go('/sprint-console'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey[300]!),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: _currentUser!.roleColor),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMyDeliverables() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'My Deliverables',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                TextButton(
+                  onPressed: () => context.go('/repository'),
+                  child: const Text('View All'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildDeliverableItem(
+              title: 'User Authentication System',
+              status: 'In Progress',
+              progress: 0.75,
+              dueDate: DateTime.now().add(const Duration(days: 2)),
+            ),
+            const SizedBox(height: 12),
+            _buildDeliverableItem(
+              title: 'Payment Integration',
+              status: 'Draft',
+              progress: 0.25,
+              dueDate: DateTime.now().add(const Duration(days: 7)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeliverableItem({
+    required String title,
+    required String status,
+    required double progress,
+    required DateTime dueDate,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(status).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  status,
+                  style: TextStyle(
+                    color: _getStatusColor(status),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: progress,
+            backgroundColor: Colors.grey[300],
+            valueColor: AlwaysStoppedAnimation<Color>(_currentUser!.roleColor),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Due: ${_formatDate(dueDate)}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentActivity() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Recent Activity',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            _buildActivityItem(
+              icon: Icons.check_circle,
+              title: 'Deliverable approved',
+              subtitle: 'User Authentication System',
+              time: '2 hours ago',
+            ),
+            const SizedBox(height: 12),
+            _buildActivityItem(
+              icon: Icons.edit,
+              title: 'Deliverable updated',
+              subtitle: 'Payment Integration',
+              time: '1 day ago',
+            ),
+            const SizedBox(height: 12),
+            _buildActivityItem(
+              icon: Icons.add,
+              title: 'New deliverable created',
+              subtitle: 'Mobile App Release',
+              time: '3 days ago',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivityItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String time,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: _currentUser!.roleColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            color: _currentUser!.roleColor,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+              ),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          time,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey[500],
+              ),
+        ),
+      ],
+    );
+  }
+
+  // Placeholder methods for other role-specific content
+  Widget _buildTeamMetrics() => _buildPlaceholderCard('Team Metrics');
+  Widget _buildSprintOverview() => _buildPlaceholderCard('Sprint Overview');
+  Widget _buildPendingReviews() => _buildPlaceholderCard('Pending Reviews');
+  Widget _buildTeamPerformance() => _buildPlaceholderCard('Team Performance');
+  Widget _buildReviewMetrics() => _buildPlaceholderCard('Review Metrics');
+  Widget _buildPendingApprovals() => _buildPlaceholderCard('Pending Approvals');
+  Widget _buildRecentSubmissions() => _buildPlaceholderCard('Recent Submissions');
+  Widget _buildReviewHistory() => _buildPlaceholderCard('Review History');
+  Widget _buildSystemMetrics() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'System Metrics',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _buildMetricCard(
+                  title: 'Active Users',
+                  value: '42',
+                  icon: Icons.people,
+                  color: Colors.blue,
+                  trend: '+12%',
+                ),
+                const SizedBox(width: 12),
+                _buildMetricCard(
+                  title: 'API Requests',
+                  value: '1.2K',
+                  icon: Icons.api,
+                  color: Colors.green,
+                  trend: '+8%',
+                ),
+                const SizedBox(width: 12),
+                _buildMetricCard(
+                  title: 'Avg. Response',
+                  value: '128ms',
+                  icon: Icons.speed,
+                  color: Colors.orange,
+                  trend: '-5%',
+                ),
+                const SizedBox(width: 12),
+                _buildMetricCard(
+                  title: 'Uptime',
+                  value: '99.98%',
+                  icon: Icons.timer,
+                  color: Colors.purple,
+                  trend: '100%',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildSystemUsageChart(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserManagement() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'User Management',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: _showAddUserDialog,
+                  tooltip: 'Add User',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildUserList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserList() {
+    // User management functionality requires actual user data from API
+    // This is a placeholder for real user data implementation
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.people, size: 48, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'User Management',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Connect to API for user data',
+            style: TextStyle(color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserListItem(User user) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: user.roleColor,
+              child: Icon(
+                user.roleIcon,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.name,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    user.email,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        user.roleIcon,
+                        size: 14,
+                        color: user.roleColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        user.roleDisplayName,
+                        style: TextStyle(
+                          color: user.roleColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          // ignore: deprecated_member_use
+                          color: user.isActive ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          user.isActive ? 'Active' : 'Inactive',
+                          style: TextStyle(
+                            color: user.isActive ? Colors.green : Colors.grey,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'edit') {
+                  _editUser(user);
+                } else if (value == 'delete') {
+                  _confirmDeleteUser(user);
+                } else if (value == 'view') {
+                  _showUserDetails(user);
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'view',
+                  child: Row(
+                    children: [
+                      Icon(Icons.visibility, size: 16),
+                      SizedBox(width: 8),
+                      Text('View Details'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit, size: 16),
+                      SizedBox(width: 8),
+                      Text('Edit User'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, size: 16, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Delete User', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ],
+              child: const Icon(Icons.more_vert),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSystemHealth() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'System Health',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _refreshSystemHealth,
+                  tooltip: 'Refresh Status',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _buildHealthIndicator(
+                  title: 'Database',
+                  status: 'Healthy',
+                  icon: Icons.storage,
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 12),
+                _buildHealthIndicator(
+                  title: 'API Server',
+                  status: 'Healthy',
+                  icon: Icons.cloud,
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 12),
+                _buildHealthIndicator(
+                  title: 'Cache',
+                  status: 'Warning',
+                  icon: Icons.memory,
+                  color: Colors.orange,
+                ),
+                const SizedBox(width: 12),
+                _buildHealthIndicator(
+                  title: 'Storage',
+                  status: 'Critical',
+                  icon: Icons.sd_storage,
+                  color: Colors.red,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildResourceUsage(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResourceUsage() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Resource Usage',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildUsageIndicator(
+              title: 'CPU',
+              usage: 65,
+              max: 100,
+              color: Colors.blue,
+            ),
+            _buildUsageIndicator(
+              title: 'Memory',
+              usage: 78,
+              max: 100,
+              color: Colors.purple,
+            ),
+            _buildUsageIndicator(
+              title: 'Disk',
+              usage: 45,
+              max: 100,
+              color: Colors.orange,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUsageIndicator({
+    required String title,
+    required int usage,
+    required int max,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 4),
+        Stack(
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                shape: BoxShape.circle,
+              ),
+            ),
+            Positioned.fill(
+              child: CircularProgressIndicator(
+                value: usage / max,
+                strokeWidth: 6,
+                backgroundColor: Colors.grey[300],
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+            Positioned.fill(
+              child: Center(
+                child: Text(
+                  '$usage%',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _refreshSystemHealth() {
+    // Simulate refreshing system health data
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('System health status refreshed'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildAuditLogs() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Audit Logs',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.filter_list),
+                      onPressed: _showAuditFilterDialog,
+                      tooltip: 'Filter Logs',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.download),
+                      onPressed: _exportAuditLogs,
+                      tooltip: 'Export Logs',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Search bar
+            TextField(
+              decoration: InputDecoration(
+                hintText: 'Search audit logs...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: _clearSearch,
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onChanged: _handleSearch,
+            ),
+            const SizedBox(height: 16),
+            
+            // Sorting controls
+            Row(
+              children: [
+                const Text('Sort by:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: _sortField,
+                  items: const [
+                    DropdownMenuItem(value: 'created_at', child: Text('Date')),
+                    DropdownMenuItem(value: 'action', child: Text('Action')),
+                    DropdownMenuItem(value: 'user_email', child: Text('User')),
+                    DropdownMenuItem(value: 'entity_name', child: Text('Entity')),
+                  ],
+                  onChanged: (value) => _handleSort(value!),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.arrow_downward),
+                  onPressed: () => _handleSort(_sortField),
+                  tooltip: _sortAscending ? 'Ascending' : 'Descending',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Results count
+            if (_searchQuery.isNotEmpty)
+              Text(
+                'Found \${_filteredAuditLogs.length} results for "\$_searchQuery"',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+              ),
+            const SizedBox(height: 16),
+            
+            SizedBox(
+              height: 400, // Fixed height to avoid layout constraints
+              child: _buildAuditLogList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholderCard(String title) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '$title content will be implemented here.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget? _buildRoleSpecificFAB() {
+    switch (_currentUser!.role) {
+      case UserRole.teamMember:
+        return FloatingActionButton.extended(
+          onPressed: () => context.go('/deliverable-setup'),
+          icon: const Icon(Icons.add),
+          label: const Text('New Deliverable'),
+        );
+      case UserRole.deliveryLead:
+        return FloatingActionButton.extended(
+          onPressed: () => context.go('/sprint-console'),
+          icon: const Icon(Icons.timeline),
+          label: const Text('Manage Sprint'),
+        );
+      case UserRole.clientReviewer:
+        return FloatingActionButton.extended(
+          onPressed: () => context.go('/approvals'),
+          icon: const Icon(Icons.approval),
+          label: const Text('Review Items'),
+        );
+      case UserRole.systemAdmin:
+        return FloatingActionButton.extended(
+          onPressed: () => _showAdminMenu(),
+          icon: const Icon(Icons.admin_panel_settings),
+          label: const Text('Admin Panel'),
+        );
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+      case 'approved':
+        return Colors.green;
+      case 'in progress':
+        return Colors.blue;
+      case 'draft':
+        return Colors.orange;
+      case 'pending':
+        return Colors.yellow[700]!;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = date.difference(now).inDays;
+    
+    if (difference == 0) {
+      return 'Today';
+    } else if (difference == 1) {
+      return 'Tomorrow';
+    } else if (difference > 0) {
+      return 'In $difference days';
+    } else {
+      return 'Overdue';
+    }
+  }
+
+  void _showAddUserDialog() {
+    _createNewUser();
+  }
+
+  void _showProfileDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${_currentUser!.name} Profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(_currentUser!.roleIcon, color: _currentUser!.roleColor),
+                const SizedBox(width: 8),
+                Text(_currentUser!.roleDisplayName),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('Email: ${_currentUser!.email}'),
+            const SizedBox(height: 8),
+            Text(_currentUser!.roleDescription),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAdminMenu() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Admin Panel'),
+        content: const Text('Admin panel features will be implemented in the next phase.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleLogout() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final navigator = Navigator.of(context);
+              final router = GoRouter.of(context);
+              navigator.pop();
+              // Sign out the user
+              await _authService.signOut();
+              if (mounted) {
+                router.go('/');
+              }
+            },
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Missing method implementations
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Settings'),
+        content: const Text('Settings dialog will be implemented in the next phase.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    String? trend,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            if (trend != null)
+              Text(
+                trend,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: trend.startsWith('+') ? Colors.green : 
+                             trend.startsWith('-') ? Colors.red : Colors.grey,
+                    ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSystemUsageChart() {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'System Usage Chart',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'System usage chart will be implemented in the next phase.',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHealthIndicator({
+    required String title,
+    required String status,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              Text(
+                status,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _editUser(User user) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit User'),
+        content: Text('Edit user functionality for ${user.name} will be implemented in the next phase.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${user.name} updated successfully')),
+              );
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteUser(User user) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: Text('Are you sure you want to delete user ${user.name}? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${user.name} deleted successfully')),
+              );
+            },
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUserDetails(User user) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('User Details: ${user.name}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Email: ${user.email}'),
+            const SizedBox(height: 8),
+            Text('Role: ${user.roleDisplayName}'),
+            const SizedBox(height: 8),
+            const Text('Status: Active'),
+            const SizedBox(height: 8),
+            const Text('Last Login: Today'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _createNewUser() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create New User'),
+        content: const Text('User creation functionality will be implemented in the next phase.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('User created successfully')),
+              );
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAuditFilterDialog() {
+    final List<String> actionTypes = [
+      'All Actions',
+      'created',
+      'updated',
+      'deleted',
+      'approved',
+      'rejected',
+      'submitted',
+      'viewed',
+      'logged_in',
+      'logged_out',
+    ];
+  
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Filter Audit Logs'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Action Type:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedActionFilter ?? 'All Actions',
+                    items: actionTypes.map((action) {
+                      return DropdownMenuItem<String>(
+                        value: action,
+                        child: Text(action == 'All Actions' ? 'All Actions' : action.replaceAll('_', ' ').toUpperCase()),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedActionFilter = value == 'All Actions' ? null : value;
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  const Text('User Email:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    initialValue: _selectedUserFilter,
+                    decoration: const InputDecoration(
+                      hintText: 'Filter by user email',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    onChanged: (value) {
+                      _selectedUserFilter = value.isEmpty ? null : value;
+                    },
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  const Text('Date Range:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          readOnly: true,
+                          decoration: InputDecoration(
+                            hintText: 'Start date',
+                            border: const OutlineInputBorder(),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.calendar_today, size: 20),
+                              onPressed: () async {
+                                final selectedDate = await showDatePicker(
+                                  context: context,
+                                  initialDate: _selectedStartDate ?? DateTime.now(),
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
+                                );
+                                if (selectedDate != null) {
+                                  setState(() {
+                                    _selectedStartDate = selectedDate;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          controller: TextEditingController(
+                            text: _selectedStartDate != null
+                                ? '${_selectedStartDate!.year}-${_selectedStartDate!.month.toString().padLeft(2, '0')}-${_selectedStartDate!.day.toString().padLeft(2, '0')}'
+                                : '',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          readOnly: true,
+                          decoration: InputDecoration(
+                            hintText: 'End date',
+                            border: const OutlineInputBorder(),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.calendar_today, size: 20),
+                              onPressed: () async {
+                                final selectedDate = await showDatePicker(
+                                  context: context,
+                                  initialDate: _selectedEndDate ?? DateTime.now(),
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
+                                );
+                                if (selectedDate != null) {
+                                  setState(() {
+                                    _selectedEndDate = selectedDate;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          controller: TextEditingController(
+                            text: _selectedEndDate != null
+                                ? '${_selectedEndDate!.year}-${_selectedEndDate!.month.toString().padLeft(2, '0')}-${_selectedEndDate!.day.toString().padLeft(2, '0')}'
+                                : '',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 8),
+                  if (_selectedStartDate != null || _selectedEndDate != null)
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedStartDate = null;
+                          _selectedEndDate = null;
+                        });
+                      },
+                      child: const Text('Clear date range'),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  // Clear all filters
+                  setState(() {
+                    _selectedActionFilter = null;
+                    _selectedUserFilter = null;
+                    _selectedStartDate = null;
+                    _selectedEndDate = null;
+                  });
+                },
+                child: const Text('Clear All'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _loadAuditLogs();
+                },
+                child: const Text('Apply Filters'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _exportAuditLogs() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Export Audit Logs'),
+        content: const Text('Choose export format:'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _exportToCSV();
+            },
+            child: const Text('CSV'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _exportToPDF();
+            },
+            child: const Text('PDF'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportToCSV() async {
+    try {
+      final bool hasActiveFilters = _selectedActionFilter != null ||
+          _selectedUserFilter != null ||
+          _selectedStartDate != null ||
+          _selectedEndDate != null ||
+          _searchQuery.isNotEmpty;
+
+      final List<dynamic> logsToExport = hasActiveFilters ? _filteredAuditLogs : _auditLogs;
+
+      if (logsToExport.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No audit logs to export')),
+        );
+        return;
+      }
+
+      // Create CSV data
+      final List<List<dynamic>> csvData = [
+        ['Timestamp', 'Action', 'User Email', 'User Role', 'Entity Type', 'Entity Name', 'Details'],
+      ];
+
+      for (final log in logsToExport) {
+        final createdAt = log['created_at'] as String? ?? '';
+        final action = log['action'] as String? ?? '';
+        final userEmail = log['user_email'] as String? ?? '';
+        final userRole = log['user_role'] as String? ?? '';
+        final entityType = log['entity_type'] as String? ?? '';
+        final entityName = log['entity_name'] as String? ?? '';
+        final details = log['details'] as String? ?? '';
+
+        csvData.add([
+          createdAt,
+          action,
+          userEmail,
+          userRole,
+          entityType,
+          entityName,
+          details,
+        ]);
+      }
+
+      // Convert to CSV string
+      final csvString = const ListToCsvConverter().convert(csvData);
+
+      // Get directory for saving
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final filePath = '${directory.path}/audit_logs_$timestamp.csv';
+
+      // Write to file
+      final file = File(filePath);
+      await file.writeAsString(csvString);
+
+      // Show success message
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('CSV exported successfully to $filePath')),
+      );
+
+      debugPrint('✅ CSV exported to: $filePath');
+
+    } catch (e) {
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export CSV: $e')),
+      );
+      debugPrint('❌ Error exporting CSV: $e');
+    }
+  }
+
+  Future<void> _exportToPDF() async {
+    try {
+      final bool hasActiveFilters = _selectedActionFilter != null ||
+          _selectedUserFilter != null ||
+          _selectedStartDate != null ||
+          _selectedEndDate != null ||
+          _searchQuery.isNotEmpty;
+
+      final List<dynamic> logsToExport = hasActiveFilters ? _filteredAuditLogs : _auditLogs;
+
+      if (logsToExport.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No audit logs to export')),
+        );
+        return;
+      }
+
+      // Create PDF document
+      final pdf = pw.Document();
+
+      // Add title page
+      pdf.addPage(
+        pw.Page(
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('Audit Logs Report', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 20),
+                pw.Text('Generated on: ${DateTime.now().toString()}'),
+                pw.SizedBox(height: 10),
+                pw.Text('Total logs: ${logsToExport.length}'),
+                if (hasActiveFilters) pw.Text('Filtered results'),
+              ],
+            );
+          },
+        ),
+      );
+
+      // Add logs page
+      pdf.addPage(
+        pw.Page(
+          build: (pw.Context context) {
+            // ignore: deprecated_member_use
+            return pw.Table.fromTextArray(
+              headers: ['Timestamp', 'Action', 'User', 'Entity', 'Details'],
+              data: logsToExport.map((log) {
+                final createdAt = log['created_at'] as String? ?? '';
+                final action = log['action'] as String? ?? '';
+                final userEmail = log['user_email'] as String? ?? '';
+                final entityName = log['entity_name'] as String? ?? '';
+                final details = log['details'] as String? ?? '';
+
+                return [createdAt, action, userEmail, entityName, details];
+              }).toList(),
+            );
+          },
+        ),
+      );
+
+      // Save PDF to file
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final filePath = '${directory.path}/audit_logs_$timestamp.pdf';
+
+      final file = File(filePath);
+      await file.writeAsBytes(await pdf.save());
+
+      // Show success message
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF exported successfully to $filePath')),
+      );
+
+      debugPrint('✅ PDF exported to: $filePath');
+
+    } catch (e) {
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to export PDF: $e')),
+      );
+      debugPrint('❌ Error exporting PDF: $e');
+    }
+  }
+
+  void _clearAllFilters() {
+    setState(() {
+      _selectedActionFilter = null;
+      _selectedUserFilter = null;
+      _selectedStartDate = null;
+      _selectedEndDate = null;
+    });
+    _loadAuditLogs();
+  }
+
+  Widget _buildAuditLogList() {
+    if (_isLoadingAuditLogs) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (_auditLogsError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load audit logs',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _auditLogsError!,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadAuditLogs,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final bool hasActiveFilters = _selectedActionFilter != null ||
+        _selectedUserFilter != null ||
+        _selectedStartDate != null ||
+        _selectedEndDate != null ||
+        _searchQuery.isNotEmpty;
+
+    final List<dynamic> displayLogs = hasActiveFilters ? _filteredAuditLogs : _auditLogs;
+
+    if (displayLogs.isEmpty) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (hasActiveFilters)
+            Column(
+              children: [
+                const Icon(Icons.filter_alt_off, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text('No audit logs match your filters'),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _clearAllFilters,
+                  child: const Text('Clear all filters'),
+                ),
+              ],
+            )
+          else
+            const Text('No audit logs available'),
+        ],
+      );
+    }
+
+    return ListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      children: [
+        if (hasActiveFilters)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Row(
+              children: [
+                const Icon(Icons.filter_alt, size: 20, color: Colors.blue),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Showing filtered results (\${displayLogs.length} logs)',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.blue),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _clearAllFilters,
+                  child: const Text('Clear filters'),
+                ),
+              ],
+            ),
+          ),
+        ...displayLogs.map((log) => _buildAuditLogItem(log)),
+        if (_hasMoreAuditLogs)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: _isLoadingMoreAuditLogs
+                ? const CircularProgressIndicator()
+                : ElevatedButton(
+                    onPressed: _loadMoreAuditLogs,
+                    child: const Text('Load More'),
+                  ),
+          )
+        else if (_auditLogs.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              'All \${_auditLogs.length} logs loaded',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildAuditLogItem(Map<String, dynamic> log) {
+    final action = log['action'] as String? ?? 'Unknown Action';
+    final entityName = log['entity_name'] as String?;
+    final createdAt = log['created_at'] as String?;
+    DateTime? timestamp;
+    if (createdAt != null) {
+      try {
+        timestamp = DateTime.parse(createdAt);
+      } catch (e) {
+        debugPrint('Error parsing timestamp: \$e');
+      }
+    }
+    
+    // Build details text from available fields
+    final details = StringBuffer();
+    if (entityName != null) {
+      details.write('Entity: \$entityName');
+    }
+    if (log['entity_type'] != null) {
+      if (details.isNotEmpty) details.write(', ');
+      details.write('Type: ${log['entity_type']}');
+    }
+    if (log['user_role'] != null) {
+      if (details.isNotEmpty) details.write(', ');
+      details.write('Role: ${log['user_role']}');
+    }
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  action,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                if (timestamp != null)
+                  Text(
+                    _formatDateTime(timestamp),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'User: \${log['user_email'] ?? "Unknown User"}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[700],
+                  ),
+            ),
+            if (details.isNotEmpty) const SizedBox(height: 4),
+            if (details.isNotEmpty)
+              Text(
+                details.toString(),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inHours < 1) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inDays < 1) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+}
+
+

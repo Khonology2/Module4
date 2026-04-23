@@ -37,7 +37,7 @@ const backendEnvPath = path.join(__dirname, '..', 'backend', 'node-backend', `.e
 if (!fs.existsSync(backendEnvPath)) {
   const template = `# ${targetEnv.toUpperCase()} Environment Configuration
 NODE_ENV=${targetEnv.toLowerCase()}
-PORT=3001
+PORT=8000
 
 # Database Configuration for ${targetEnv.toUpperCase()}
 DB_HOST=localhost

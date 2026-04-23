@@ -1,42 +1,11 @@
 services:
+  # Node.js Backend - Web Service
   - type: web
-    name: flow-space-frontend
-    env: static
-    buildCommand: |
-      git clone https://github.com/flutter/flutter.git -b stable --depth 1
-      export PATH="$PATH:$(pwd)/flutter/bin"
-      flutter pub get
-      echo "Building with API_BASE_URL=https://backend-532p.onrender.com/api/v1"
-      echo "Build timestamp: $(date)"
-      flutter build web --dart-define=API_BASE_URL=https://backend-532p.onrender.com/api/v1 --dart-define=DEBUG_MODE=false --no-wasm --verbose --web-renderer canvaskit
-    staticPublishPath: build/web
-    envVars:
-      - key: FLUTTER_WEB_CANVASKIT_URL
-        value: https://cdn.jsdelivr.net/gh/flutter/canvaskit@master
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache, no-store, must-revalidate
-      - path: /*
-        name: Pragma
-        value: no-cache
-      - path: /*
-        name: Expires
-        value: 0
-      - path: /*
-        name: Build-Timestamp
-        value: "$(date)"
-
-  - type: web
-    name: flow-space-backend
+    name: module4-api
     env: node
-    rootDir: backend/node-backend
-    buildCommand: npm ci
-    startCommand: npm start
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
     envVars:
       - key: DB_CONNECTION_MODE
         value: external
@@ -46,4 +15,21 @@ services:
         value: ${JWT_SECRET}
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
     healthCheckPath: /health
+
+  # Flutter Frontend - Docker Deployment
+  - type: web
+    name: module4
+    env: docker
+    rootDir: frontend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: FLUTTER_WEB_CANVASKIT_URL
+        value: https://cdn.jsdelivr.net/gh/flutter/canvaskit@master
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

@@ -7,7 +7,7 @@ Write-Host ""
 $backendPath = Join-Path $PSScriptRoot "backend\node-backend"
 Set-Location $backendPath
 
-Write-Host "Starting server on http://localhost:3001..." -ForegroundColor Green
+Write-Host "Starting server on http://localhost:8000..." -ForegroundColor Green
 Write-Host ""
 Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Yellow
 Write-Host ""

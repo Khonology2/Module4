@@ -23,9 +23,9 @@ void main() {
       expect(project.status, ProjectStatus.planning);
       expect(project.priority, ProjectPriority.medium);
       expect(project.projectType, 'software');
-      expect(project.members, isEmpty);
-      expect(project.deliverableIds, isEmpty);
-      expect(project.sprintIds, isEmpty);
+      expect(project.members.isEmpty, true);
+      expect(project.deliverableIds.isEmpty, true);
+      expect(project.sprintIds.isEmpty, true);
     });
 
     test('Project should copy with updated values', () {
@@ -200,9 +200,9 @@ void main() {
         createdAt: DateTime.now().subtract(const Duration(days: 30)),
       );
 
-      expect(overdueProject.isOverdue, isTrue);
-      expect(notOverdueProject.isOverdue, isFalse);
-      expect(completedProject.isOverdue, isFalse);
+      expect(overdueProject.isOverdue, true);
+      expect(notOverdueProject.isOverdue, false);
+      expect(completedProject.isOverdue, false);
     });
 
     test('Project should correctly calculate days until end', () {
@@ -233,8 +233,8 @@ void main() {
         createdAt: DateTime.now(),
       );
 
-      expect(futureProject.daysUntilEnd, equals(10));
-      expect(noEndDateProject.daysUntilEnd, equals(-1));
+      expect(futureProject.daysUntilEnd, 10);
+      expect(noEndDateProject.daysUntilEnd, -1);
     });
 
     test('Project should correctly identify active projects', () {
@@ -264,8 +264,8 @@ void main() {
         createdAt: DateTime.now(),
       );
 
-      expect(activeProject.isActive, isTrue);
-      expect(planningProject.isActive, isFalse);
+      expect(activeProject.isActive, true);
+      expect(planningProject.isActive, false);
     });
 
     test('Project should correctly manage members', () {
@@ -307,14 +307,14 @@ void main() {
         members: [owner, contributor, viewer],
       );
 
-      expect(project.totalMembers, equals(3));
-      expect(project.owners.length, equals(1));
-      expect(project.contributors.length, equals(1));
-      expect(project.viewers.length, equals(1));
-      expect(project.hasMember('owner-1'), isTrue);
-      expect(project.hasMember('nonexistent-user'), isFalse);
-      expect(project.getMember('owner-1')?.userName, equals('Owner User'));
-      expect(project.getMember('nonexistent-user'), isNull);
+      expect(project.totalMembers, 3);
+      expect(project.owners.length, 1);
+      expect(project.contributors.length, 1);
+      expect(project.viewers.length, 1);
+      expect(project.hasMember('owner-1'), true);
+      expect(project.hasMember('nonexistent-user'), false);
+      expect(project.getMember('owner-1')?.userName, 'Owner User');
+      expect(project.getMember('nonexistent-user'), null);
     });
 
     test('Project should generate audit metadata', () {
@@ -344,15 +344,15 @@ void main() {
 
       final auditMetadata = project.auditMetadata;
 
-      expect(auditMetadata['projectId'], equals('test-project'));
-      expect(auditMetadata['projectName'], equals('Test Project'));
-      expect(auditMetadata['action'], equals('project_updated'));
-      expect(auditMetadata['memberCount'], equals(1));
-      expect(auditMetadata['deliverableCount'], equals(2));
-      expect(auditMetadata['sprintCount'], equals(1));
-      expect(auditMetadata['status'], equals('active'));
-      expect(auditMetadata['priority'], equals('high'));
-      expect(auditMetadata.containsKey('timestamp'), isTrue);
+      expect(auditMetadata['projectId'], 'test-project');
+      expect(auditMetadata['projectName'], 'Test Project');
+      expect(auditMetadata['action'], 'project_updated');
+      expect(auditMetadata['memberCount'], 1);
+      expect(auditMetadata['deliverableCount'], 2);
+      expect(auditMetadata['sprintCount'], 1);
+      expect(auditMetadata['status'], 'active');
+      expect(auditMetadata['priority'], 'high');
+      expect(auditMetadata.containsKey('timestamp'), true);
     });
 
     test('ProjectMember should convert to and from JSON', () {

@@ -15,7 +15,7 @@ async function testSignatureStorageWithDebug() {
   
   const options = {
     hostname: 'localhost',
-    port: 3001,
+    port: 8000,
     path: `/api/v1/sign-off-reports/${reportId}/signature`,
     method: 'POST',
     headers: {

@@ -5,7 +5,7 @@ async function testEndpointReachability() {
   
   const options = {
     hostname: 'localhost',
-    port: 3001,
+    port: 8000,
     path: '/api/v1/sign-off-reports/6b092421-a0d4-47df-aeb6-d672cc82875f/signature',
     method: 'OPTIONS', // Try OPTIONS first
     headers: {

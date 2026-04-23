@@ -94,14 +94,15 @@ flutter:
 
   
   assets:
-    - assets/icons/
     - assets/Icons/
-    - assets/dashboard_team_member/
-    - assets/Team_member_sidebar/
-    - assets/Icons/Project_Direction_Acceleration/Project_Direction_Acceleration_White Badge_Red.png
+    - assets/Icons/Brand/
+    - assets/icons/
+    - "assets/Icons/Project Management/Project Management_Red.png"
+    - "assets/Icons/Project Management/Project Management_White.png"
     - assets/fonts/
     - assets/logo.png
     - assets/data/
+    - frontend/assets/
 
   fonts:
     - family: Poppins

@@ -179,7 +179,10 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
           final responseData = response.data;
           List<dynamic> usersDataList = [];
           
-          if (responseData is Map && responseData['data'] is List) {
+          if (responseData is Map && responseData['users'] is List) {
+            usersDataList = responseData['users'];
+            debugPrint('📦 Extracted ${usersDataList.length} users from users array');
+          } else if (responseData is Map && responseData['data'] is List) {
             usersDataList = responseData['data'];
             debugPrint('📦 Extracted ${usersDataList.length} users from data array');
           } else if (responseData is List) {
@@ -241,7 +244,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
               role: userRole,
               isActive: userData['is_active'] ?? userData['isActive'] ?? true,
               emailVerified: userData['emailVerified'] ?? true,
-              createdAt: DateTime.tryParse(userData['createdAt'] ?? '') ?? DateTime.now(),
+              createdAt: DateTime.tryParse(userData['created_at'] ?? userData['createdAt'] ?? '') ?? DateTime.now(),
             );
           }).toList();
           

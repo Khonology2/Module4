@@ -48,6 +48,7 @@ const usersRoutes = require('./routes/users');
 const approvalsRoutes = require('./routes/approvals');
 const documentsRoutes = require('./routes/documents');
 const epicFeaturesRoutes = require('./routes/epicFeatures');
+const timelineRoutes = require('./routes/timeline');
 
 // Import services
 const { presenceService } = require('./services/presenceService');
@@ -115,9 +116,9 @@ const { optionalAuthenticateToken } = require('./middleware/auth');
 app.use('/api/v1/signoff', authenticateToken, signoffRoutes);
 app.use('/api/v1/sign-off-reports', optionalAuthenticateToken, signoffRoutes);
 const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
-app.use('/api/v1/ai', aiLimiter, aiRoutes);
-app.use('/api/ai', aiLimiter, aiRoutes);
-app.use('/ai', aiLimiter, aiRoutes);
+app.use('/api/v1/ai', authenticateToken, aiLimiter, aiRoutes);
+app.use('/api/ai', authenticateToken, aiLimiter, aiRoutes);
+app.use('/ai', authenticateToken, aiLimiter, aiRoutes);
 app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/profile', profileRoutes);
@@ -132,6 +133,7 @@ app.use('/api/v1/approvals', authenticateToken, approvalsRoutes);
 app.use('/api/v1/audit-logs', auditRoutes);
 app.use('/api/v1/documents', documentsRoutes);
 app.use('/api/v1/epic-features', epicFeaturesRoutes);
+app.use('/api/v1/timeline', timelineRoutes);
 app.post('/api/v1/iot/ingest', (req, res) => {
   try {
     const { topic, payload, roles, targetRoles, event } = req.body || {};
@@ -298,7 +300,7 @@ app.use('*', (req, res) => {
 });
 
 // Database connection and server startup
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8000;
 
 async function startServer() {
   try {
@@ -376,12 +378,12 @@ async function startServer() {
   console.log(`🔗 API v1 endpoints: http://localhost:${PORT}/api/v1/`);
       console.log(`🔌 WebSocket endpoint: ws://localhost:${PORT}`);
       console.log(`🔧 IoT enabled: ${String(process.env.IOT_ENABLED || '').toLowerCase() === 'true'}`);
-      const hasOpenAI = !!process.env.OPENAI_API_KEY;
-      console.log(hasOpenAI ? '✅ OpenAI API key detected' : '⚠️ OpenAI API key missing');
-      if (hasOpenAI) {
+      const hasOpenRouter = !!(process.env.OPENROUTER_API_KEY || process.env.OpenRouter_API_KEY);
+      console.log(hasOpenRouter ? '✅ OpenRouter API key detected' : '⚠️ OpenRouter API key missing');
+      if (hasOpenRouter) {
         console.log(`🤖 AI chat endpoint ready: http://localhost:${PORT}/api/v1/ai/chat`);
       } else {
-        console.warn('AI features disabled until OPENAI_API_KEY is set');
+        console.warn('AI features disabled until OPENROUTER_API_KEY is set');
       }
 
       const schedulerService = require('./services/schedulerService');

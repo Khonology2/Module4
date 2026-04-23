@@ -1,24 +1,29 @@
 {
-  "version": "Ver 2026.04CA3 SIT",
-  "branch": "nathi-ui-redesign",
-  "generated_at": "2026-04-20T12:45:32Z",
+  "version": "Ver 2026.04CB4 SIT",
+  "branch": "integration/thabang",
+  "generated_at": "2026-04-21T15:25:53Z",
   "commits": [
     {
-      "author": "Nathi2266",
-      "message": "Enhance profile and dashboard screens with new sidebar assets and loading state management",
-      "timestamp": "2026-04-20T14:40:36+02:00"
+      "author": "thabang127",
+      "message": "refactor: make sprints nav item unconditional",
+      "timestamp": "2026-04-21T17:24:59+02:00"
     },
     {
       "author": "GitHub Action",
-      "message": "Update version data [2026-04-20]",
-      "timestamp": "2026-04-20T11:46:59Z"
+      "message": "Update version data [2026-04-21]",
+      "timestamp": "2026-04-21T15:24:36Z"
     },
     {
-      "author": "Nathi2266",
-      "message": "Update version display widgets to use force refresh option for fetching version details",
-      "timestamp": "2026-04-20T13:46:26+02:00"
+      "author": "GitHub Action",
+      "message": "Update version data [2026-04-21]",
+      "timestamp": "2026-04-21T11:23:50Z"
+    },
+    {
+      "author": "thabang127",
+      "message": "feat(ai-assistant): integrate signature capture for PDF export",
+      "timestamp": "2026-04-21T13:22:40+02:00"
     }
   ],
-  "total_commits": 3,
-  "date_range": "2026-04-20"
+  "total_commits": 4,
+  "date_range": "2026-04-21"
 }

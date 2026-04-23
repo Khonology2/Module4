@@ -9,7 +9,8 @@ void main() {
     final container = ProviderContainer();
     
     // This should work if Riverpod is set up correctly
-    expect(container, isNotNull);
+    final helloProvider = Provider<String>((ref) => 'hello');
+    expect(container.read(helloProvider), 'hello');
     print('✓ Simple Riverpod test passed');
   });
 }

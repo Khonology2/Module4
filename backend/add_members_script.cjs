@@ -1,7 +1,7 @@
 // Simple script to add members to project via API
 const axios = require('axios');
 
-const API_BASE = 'http://localhost:3001/api/v1';
+const API_BASE = 'http://localhost:8000/api/v1';
 
 // Get auth token (you'll need to replace this with your actual token)
 const authToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjAwMzU2YTFiLTZlMDgtNDRiOC04NDk5LWE0NDkxZDE0ZTk4OCIsImVtYWlsIjoiZGhsYW1pbmluYW9taTFAZ21haWwuY29tIiwicm9sZSI6ImRlbGl2ZXJ5TGVhZCIsImlhdCI6MTc3Mzg0NzAyMCwiZXhwIjoxNzczOTMzNDIwfQ.QFd_pKhM5x2xbqM5g_N1RMpjypqGJjT2Lr4ywgsktrk';

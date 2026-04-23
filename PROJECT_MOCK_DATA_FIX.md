@@ -209,7 +209,7 @@ If backend API is consistently failing, consider:
 ## 📞 **SUPPORT CONTACT**
 
 If issues persist after implementing this fix:
-1. Check backend server is running on port 3001
+1. Check backend server is running on port 8000
 2. Verify database connection
 3. Check API authentication tokens
 4. Review network connectivity

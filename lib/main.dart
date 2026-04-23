@@ -51,6 +51,7 @@ import 'screens/deliverables_list_screen.dart';
 import 'screens/deliverables_overview_screen.dart';
 import 'screens/skill_assessment_screen.dart';
 import 'screens/deliverable_detail_screen.dart';
+import 'screens/deliverable_detail_by_id_screen.dart';
 import 'screens/environment_management_screen.dart';
 import 'screens/project_workspace_screen.dart';
 import 'screens/project_details_screen.dart';
@@ -90,10 +91,20 @@ class KhonoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDarkMode = ref.watch(themeProvider);
+    final lightTheme = FlownetTheme.lightTheme.copyWith(
+      textTheme: FlownetTheme.lightTheme.textTheme.apply(fontFamily: 'Poppins'),
+      primaryTextTheme:
+          FlownetTheme.lightTheme.primaryTextTheme.apply(fontFamily: 'Poppins'),
+    );
+    final darkTheme = FlownetTheme.darkTheme.copyWith(
+      textTheme: FlownetTheme.darkTheme.textTheme.apply(fontFamily: 'Poppins'),
+      primaryTextTheme:
+          FlownetTheme.darkTheme.primaryTextTheme.apply(fontFamily: 'Poppins'),
+    );
     return MaterialApp.router(
       title: 'Flownet Workspaces - Project Management Hub',
-      theme: FlownetTheme.lightTheme,
-      darkTheme: FlownetTheme.darkTheme,
+      theme: lightTheme,
+      darkTheme: darkTheme,
       themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
       routerConfig: _router,
       debugShowCheckedModeBanner: false,
@@ -465,6 +476,18 @@ final GoRouter _router = GoRouter(
         child: ApprovalRequestsScreen(),
       ),
     ),
+  ),
+  GoRoute(
+    path: '/deliverables/:deliverableId',
+    builder: (context, state) {
+      final deliverableId = state.pathParameters['deliverableId']!;
+      return RouteGuard(
+        route: '/deliverables-overview',
+        child: SidebarScaffold(
+          child: DeliverableDetailByIdScreen(deliverableId: deliverableId),
+        ),
+      );
+    },
   ),
     GoRoute(
       path: '/deliverables',

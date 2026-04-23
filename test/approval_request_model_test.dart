@@ -28,8 +28,8 @@ void main() {
 
       expect(r.statusDisplay, 'PENDING');
       expect(r.priorityDisplay, 'High');
-      expect(r.isPending, isTrue);
-      expect(r.isApproved, isFalse);
+      expect(r.isPending, true);
+      expect(r.isApproved, false);
     });
 
     test('statusDisplay falls back to uppercase for unknown', () {
@@ -75,7 +75,7 @@ void main() {
       final typed = (data['requests'] as List).cast<ApprovalRequest>();
       expect(typed.length, 2);
       expect(typed.first.title, 'A');
-      expect(typed.last.isPending, isTrue);
+      expect(typed.last.isPending, true);
     });
   });
 }

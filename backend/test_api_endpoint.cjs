@@ -3,7 +3,7 @@ const http = require('http');
 async function testApiEndpoint() {
   const options = {
     hostname: 'localhost',
-    port: 3001,
+    port: 8000,
     path: '/api/v1/deliverables/11d458da-6356-47c2-89ed-8b9cc5c5d109/updateStatus',
     method: 'PUT',
     headers: {

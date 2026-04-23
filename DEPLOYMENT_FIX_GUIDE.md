@@ -52,7 +52,7 @@ node server.js
 🛜 Using EXTERNAL database connection
 📊 Connection URL: ***CONFIGURED***
 ✅ Database connection established
-🚀 Server running on port 3001
+🚀 Server running on port 8000
 ```
 
 ## 📋 Render Configuration Update
@@ -127,7 +127,7 @@ node migrations/run-all.js
 ```bash
 cd backend
 node server.js
-# Should show: 🚀 Server running on port 3001
+# Should show: 🚀 Server running on port 8000
 ```
 
 ## 🎉 Success Indicators

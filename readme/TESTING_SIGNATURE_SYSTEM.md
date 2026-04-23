@@ -22,7 +22,7 @@ node server.js
 ✅ Should show:
 ```
 ✅ PostgreSQL connected!
-Flow-Space API server running on port 3001
+Flow-Space API server running on port 8000
 ```
 
 ### **Step 2: Start Flutter App**

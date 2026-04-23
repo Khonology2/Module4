@@ -69,7 +69,7 @@ describe('PUT /api/deliverables/:id - Role Access Control', () => {
       .send({ owner_id: 'new-owner' });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe('Only Owners, Admins, and Delivery Leads can assign deliverable owners');
+    expect(res.body.error).toBe('Only Project Owners/Admins/Delivery Leads can assign deliverable owners (or self-assign)');
   });
 
   it('should allow owners to assign an owner', async () => {

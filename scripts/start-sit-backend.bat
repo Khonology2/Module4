@@ -18,7 +18,7 @@ if not exist ".env.sit" (
 
 echo Environment: SIT
 echo Config File: .env.sit
-echo Port: 3001
+echo Port: 8000
 echo.
 
 REM Start the server

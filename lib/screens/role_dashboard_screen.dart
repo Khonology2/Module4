@@ -15,7 +15,6 @@ import '../models/notification_item.dart';
 import '../models/deliverable.dart';
 import '../screens/deliverables_metrics/deliverables_metrics_screen.dart';
 import '../widgets/sprint_performance_chart.dart';
-import '../widgets/background_image.dart';
 import '../widgets/app_modal.dart';
 import '../theme/flownet_theme.dart';
 import '../providers/service_providers.dart';
@@ -517,144 +516,148 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     if (_currentUser == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final headerTextColor = isDarkMode ? Colors.white : Colors.black;
     final isTeamMember = _currentUser!.role == UserRole.teamMember;
+    final isSystemAdmin = _currentUser!.role == UserRole.systemAdmin;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: BackgroundImage(
-        withGlassEffect: false,
-        overlayOpacity: 0.25,
-        child: Column(
+    return Stack(
+      children: [
+        Column(
           children: [
-            // Role header
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Row(
-                children: [
-                  if (isTeamMember) ...[
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Text(
-                            '${_currentUser!.role.displayName} Dashboard',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: headerTextColor,
+            if (!isSystemAdmin)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                child: Row(
+                  children: [
+                    if (isTeamMember) ...[
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Text(
+                              '${_currentUser!.role.displayName} Dashboard',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: headerTextColor,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 14),
-                          Text(
-                            'Hello, ${_currentUser!.name}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: headerTextColor,
+                            const SizedBox(width: 14),
+                            Text(
+                              'Hello, ${_currentUser!.name}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: headerTextColor,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    _buildTeamHeaderAssetButton(
-                      assetPath: 'assets/dashboard_team_member/Group_398.png',
-                      onTap: () => context.go('/notifications'),
-                    ),
-                  ] else ...[
-                    const SizedBox(width: 48),
-                    Expanded(
-                      child: Text(
-                        '${_currentUser!.role.displayName} Dashboard',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: headerTextColor,
+                          ],
                         ),
                       ),
-                    ),
-                    Builder(
-                      builder: (context) => PopupMenuButton<String>(
-                        icon: Icon(Icons.menu, color: headerTextColor),
-                        onSelected: (value) {
-                          switch (value) {
-                            case 'profile':
-                              context.go('/profile');
-                              break;
-                            case 'notifications':
-                              context.go('/notifications');
-                              break;
-                            case 'settings':
-                              context.go('/settings');
-                              break;
-                            case 'logout':
-                              _handleLogout();
-                              break;
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'profile',
-                            child: Row(
-                              children: [
-                                Icon(Icons.person),
-                                SizedBox(width: 8),
-                                Text('Profile'),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'notifications',
-                            child: Row(
-                              children: [
-                                Icon(Icons.notifications),
-                                SizedBox(width: 8),
-                                Text('Notifications'),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'settings',
-                            child: Row(
-                              children: [
-                                Icon(Icons.settings),
-                                SizedBox(width: 8),
-                                Text('Settings'),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(Icons.logout),
-                                SizedBox(width: 8),
-                                Text('Logout'),
-                              ],
-                            ),
-                          ),
-                        ],
+                      const SizedBox(width: 12),
+                      _buildTeamHeaderIconButton(
+                        icon: Icons.mail_outline,
+                        onTap: () => context.go('/notifications'),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      _buildTeamHeaderIconButton(
+                        icon: Icons.notifications_none,
+                        onTap: () => context.go('/notifications'),
+                      ),
+                    ] else ...[
+                      const SizedBox(width: 48),
+                      Expanded(
+                        child: Text(
+                          '${_currentUser!.role.displayName} Dashboard',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: headerTextColor,
+                          ),
+                        ),
+                      ),
+                      Builder(
+                        builder: (context) => PopupMenuButton<String>(
+                          icon: Icon(Icons.menu, color: headerTextColor),
+                          onSelected: (value) {
+                            switch (value) {
+                              case 'profile':
+                                context.go('/profile');
+                                break;
+                              case 'notifications':
+                                context.go('/notifications');
+                                break;
+                              case 'settings':
+                                context.go('/settings');
+                                break;
+                              case 'logout':
+                                _handleLogout();
+                                break;
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'profile',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.person),
+                                  SizedBox(width: 8),
+                                  Text('Profile'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'notifications',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.notifications),
+                                  SizedBox(width: 8),
+                                  Text('Notifications'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'settings',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.settings),
+                                  SizedBox(width: 8),
+                                  Text('Settings'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'logout',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.logout),
+                                  SizedBox(width: 8),
+                                  Text('Logout'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            // Main content
             Expanded(
               child: _buildRoleSpecificContent(),
             ),
           ],
         ),
-      ),
-      floatingActionButton: _buildBottomRightExpandableFab(),
+        Positioned(
+          right: 16,
+          bottom: 12,
+          child: _buildBottomRightExpandableFab(),
+        ),
+      ],
     );
   }
 
@@ -741,43 +744,57 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   Widget _buildTeamHeaderIconButton({
-    required IconData icon,
+    IconData? icon,
+    String? assetPath,
     required VoidCallback onTap,
   }) {
+    assert(icon != null || assetPath != null);
     final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final Color textColor = isDarkMode ? Colors.white : Colors.black;
-    return Material(
-      color: _dashboardSurfaceColor(),
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 36,
-          height: 36,
-          child: Icon(icon, size: 18, color: textColor),
-        ),
-      ),
+    return GestureDetector(
+      onTap: onTap,
+      child: assetPath != null
+          ? SizedBox(
+              width: 36,
+              height: 36,
+              child: _buildDashboardAssetIcon(
+                assetPath,
+                size: 36,
+                fit: BoxFit.contain,
+                visualScale: 1.25,
+              ),
+            )
+          : Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xD9FFFFFF),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon!, size: 18, color: textColor),
+            ),
     );
   }
 
-  Widget _buildTeamHeaderAssetButton({
-    required String assetPath,
-    required VoidCallback onTap,
+  Widget _buildDashboardAssetIcon(
+    String assetPath, {
+    double size = 20,
+    BoxFit fit = BoxFit.contain,
+    double visualScale = 1.0,
   }) {
-    return InkWell(
-      customBorder: const CircleBorder(),
-      onTap: onTap,
-      child: SizedBox(
-        width: 47,
-        height: 47,
-        child: Padding(
-          padding: const EdgeInsets.all(3),
-          child: Image.asset(
-            assetPath,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-          ),
+    return ClipOval(
+      child: Transform.scale(
+        scale: visualScale,
+        child: Image.asset(
+          assetPath,
+          width: size,
+          height: size,
+          fit: fit,
+          filterQuality: FilterQuality.none,
+          errorBuilder: (context, error, stackTrace) {
+            return const SizedBox.shrink();
+          },
         ),
       ),
     );
@@ -802,6 +819,11 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       fontSize: size,
       fontWeight: weight,
     );
+  }
+
+  Color _subtitleTextColor() {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return isDarkMode ? Colors.white.withAlpha(210) : Colors.black87;
   }
 
   Widget _buildTeamQuickActionsPanel({bool compact = false}) {
@@ -1096,9 +1118,11 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         children: [
           Row(
             children: [
-              _buildTeamDashboardAssetBadge(
-                'assets/dashboard_team_member/Group517.png',
-                size: _teamSectionHeaderIconSize,
+              _buildTeamRoundIcon(
+                Icons.folder_copy_outlined,
+                assetPath: 'frontend/assets/Projects_overview.png',
+                containerSize: 44,
+                assetVisualScale: 1.45,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1235,23 +1259,23 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   Widget _buildTeamPillButton(String label, VoidCallback onTap) {
-    return SizedBox(
-      height: 30,
-      child: Material(
-        color: FlownetColors.primary,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Center(
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white)),
-            ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 22,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: FlownetColors.primary,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 8.5,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+            height: 1.0,
           ),
         ),
       ),
@@ -1329,9 +1353,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
 
   Widget _buildTeamActionPill(String label, VoidCallback onTap) {
     final bool isComplete = label == 'COMPLETE';
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
@@ -1350,16 +1373,36 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildTeamRoundIcon(IconData icon, {double size = 20}) {
+  Widget _buildTeamRoundIcon(
+    IconData icon, {
+    double size = 20,
+    double containerSize = 34,
+    double assetVisualScale = 1.7,
+    String? assetPath,
+  }) {
     final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final Color textColor = isDarkMode ? Colors.white : Colors.black;
+    if (assetPath != null) {
+      return SizedBox(
+        width: containerSize,
+        height: containerSize,
+        child: _buildDashboardAssetIcon(
+          assetPath,
+          size: containerSize,
+          fit: BoxFit.contain,
+          visualScale: assetVisualScale,
+        ),
+      );
+    }
+
     return Container(
-      width: 34,
-      height: 34,
+      width: containerSize,
+      height: containerSize,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.85),
         shape: BoxShape.circle,
       ),
+      alignment: Alignment.center,
       child: Icon(icon, size: size, color: textColor),
     );
   }
@@ -1445,7 +1488,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       padding: const EdgeInsets.all(16),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final bool isNarrow = constraints.maxWidth < 1100;
+          // Keep side-by-side layout for desktop/tablet widths to match design.
+          final bool isNarrow = constraints.maxWidth < 900;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1483,22 +1527,24 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             children: [
               Text(
                 'Admin Dashboard',
-                style: _dashboardTextStyle(size: 28, weight: FontWeight.w700),
+                style: _dashboardTextStyle(size: 20, weight: FontWeight.w700),
               ),
               const SizedBox(width: 14),
               Text(
                 'Hello, ${_currentUser?.name ?? 'Name Surname'}',
-                style: _dashboardTextStyle(size: 14, weight: FontWeight.w600),
+                style: _dashboardTextStyle(size: 13, weight: FontWeight.w600),
               ),
             ],
           ),
         ),
         _buildTeamHeaderIconButton(
+          assetPath: 'frontend/assets/Message.png',
           icon: Icons.mail_outline,
           onTap: () => context.go('/notifications'),
         ),
         const SizedBox(width: 8),
         _buildTeamHeaderIconButton(
+          assetPath: 'frontend/assets/notification.png',
           icon: Icons.notifications_none,
           onTap: () => _loadPendingReports(),
         ),
@@ -1509,22 +1555,43 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   Widget _buildAdminReminderHeroPanel() {
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
-        color: _dashboardSurfaceColor(),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: _adminPanelDecoration(),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final bool stackVertically = constraints.maxWidth < 1100;
-          final actions = Wrap(
-            alignment:
-                stackVertically ? WrapAlignment.start : WrapAlignment.end,
+      child: Row(
+        children: [
+          _buildTeamRoundIcon(
+            Icons.notifications_active_outlined,
+            assetPath: 'frontend/assets/Approval_Reminders.png',
+            containerSize: 44,
+            assetVisualScale: 1.45,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Approval Reminders',
+                  style: _dashboardTextStyle(size: 20, weight: FontWeight.w700),
+                ),
+                Text(
+                  'Dream BIG, work hard and stay focused - make it a productive day!',
+                  style: _dashboardTextStyle(size: 9.2, weight: FontWeight.w400)
+                      .copyWith(color: _subtitleTextColor(), height: 1.0),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Wrap(
+            alignment: WrapAlignment.end,
             spacing: 8,
             runSpacing: 6,
             children: [
-              _buildTeamPillButton(
-                  'SEND REMINDER', () => context.push('/send-reminder')),
+              _buildTeamPillButton('SEND REMINDER', () => context.push('/send-reminder')),
               _buildTeamPillButton('TRIGGER ESCALATION', _triggerEscalation),
               _buildTeamPillButton('DELIVERABLES OVERVIEW', () {
                 Navigator.push(
@@ -1536,50 +1603,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
               }),
             ],
           );
-
-          final header = Row(
-            children: [
-              _buildTeamRoundIcon(Icons.notifications_active_outlined),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Approval Reminders',
-                      style: _dashboardTextStyle(
-                          size: 28, weight: FontWeight.w700),
-                    ),
-                    Text(
-                      'Dream BIG, work hard and stay focused - make it a productive day!',
-                      style: _dashboardTextStyle(
-                          size: 11, weight: FontWeight.w500),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-
-          if (stackVertically) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                header,
-                const SizedBox(height: 10),
-                actions,
-              ],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: header),
-              const SizedBox(width: 12),
-              Flexible(child: actions),
-            ],
-          );
         },
       ),
     );
@@ -1588,56 +1611,89 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   Widget _buildAdminQuickActionsPanel() {
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
-        color: _dashboardSurfaceColor(),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: _adminContentPanelDecoration(),
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _buildQuickActionsBadgeIcon(),
+              _buildTeamRoundIcon(
+                Icons.rocket_launch_outlined,
+                assetPath: 'frontend/assets/Quick_Actions.png',
+                containerSize: 44,
+                assetVisualScale: 1.45,
+              ),
               const SizedBox(width: 10),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Quick Actions',
-                      style: _dashboardTextStyle(
-                          size: 28, weight: FontWeight.w700)),
+                      style: _dashboardTextStyle(size: 20, weight: FontWeight.w700)),
                   Text('Additional description can be included if required.',
-                      style: _dashboardTextStyle(size: 11)),
+                      style: _dashboardTextStyle(size: 11)
+                          .copyWith(color: _subtitleTextColor())),
                 ],
               ),
             ],
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _buildAdminFeatureTile(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final tiles = [
+                _buildAdminFeatureTile(
                   icon: Icons.settings_applications_outlined,
                   label: 'System Metrics',
-                  onTap: () => context.go('/system-metrics')),
-              _buildAdminFeatureTile(
+                  iconAssetPath: 'frontend/assets/System_metrics.png',
+                  onTap: () => context.go('/system-metrics'),
+                ),
+                _buildAdminFeatureTile(
                   icon: Icons.manage_accounts_outlined,
                   label: 'User Management',
-                  onTap: () => context.go('/role-management')),
-              _buildAdminFeatureTile(
+                  iconAssetPath: 'frontend/assets/User_management.png',
+                  onTap: () => context.go('/role-management'),
+                ),
+                _buildAdminFeatureTile(
                   icon: Icons.health_and_safety_outlined,
                   label: 'System Health',
-                  onTap: () => context.go('/system-health')),
-              _buildAdminFeatureTile(
+                  iconAssetPath: 'frontend/assets/System_Health.png',
+                  onTap: () => context.go('/system-health'),
+                ),
+                _buildAdminFeatureTile(
                   icon: Icons.receipt_long_outlined,
                   label: 'Audit Logs',
-                  onTap: () => context.go('/audit-logs')),
-              _buildAdminFeatureTile(
+                  iconAssetPath: 'frontend/assets/Audit_Logs.png',
+                  onTap: () => context.go('/audit-logs'),
+                ),
+                _buildAdminFeatureTile(
                   icon: Icons.assignment_outlined,
                   label: 'Deliverables Overview',
-                  onTap: () => context.go('/deliverables-overview')),
-            ],
+                  iconAssetPath: 'frontend/assets/Deliverables_overview.png',
+                  onTap: () => context.go('/deliverables-overview'),
+                ),
+              ];
+
+              // Match design: desktop cards fill the full row width.
+              if (constraints.maxWidth >= 900) {
+                return Row(
+                  children: [
+                    for (int i = 0; i < tiles.length; i++) ...[
+                      Expanded(child: tiles[i]),
+                      if (i != tiles.length - 1) const SizedBox(width: 10),
+                    ],
+                  ],
+                );
+              }
+
+              // Responsive fallback for narrower widths.
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: tiles
+                    .map((tile) => SizedBox(width: 170, child: tile))
+                    .toList(),
+              );
+            },
           ),
         ],
       ),
@@ -1647,34 +1703,37 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   Widget _buildAdminFeatureTile({
     required IconData icon,
     required String label,
+    String? iconAssetPath,
     required VoidCallback onTap,
   }) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
       child: Container(
-        width: 150,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: FlownetColors.primary),
-          color: label == 'Audit Logs'
-              ? FlownetColors.primary
-              : Colors.transparent,
+          border: Border.all(color: const Color(0xFFB01313), width: 1),
+          color: label == 'Audit Logs' ? FlownetColors.primary : Colors.transparent,
         ),
         child: Column(
           children: [
-            _buildTeamRoundIcon(icon, size: 16),
+            _buildTeamRoundIcon(
+              icon,
+              size: 16,
+              assetPath: iconAssetPath,
+              containerSize: 36,
+              assetVisualScale: 1.5,
+            ),
             const SizedBox(height: 8),
             Text(
               label,
               textAlign: TextAlign.center,
-              style: _dashboardTextStyle(size: 12, weight: FontWeight.w700)
-                  .copyWith(
-                color: label == 'Audit Logs'
-                    ? Colors.white
-                    : _dashboardTextStyle().color,
-              ),
+              style: _dashboardTextStyle(size: 11, weight: FontWeight.w700).copyWith(
+                    color: label == 'Audit Logs'
+                        ? Colors.white
+                        : _dashboardTextStyle().color,
+                  ),
             ),
           ],
         ),
@@ -1709,31 +1768,37 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     }
 
     return Container(
-      decoration: BoxDecoration(
-        color: _dashboardSurfaceColor(),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: _adminContentPanelDecoration(),
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _buildTeamRoundIcon(Icons.track_changes),
+              _buildTeamRoundIcon(
+                Icons.track_changes,
+                assetPath: 'frontend/assets/Deliverables_overview.png',
+                containerSize: 44,
+                assetVisualScale: 1.45,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Deliverables Overview',
-                        style: _dashboardTextStyle(
-                            size: 28, weight: FontWeight.w700)),
+                        style: _dashboardTextStyle(size: 20, weight: FontWeight.w700)),
                     Text('Additional description can be included if required.',
-                        style: _dashboardTextStyle(size: 11)),
+                        style: _dashboardTextStyle(size: 11)
+                            .copyWith(color: _subtitleTextColor())),
                   ],
                 ),
               ),
-              _buildTeamRoundIcon(Icons.notifications_none, size: 16),
+              _buildTeamRoundIcon(
+                Icons.notifications_none,
+                size: 16,
+                assetPath: 'frontend/assets/notification.png',
+              ),
               const SizedBox(width: 6),
               Text('${items.length}',
                   style:
@@ -1741,7 +1806,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          const Divider(color: Colors.white24),
+          Divider(color: _adminDividerColor, height: 1),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1819,31 +1884,37 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
 
   Widget _buildAdminProjectsPanel() {
     return Container(
-      decoration: BoxDecoration(
-        color: _dashboardSurfaceColor(),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: _adminContentPanelDecoration(),
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _buildTeamRoundIcon(Icons.folder_copy_outlined),
+              _buildTeamRoundIcon(
+                Icons.folder_copy_outlined,
+                assetPath: 'frontend/assets/Projects_overview.png',
+                containerSize: 44,
+                assetVisualScale: 1.45,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Projects Overview',
-                        style: _dashboardTextStyle(
-                            size: 28, weight: FontWeight.w700)),
+                        style: _dashboardTextStyle(size: 20, weight: FontWeight.w700)),
                     Text('Additional description can be included.',
-                        style: _dashboardTextStyle(size: 11)),
+                        style: _dashboardTextStyle(size: 11)
+                            .copyWith(color: _subtitleTextColor())),
                   ],
                 ),
               ),
-              _buildTeamRoundIcon(Icons.notifications_none, size: 16),
+              _buildTeamRoundIcon(
+                Icons.notifications_none,
+                size: 16,
+                assetPath: 'frontend/assets/notification.png',
+              ),
               const SizedBox(width: 6),
               Text('${_dashboardProjects.length}',
                   style:
@@ -1851,7 +1922,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          const Divider(color: Colors.white24),
+          Divider(color: _adminDividerColor, height: 1),
           const SizedBox(height: 8),
           if (_isLoadingDashboardProjects)
             const Center(child: CircularProgressIndicator())
@@ -1866,10 +1937,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                       .toString();
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: InkWell(
-                  onTap: id.isNotEmpty
-                      ? () => context.go('/project-workspace/$id')
-                      : null,
+                child: GestureDetector(
+                  onTap: id.isNotEmpty ? () => context.go('/project-workspace/$id') : null,
                   child: Row(
                     children: [
                       Icon(Icons.check_box,
@@ -1903,8 +1972,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredAdminFilter = label),
       onExit: (_) => setState(() => _hoveredAdminFilter = null),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
+      child: GestureDetector(
         onTap: () {
           setState(() {
             _selectedAdminFilter = label == 'VIEW ALL' ? null : label;
@@ -1914,7 +1982,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: FlownetColors.primary),
+            border: Border.all(color: const Color(0xFFB01313)),
             color: isActive ? FlownetColors.primary : Colors.transparent,
           ),
           child: Text(
@@ -1928,6 +1996,47 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         ),
       ),
     );
+  }
+
+  // Match Figma: only the reminder card uses the light grey fill.
+  BoxDecoration _adminPanelDecoration() {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return BoxDecoration(
+      color: isDarkMode
+          ? const Color(0x99818298)
+          : const Color(0xFFA8A9B7),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(
+        color: isDarkMode
+            ? const Color(0xFF979797)
+            : const Color(0xFF9FA0AE),
+        width: 0.9,
+      ),
+    );
+  }
+
+  // Other content cards stay darker, not light-grey.
+  BoxDecoration _adminContentPanelDecoration() {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return BoxDecoration(
+      color: isDarkMode
+          ? const Color(0xCC1F1F23)
+          : const Color(0xFFE8E8E8),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(
+        color: isDarkMode
+            ? const Color(0xFF2F3138)
+            : const Color(0xFFD5D5D9),
+        width: isDarkMode ? 0.9 : 0.8,
+      ),
+    );
+  }
+
+  Color get _adminDividerColor {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    return isDarkMode
+        ? const Color(0x66BFC3CC)
+        : const Color(0xFFCFCFCF);
   }
 
   Widget _buildReminderQuickActions() {
@@ -2069,51 +2178,73 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   Widget _buildBottomRightExpandableFab() {
     if (!_canShowRoleAction()) return const SizedBox.shrink();
     final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color primaryColor =
+        _currentUser?.roleColor ?? Theme.of(context).colorScheme.primary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (_isBottomFabExpanded) ...[
-          FloatingActionButton.small(
-            heroTag: 'dashboard-theme-mini',
-            onPressed: () {
+          _buildFabCircleButton(
+            icon: isDarkMode ? Icons.light_mode : Icons.dark_mode,
+            backgroundColor:
+                isDarkMode ? FlownetColors.sidebarDark : FlownetColors.sidebarLight,
+            foregroundColor: isDarkMode ? Colors.white : Colors.black,
+            onTap: () {
               ProviderScope.containerOf(context, listen: false)
                   .read(themeProvider.notifier)
                   .toggleTheme();
             },
-            backgroundColor: isDarkMode
-                ? FlownetColors.sidebarDark
-                : FlownetColors.sidebarLight,
-            foregroundColor: isDarkMode ? Colors.white : Colors.black,
-            child: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
           ),
           const SizedBox(width: 8),
-          FloatingActionButton.small(
-            heroTag: 'dashboard-action-mini',
-            onPressed: _handleRoleActionTap,
-            backgroundColor: _currentUser?.roleColor ??
-                Theme.of(context).colorScheme.primary,
+          _buildFabCircleButton(
+            icon: Icons.add,
+            backgroundColor: primaryColor,
             foregroundColor: Colors.white,
-            child: const Icon(Icons.add),
+            onTap: _handleRoleActionTap,
           ),
           const SizedBox(width: 8),
         ],
-        FloatingActionButton.small(
-          heroTag: 'dashboard-arrow-toggle',
-          onPressed: () {
+        _buildFabCircleButton(
+          icon: _isBottomFabExpanded
+              ? Icons.keyboard_arrow_right
+              : Icons.keyboard_arrow_left,
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          onTap: () {
             setState(() {
               _isBottomFabExpanded = !_isBottomFabExpanded;
             });
           },
-          backgroundColor:
-              _currentUser?.roleColor ?? Theme.of(context).colorScheme.primary,
-          foregroundColor: Colors.white,
-          child: Icon(
-            _isBottomFabExpanded
-                ? Icons.keyboard_arrow_right
-                : Icons.keyboard_arrow_left,
-          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFabCircleButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    required Color backgroundColor,
+    required Color foregroundColor,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: backgroundColor,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, color: foregroundColor, size: 20),
+      ),
     );
   }
 

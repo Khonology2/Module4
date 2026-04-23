@@ -36,7 +36,7 @@ void main() {
       final state = widget.createState();
       
       // Verify initial state
-      expect(state, isA<ProjectSetupScreenState>());
+      expect(state.mounted, false);
     });
   });
 

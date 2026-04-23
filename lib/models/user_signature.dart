@@ -31,22 +31,68 @@ class UserSignature {
   });
 
   factory UserSignature.fromJson(Map<String, dynamic> json) {
+    final now = DateTime.now();
+    String readString(String key, {String fallback = ''}) {
+      final v = json[key];
+      if (v == null) return fallback;
+      return v.toString();
+    }
+
+    bool readBool(String key, {bool fallback = false}) {
+      final v = json[key];
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      if (v is String) {
+        final t = v.trim().toLowerCase();
+        if (t == 'true' || t == '1' || t == 'yes') return true;
+        if (t == 'false' || t == '0' || t == 'no') return false;
+      }
+      return fallback;
+    }
+
+    DateTime readDate(String key, {DateTime? fallback}) {
+      final v = json[key];
+      if (v == null) return fallback ?? now;
+      if (v is DateTime) return v;
+      if (v is String) {
+        try {
+          return DateTime.parse(v);
+        } catch (_) {
+          return fallback ?? now;
+        }
+      }
+      return fallback ?? now;
+    }
+
+    final user = json['user'];
+    String? userName;
+    String? userEmail;
+    if (user is Map) {
+      final first = (user['first_name'] ?? '').toString().trim();
+      final last = (user['last_name'] ?? '').toString().trim();
+      final combined = ('$first $last').trim();
+      userName = combined.isEmpty ? null : combined;
+      final e = user['email'];
+      userEmail = e?.toString();
+    } else {
+      final n = json['user_name'] ?? json['userName'];
+      userName = n?.toString();
+      final e = json['user_email'] ?? json['userEmail'];
+      userEmail = e?.toString();
+    }
+
     return UserSignature(
-      id: json['id'] as String,
-      userId: json['user_id'] as String,
-      signatureData: json['signature_data'] as String,
-      signatureType: json['signature_type'] as String,
-      isDefault: json['is_default'] as bool,
-      isActive: json['is_active'] as bool,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-      lastUsedAt: json['last_used_at'] != null 
-          ? DateTime.parse(json['last_used_at'] as String) 
-          : null,
-      userName: json['user']?['first_name'] != null 
-          ? '${json['user']['first_name']} ${json['user']['last_name']}'
-          : null,
-      userEmail: json['user']?['email'] as String?,
+      id: readString('id'),
+      userId: readString('user_id', fallback: readString('userId', fallback: '')),
+      signatureData: readString('signature_data', fallback: readString('signatureData', fallback: '')),
+      signatureType: readString('signature_type', fallback: readString('signatureType', fallback: '')),
+      isDefault: readBool('is_default', fallback: readBool('isDefault', fallback: false)),
+      isActive: readBool('is_active', fallback: readBool('isActive', fallback: true)),
+      createdAt: readDate('created_at'),
+      updatedAt: readDate('updated_at'),
+      lastUsedAt: json['last_used_at'] != null ? readDate('last_used_at') : null,
+      userName: userName,
+      userEmail: userEmail,
     );
   }
 

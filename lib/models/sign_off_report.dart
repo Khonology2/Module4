@@ -77,6 +77,30 @@ class SignOffReport {
     this.digitalSignature,
   });
 
+  static String sanitizeReportContent(String content) {
+    final raw = content;
+    if (raw.trim().isEmpty) return raw;
+    final lines = raw.split('\n');
+    final out = <String>[];
+    var skipping = false;
+    for (final line in lines) {
+      final t = line.trim().toUpperCase();
+      if (!skipping && t == 'PROJECT SPRINT TOTALS') {
+        skipping = true;
+        continue;
+      }
+      if (skipping) {
+        if (t == 'SPRINT SUMMARY') {
+          skipping = false;
+          out.add(line);
+        }
+        continue;
+      }
+      out.add(line);
+    }
+    return out.join('\n');
+  }
+
   SignOffReport copyWith({
     String? id,
     String? deliverableId,
@@ -196,7 +220,7 @@ class SignOffReport {
     final String id = (json['id'] ?? json['report_id'] ?? '').toString();
     final String deliverableId = (json['deliverableId'] ?? json['deliverable_id'] ?? content['deliverableId'] ?? content['deliverable_id'] ?? '').toString();
     final String reportTitle = (json['reportTitle'] ?? json['report_title'] ?? content['reportTitle'] ?? content['title'] ?? '').toString();
-    final String reportContent = (json['reportContent'] ?? json['content_text'] ?? content['reportContent'] ?? content['content'] ?? '').toString();
+    final String reportContent = sanitizeReportContent((json['reportContent'] ?? json['content_text'] ?? content['reportContent'] ?? content['content'] ?? '').toString());
 
     List<String> sprintIds = [];
     final dynamic sIds = json['sprintIds'] ?? json['sprint_ids'] ?? content['sprintIds'] ?? content['sprints'];

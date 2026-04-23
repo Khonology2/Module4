@@ -9,7 +9,7 @@ cd backend
 .\start-server.ps1
 ```
 
-Wait until you see: `🚀 Server running on port 3001`
+Wait until you see: `🚀 Server running on port 8000`
 
 ## Step 2: Start Flutter App
 
@@ -23,13 +23,13 @@ The app will open in Chrome and connect to the backend automatically.
 
 ## ✅ Quick Check
 
-- Backend running? → Open `http://localhost:3001/health` in browser
+- Backend running? → Open `http://localhost:8000/health` in browser
 - App running? → Should open automatically in Chrome
 - Connection error? → Make sure backend is running first!
 
 ## 🔧 All Services Updated
 
-All Flutter services now use port **3001**:
+All Flutter services now use port **8000**:
 - ✅ api_client.dart
 - ✅ api_service.dart  
 - ✅ document_service.dart

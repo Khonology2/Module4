@@ -38,6 +38,21 @@ class SignatureDisplayWidget extends StatelessWidget {
       );
     }
 
+    if ((signatureType ?? '').toLowerCase() == 'typed') {
+      return Container(
+        height: 120,
+        width: double.infinity,
+        color: Colors.grey[200],
+        child: Center(
+          child: Text(
+            signatureData!.trim(),
+            style: const TextStyle(fontSize: 20, fontStyle: FontStyle.italic),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
     try {
       // Check if signatureData looks like JSON (starts with { or [)
       final trimmedData = signatureData!.trim();

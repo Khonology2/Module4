@@ -436,6 +436,10 @@ class BackendApiService {
     return resp;
   }
 
+  Future<ApiResponse> aiSuggestions() async {
+    return await _apiClient.get('/ai/suggestions');
+  }
+
   // Project endpoints
   Future<ApiResponse> getProjects({int page = 1, int limit = 1000, String? search}) async {
     final queryParams = <String, String>{

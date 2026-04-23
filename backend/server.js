@@ -151,43 +151,20 @@ const app = express();
 
 // Middleware - Configure CORS for Flutter Web
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or Postman)
-    if (!origin) return callback(null, true);
-    
-    // Allow localhost on any port (for development)
-    if (origin.match(/^http:\/\/localhost:\d+$/) || 
-        origin.match(/^http:\/\/127\.0\.0\.1:\d+$/)) {
-      return callback(null, true);
-    }
-    
-    // Allow specific origins including 127.0.0.1 for local dev
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:8080',
-      'http://localhost:8081',
-      'http://localhost:8000',
-      'http://localhost:8001',
-      'http://localhost:3001',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:8080',
-      'http://127.0.0.1:8081',
-      'http://127.0.0.1:8000',
-      'http://127.0.0.1:8001',
-      'http://127.0.0.1:3001'
-    ];
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('⚠️  CORS: Allowing origin (dev mode):', origin);
-      callback(null, true); // Allow all in development to fix the issue
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  origin: [
+    "https://flow-space-1.onrender.com",
+    "https://flow-space.onrender.com",
+    "http://localhost:3000",
+    "http://localhost:8080"
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
 }));
+
+// VERY IMPORTANT (handles preflight requests)
+app.options("*", cors());
+
 app.use(express.json());
 
 // Serve uploaded files (deliverables, profile pictures, etc.)
@@ -9500,10 +9477,8 @@ app.get('/api/v1/test-deployment', (req, res) => {
 });
 
 // Start the server
-// Use 3001 in development; respect PORT in production
-const PORT = process.env.NODE_ENV === 'production'
-  ? (parseInt(process.env.PORT, 10) || 3001)
-  : 3001;
+// Use PORT from environment variable or default to 8000
+const PORT = parseInt(process.env.PORT, 10) || 8000;
 
 // Create HTTP server and attach Socket.IO
 const server = http.createServer(app);

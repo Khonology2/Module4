@@ -43,7 +43,7 @@ void main() {
       
       // This might fail if user already exists, which is expected
       // We're just testing that the method doesn't throw an exception
-      expect(result, isA<bool>());
+      expect(result.containsKey('success'), true);
     });
 
     test('Sign out should clear authentication state', () async {

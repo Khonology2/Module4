@@ -5,7 +5,7 @@ async function testUserAuth() {
   
   const options = {
     hostname: 'localhost',
-    port: 3001,
+    port: 8000,
     path: '/api/v1/auth/me',
     method: 'GET',
     headers: {

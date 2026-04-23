@@ -388,11 +388,6 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
     reportLines.push(`Start: ${fmtIso(sprintDetails.startDate)}`);
     reportLines.push(`End: ${fmtIso(sprintDetails.endDate)}`);
     reportLines.push('');
-    reportLines.push('PROJECT SPRINT TOTALS');
-    reportLines.push(`Total Sprints: ${totalSprints}`);
-    reportLines.push(`Completed Sprints: ${completedSprints}`);
-    reportLines.push(`Sprint Success Rate: ${fmtPct(sprintSuccessRate)}`);
-    reportLines.push('');
     reportLines.push('SPRINT SUMMARY');
     reportLines.push(`Total Deliverables: ${summary.totalDeliverables}`);
     reportLines.push(`Completed: ${summary.completedDeliverables}`);
@@ -434,7 +429,6 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
       sprintPerformanceData: '',
       sprintReportData: {
         project: projectDetails,
-        projectSprintTotals: { totalSprints, completedSprints, sprintSuccessRate },
         sprint: sprintDetails,
         summary,
         team,
@@ -1386,10 +1380,23 @@ router.get('/:id/signatures', async (req, res) => {
       const sigs = [];
       const arr = Array.isArray(c.signatures) ? c.signatures : [];
       for (const s of arr) {
+        let signerName = s.signer_name || null;
+        let signerRole = s.signer_role || null;
+        try {
+          if ((!signerName || !signerRole) && (s.signer_id || s.signer_email)) {
+            const identity = await resolveActorIdentity({
+              userId: s.signer_id ? String(s.signer_id) : null,
+              email: s.signer_email ? String(s.signer_email) : null,
+            });
+            signerName = signerName || identity.name || null;
+            const rawRole = signerRole || (identity.role ? String(identity.role) : null);
+            signerRole = roleDisplayValue(rawRole) || rawRole || null;
+          }
+        } catch (_) {}
         sigs.push({
           signature_data: s.signature_data || s.digitalSignature || s.digital_signature || null,
-          signer_name: s.signer_name || null,
-          signer_role: s.signer_role || null,
+          signer_name: signerName,
+          signer_role: signerRole,
           signed_at: s.signed_at || row.updated_at,
           is_valid: s.is_valid !== undefined ? s.is_valid : true,
           signature_type: s.signature_type || 'manual'
@@ -1432,6 +1439,29 @@ router.get('/:id/download', async (req, res) => {
     const row = results[0];
     const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
     const title = (c.reportTitle || c.report_title || 'Sign-Off Report');
+    const sanitizeReportContent = (value) => {
+      const raw = String(value || '');
+      if (!raw.trim()) return raw;
+      const lines = raw.split('\n');
+      const out = [];
+      let skipping = false;
+      for (const line of lines) {
+        const t = String(line || '').trim().toUpperCase();
+        if (!skipping && t === 'PROJECT SPRINT TOTALS') {
+          skipping = true;
+          continue;
+        }
+        if (skipping) {
+          if (t === 'SPRINT SUMMARY') {
+            skipping = false;
+            out.push(line);
+          }
+          continue;
+        }
+        out.push(line);
+      }
+      return out.join('\n');
+    };
     const lines = [];
     lines.push(`# ${title}`);
     lines.push('');
@@ -1440,7 +1470,7 @@ router.get('/:id/download', async (req, res) => {
     lines.push('');
     if (c.reportContent || c.report_content) {
       lines.push('## Report Content');
-      lines.push(String(c.reportContent || c.report_content));
+      lines.push(sanitizeReportContent(c.reportContent || c.report_content));
       lines.push('');
     }
     if (Array.isArray(c.sprintIds || c.sprint_ids) && (c.sprintIds || c.sprint_ids).length > 0) {
@@ -1487,6 +1517,9 @@ router.post('/:id/signature', async (req, res) => {
     const base = req.baseUrl || '';
     if (base.endsWith('/sign-off-reports')) {
       await ensureReportsTable();
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
       const { signatureData, signatureType } = req.body || {};
       const [existing] = await sequelize.query(
         `SELECT id, content, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
@@ -1498,12 +1531,21 @@ router.post('/:id/signature', async (req, res) => {
       const row = existing[0];
       const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
       const signatures = Array.isArray(c.signatures) ? c.signatures : [];
-      const signerName = req.user && (req.user.first_name || req.user.last_name) ? `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() : null;
-      const signerRole = req.user && req.user.role ? String(req.user.role) : null;
+      const identity = await resolveActorIdentity({
+        userId: req.user && req.user.id ? String(req.user.id) : null,
+        email: req.user && req.user.email ? String(req.user.email) : null,
+      });
+      const signerName = identity.name || null;
+      const signerRoleRaw = identity.role ? String(identity.role) : (req.user && req.user.role ? String(req.user.role) : null);
+      const signerRole = roleDisplayValue(signerRoleRaw) || signerRoleRaw || null;
+      const signerId = identity.id || (req.user && req.user.id ? String(req.user.id) : null);
+      const signerEmail = identity.email || (req.user && req.user.email ? String(req.user.email) : null);
       const newSig = {
         signature_data: signatureData || null,
         signer_name: signerName,
         signer_role: signerRole,
+        signer_id: signerId,
+        signer_email: signerEmail,
         signed_at: new Date().toISOString(),
         is_valid: true,
         signature_type: signatureType || 'manual'
