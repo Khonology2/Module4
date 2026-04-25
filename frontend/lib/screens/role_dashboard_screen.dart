@@ -572,7 +572,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: BackgroundImage(
-        imagePath: 'assets/Icons/khono_bg.png',
+        imagePath: 'assets/images/khono_bg.png',
         withGlassEffect: false,
         overlayOpacity: 0.25,
         child: Column(

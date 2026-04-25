@@ -53,6 +53,12 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
           route: '/dashboard',
         ),
         _NavItem(
+          label: 'FlowPilot',
+          icon: Icons.smart_toy_outlined,
+          iconName: 'ai_assistant',
+          route: '/ai-assistant',
+        ),
+        _NavItem(
           label: 'Projects',
           icon: Icons.folder_outlined,
           iconName: 'projects',
@@ -62,7 +68,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
           label: 'Sprints',
           icon: Icons.timer_outlined,
           iconName: 'sprints',
-          route: '/sprints',
+          route: '/sprint-console',
         ),
         _NavItem(
           label: 'Deliverables',
