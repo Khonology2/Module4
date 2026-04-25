@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../models/user_role.dart';
 import '../models/user.dart';
+import '../utils/app_icons.dart';
 import '../utils/date_utils.dart' as app_date_utils;
 import '../utils/user_label_utils.dart';
 import '../services/auth_service.dart';
@@ -698,7 +699,56 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   Widget _buildAdminFeatures() {
-    return const SizedBox.shrink();
+    if (_currentUser?.isSystemAdmin != true) return const SizedBox.shrink();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildCardHeader(Icons.admin_panel_settings, 'Admin Tools',
+                route: null),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                _buildActionButton(
+                  icon: Icons.people_outline,
+                  label: 'Role Management',
+                  onTap: () => context.go('/role-management'),
+                ),
+                _buildActionButton(
+                  icon: Icons.receipt_long_outlined,
+                  label: 'Audit Logs',
+                  onTap: () => context.go('/audit-logs'),
+                ),
+                _buildActionButton(
+                  icon: Icons.monitor_heart_outlined,
+                  label: 'System Health',
+                  onTap: () => context.go('/system-health'),
+                ),
+                _buildActionButton(
+                  icon: Icons.query_stats_outlined,
+                  label: 'System Metrics',
+                  onTap: () => context.go('/system-metrics'),
+                ),
+                _buildActionButton(
+                  icon: Icons.settings_applications_outlined,
+                  label: 'Environments',
+                  onTap: () => context.go('/environment-management'),
+                ),
+                _buildActionButton(
+                  icon: Icons.smart_toy_outlined,
+                  label: 'FlowPilot',
+                  onTap: () => context.go('/ai-assistant'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildTeamMemberDashboard() {
@@ -881,7 +931,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
 
     if (!canCreateDeliverable && !canManageUsers) return null;
 
-    return FloatingActionButton(
+    final primaryFab = FloatingActionButton(
       heroTag: 'role_dashboard_primary_fab',
       onPressed: () {
         if ((_currentUser?.role == UserRole.teamMember ||
@@ -935,6 +985,29 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           _currentUser?.roleColor ?? Theme.of(context).colorScheme.primary,
       child: const Icon(Icons.add, color: Colors.white),
     );
+
+    if (_currentUser?.isSystemAdmin == true) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'role_dashboard_flowpilot_fab',
+            onPressed: () => context.go('/ai-assistant'),
+            backgroundColor: Colors.white,
+            child: AppIcons.getIconWidget(
+              'ai_assistant',
+              fallbackIcon: Icons.smart_toy_outlined,
+              isActive: true,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          primaryFab,
+        ],
+      );
+    }
+
+    return primaryFab;
   }
 
   void _showCreateDeliverableModal() {

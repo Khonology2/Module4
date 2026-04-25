@@ -48,6 +48,8 @@ class ReportExportService {
   Future<_PdfHeaderAssets>? _headerAssetsFuture;
   Future<_PdfFooterAssets>? _footerAssetsFuture;
   Future<_PdfFontAssets>? _fontAssetsFuture;
+  Future<Map<String, String>>? _cachedProjectSprintTotalsFuture;
+  String? _cachedProjectSprintTotalsKey;
   
   /// Fetch digital signatures for a report
   Future<List<Map<String, dynamic>>> _fetchSignatures(String reportId) async {
@@ -118,9 +120,11 @@ class ReportExportService {
       if (effectiveReport.sprintIds.isNotEmpty) {
         final sprintReport = await _fetchSprintReport(effectiveReport.sprintIds.first);
         if (sprintReport != null) {
+          final enrichedSprintReport =
+              await _enrichSprintReportWithProjectTotals(sprintReport);
           final pdf = _buildSprintSignOffPdf(
             report: effectiveReport,
-            sprintReport: sprintReport,
+            sprintReport: enrichedSprintReport,
             signatures: signatures,
             header: header,
             footer: footer,
@@ -190,8 +194,11 @@ class ReportExportService {
         }
       }
 
-      final sanitizedContent = SignOffReport.sanitizeReportContent(effectiveReport.reportContent);
-      final reportBodyContent = _stripSignOffNotesFromBody(_stripFeedbackFromBody(sanitizedContent));
+      final sanitizedContent =
+          SignOffReport.sanitizeReportContent(effectiveReport.reportContent);
+      final normalizedContent = _sanitizeContentForPdf(sanitizedContent);
+      final reportBodyContent =
+          _stripSignOffNotesFromBody(_stripFeedbackFromBody(normalizedContent));
       var preparedSigData = _pickPreparedBySignatureData(report: effectiveReport, signatures: signatures);
       var preparedSigType = _pickPreparedBySignatureType(report: effectiveReport, signatures: signatures);
       if ((preparedSigData == null || preparedSigData.trim().isEmpty) && defaultSignature != null) {
@@ -238,7 +245,7 @@ class ReportExportService {
           ),
           build: (pw.Context context) {
             final signOffNotesText = _buildSignOffNotesText(
-              reportContent: sanitizedContent,
+              reportContent: normalizedContent,
               clientComment: effectiveReport.clientComment,
               changeRequestDetails: effectiveReport.changeRequestDetails,
               status: effectiveReport.status,
@@ -270,31 +277,17 @@ class ReportExportService {
             return [
               pw.SizedBox(height: 6),
               ..._buildStructuredBodyWidgets(reportBodyContent),
-              if (effectiveReport.knownLimitations != null && effectiveReport.knownLimitations!.isNotEmpty) ...[
-                pw.SizedBox(height: 8),
-                _subSectionHeader('KNOWN LIMITATIONS'),
-                pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: pw.Text(effectiveReport.knownLimitations!, style: const pw.TextStyle(fontSize: 10)),
-                ),
-              ],
-              
-              if (effectiveReport.nextSteps != null && effectiveReport.nextSteps!.isNotEmpty) ...[
-                pw.SizedBox(height: 8),
-                _subSectionHeader('NEXT STEPS'),
-                pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: pw.Text(effectiveReport.nextSteps!, style: const pw.TextStyle(fontSize: 10)),
-                ),
-              ],
-
               pw.SizedBox(height: 8),
-              pw.NewPage(),
-              ..._buildKeepHeaderWithFirstParagraphSection(
-                title: 'SIGN-OFF NOTES',
-                text: signOffNotesText,
-                fontSize: 10,
+              _subSectionHeader('SIGN-OFF NOTES'),
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: pw.Text(
+                  signOffNotesText.trim().isEmpty ? '-' : signOffNotesText.trim(),
+                  style: const pw.TextStyle(fontSize: 10),
+                ),
               ),
+              pw.SizedBox(height: 8),
+              _subSectionHeader('DIGITAL SIGNATURES'),
               pw.SizedBox(height: 8),
               _buildPreparedBySignatureSection(
                 preparedByName: effectiveReport.preparedByName ?? effectiveReport.createdBy,
@@ -302,6 +295,7 @@ class ReportExportService {
                 signedAt: effectiveReport.createdAt,
                 signatureData: preparedSigData,
                 signatureType: preparedSigType,
+                includeHeader: false,
               ),
               if ((reviewerSigData ?? '').trim().isNotEmpty ||
                   (reviewerName ?? '').trim().isNotEmpty ||
@@ -318,46 +312,9 @@ class ReportExportService {
                   signedAt: reviewerSignedAt,
                   signatureData: reviewerSigData,
                   signatureType: reviewerSigType,
+                  includeHeader: false,
                 ),
               ],
-              
-              // Status and Metadata
-              pw.Divider(),
-              pw.SizedBox(height: 10),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'Status: ${_formatStatus(effectiveReport.status)}',
-                        style: const pw.TextStyle(fontSize: 12),
-                      ),
-                      pw.SizedBox(height: 5),
-                      pw.Text(
-                        'Created by: ${effectiveReport.createdBy}',
-                        style: const pw.TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  if (effectiveReport.approvedAt != null)
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Approved on: ${_formatDate(effectiveReport.approvedAt!)}',
-                          style: const pw.TextStyle(fontSize: 12),
-                        ),
-                        if (effectiveReport.approvedBy != null)
-                          pw.Text(
-                            'Approved by: ${effectiveReport.approvedBy}',
-                            style: const pw.TextStyle(fontSize: 12),
-                          ),
-                      ],
-                    ),
-                ],
-              ),
             ];
           },
         ),
@@ -454,9 +411,11 @@ class ReportExportService {
       if (effectiveReport.sprintIds.isNotEmpty) {
         final sprintReport = await _fetchSprintReport(effectiveReport.sprintIds.first);
         if (sprintReport != null) {
+          final enrichedSprintReport =
+              await _enrichSprintReportWithProjectTotals(sprintReport);
           final sprintPdf = _buildSprintSignOffPdf(
             report: effectiveReport,
-            sprintReport: sprintReport,
+            sprintReport: enrichedSprintReport,
             signatures: signatures,
             header: header,
             footer: footer,
@@ -472,8 +431,11 @@ class ReportExportService {
       final pdf = pw.Document(
         theme: pw.ThemeData.withFont(base: fonts.base, bold: fonts.bold),
       );
-      final sanitizedContent = SignOffReport.sanitizeReportContent(effectiveReport.reportContent);
-      final reportBodyContent = _stripSignOffNotesFromBody(_stripFeedbackFromBody(sanitizedContent));
+      final sanitizedContent =
+          SignOffReport.sanitizeReportContent(effectiveReport.reportContent);
+      final normalizedContent = _sanitizeContentForPdf(sanitizedContent);
+      final reportBodyContent =
+          _stripSignOffNotesFromBody(_stripFeedbackFromBody(normalizedContent));
       var preparedSigData = _pickPreparedBySignatureData(report: effectiveReport, signatures: signatures);
       var preparedSigType = _pickPreparedBySignatureType(report: effectiveReport, signatures: signatures);
       if ((preparedSigData == null || preparedSigData.trim().isEmpty) && defaultSignature != null) {
@@ -515,7 +477,7 @@ class ReportExportService {
           ),
           build: (pw.Context context) {
             final signOffNotesText = _buildSignOffNotesText(
-              reportContent: sanitizedContent,
+              reportContent: normalizedContent,
               clientComment: effectiveReport.clientComment,
               changeRequestDetails: effectiveReport.changeRequestDetails,
               status: effectiveReport.status,
@@ -609,10 +571,13 @@ class ReportExportService {
     );
     final now = DateTime.now();
     final safeTitle = title.trim().isEmpty ? 'Report' : title.trim();
+    final normalizedOriginalContent = _sanitizeContentForPdf(content);
 
     if (useSignOffTemplate) {
       final header = await _getHeaderAssets();
       final footer = await _getFooterAssets();
+      final effectiveContent =
+          await _buildCanonicalSprintSignOffContentIfPossible(normalizedOriginalContent);
       String preparedByName = (preparedByNameOverride ?? '').trim();
       String? preparedByRole = (preparedByRoleOverride ?? '').trim().isEmpty ? null : preparedByRoleOverride!.trim();
       String? signatureData = (preparedBySignatureData ?? '').trim().isEmpty ? null : preparedBySignatureData!.trim();
@@ -672,9 +637,10 @@ class ReportExportService {
             createdByText: null,
           ),
           build: (pw.Context context) {
-            final reportBodyContent = _stripSignOffNotesFromBody(_stripFeedbackFromBody(content));
+            final reportBodyContent = _stripSignOffNotesFromBody(
+                _stripFeedbackFromBody(effectiveContent));
             final signOffNotesText = _buildSignOffNotesText(
-              reportContent: content,
+              reportContent: effectiveContent,
               clientComment: null,
               changeRequestDetails: null,
               status: ReportStatus.draft,
@@ -683,13 +649,16 @@ class ReportExportService {
               pw.SizedBox(height: 6),
               ..._buildStructuredBodyWidgets(reportBodyContent),
               pw.SizedBox(height: 8),
-              pw.NewPage(),
-              ..._buildKeepHeaderWithFirstParagraphSection(
-                title: 'SIGN-OFF NOTES',
-                text: signOffNotesText,
-                fontSize: 10,
+              _subSectionHeader('SIGN-OFF NOTES'),
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: pw.Text(
+                  signOffNotesText.trim().isEmpty ? '-' : signOffNotesText.trim(),
+                  style: const pw.TextStyle(fontSize: 10),
+                ),
               ),
-
+              pw.SizedBox(height: 8),
+              _subSectionHeader('DIGITAL SIGNATURES'),
               pw.SizedBox(height: 8),
               _buildPreparedBySignatureSection(
                 preparedByName: preparedByName.isEmpty ? '-' : preparedByName,
@@ -697,6 +666,7 @@ class ReportExportService {
                 signedAt: signedAt,
                 signatureData: signatureData,
                 signatureType: signatureType,
+                includeHeader: false,
               ),
             ];
           },
@@ -727,7 +697,7 @@ class ReportExportService {
             ),
             pw.SizedBox(height: 12),
             pw.Text(
-              content,
+              normalizedOriginalContent,
               style: const pw.TextStyle(fontSize: 11),
             ),
           ];
@@ -770,7 +740,7 @@ class ReportExportService {
   Future<_PdfHeaderAssets> _loadHeaderAssets() async {
     try {
       final bgData = await rootBundle.load('assets/images/khono_bg.png');
-      final logoData = await rootBundle.load('assets/Icons/khono.png');
+      final logoData = await rootBundle.load('assets/khono_logo.png');
       final iconData = await rootBundle.load('assets/Icons/Group 268.png');
       final bgBytes = bgData.buffer.asUint8List();
       final logoBytes = logoData.buffer.asUint8List();
@@ -813,12 +783,21 @@ class ReportExportService {
   }
 
   Future<_PdfFontAssets> _loadFontAssets() async {
-    final regular = await rootBundle.load('assets/fonts/fonts/poppins/Poppins-Regular.ttf');
-    final bold = await rootBundle.load('assets/fonts/fonts/poppins/Poppins-Bold.ttf');
-    return _PdfFontAssets(
-      base: pw.Font.ttf(regular),
-      bold: pw.Font.ttf(bold),
-    );
+    try {
+      final regular =
+          await rootBundle.load('assets/fonts/fonts/poppins/Poppins-Regular.ttf');
+      final bold =
+          await rootBundle.load('assets/fonts/fonts/poppins/Poppins-Bold.ttf');
+      return _PdfFontAssets(
+        base: pw.Font.ttf(regular),
+        bold: pw.Font.ttf(bold),
+      );
+    } catch (_) {
+      return _PdfFontAssets(
+        base: pw.Font.helvetica(),
+        bold: pw.Font.helveticaBold(),
+      );
+    }
   }
 
   pw.Widget _buildSignOffReportHeader({
@@ -942,33 +921,40 @@ class ReportExportService {
     final logo = footer.logo;
     final status = (statusText ?? '').trim();
     final createdBy = (createdByText ?? '').trim();
-
+    final showMeta = status.isNotEmpty || createdBy.isNotEmpty;
     return pw.Container(
       margin: const pw.EdgeInsets.only(top: 10),
       padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      child: pw.Stack(
         children: [
-          pw.SizedBox(width: 1),
-          pw.Expanded(
-            child: pw.Center(
-              child: logo == null ? pw.SizedBox(height: 20) : pw.Image(logo, height: 20, fit: pw.BoxFit.contain),
+          if (showMeta)
+            pw.Positioned(
+              right: 0,
+              top: 0,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  if (status.isNotEmpty)
+                    pw.Text(
+                      'Status: $status',
+                      style: pw.TextStyle(
+                        color: PdfColors.grey700,
+                        fontSize: 9,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  if (createdBy.isNotEmpty)
+                    pw.Text(
+                      'Created by: $createdBy',
+                      style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 9),
+                    ),
+                ],
+              ),
             ),
-          ),
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              if (status.isNotEmpty)
-                pw.Text(
-                  'Status: $status',
-                  style: pw.TextStyle(color: PdfColors.grey700, fontSize: 9, fontWeight: pw.FontWeight.bold),
-                ),
-              if (createdBy.isNotEmpty)
-                pw.Text(
-                  'Created by: $createdBy',
-                  style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 9),
-                ),
-            ],
+          pw.Center(
+            child: logo == null
+                ? pw.SizedBox(height: 22)
+                : pw.Image(logo, height: 22, fit: pw.BoxFit.contain),
           ),
         ],
       ),
@@ -999,7 +985,8 @@ class ReportExportService {
       theme: pw.ThemeData.withFont(base: fonts.base, bold: fonts.bold),
     );
 
-    final sections = _parseReportSections(report.reportContent);
+    final normalizedReportContent = _sanitizeContentForPdf(report.reportContent);
+    final sections = _parseReportSections(normalizedReportContent);
     final projectKv = _parseKeyValues(sections['PROJECT']);
     final totalsKv = _parseKeyValues(sections['PROJECT SPRINT TOTALS']);
     final sprintKv = _parseKeyValues(sections['SPRINT']);
@@ -1013,20 +1000,21 @@ class ReportExportService {
     final sprintName = (sprintKv['Name'] ?? sprintKv['NAME'] ?? '').trim();
     final resolvedTitle = _resolveRibbonTitle(
       reportTitle: report.reportTitle,
-      reportContent: report.reportContent,
+      reportContent: normalizedReportContent,
       signOffText: signOffTextFromSection,
       clientComment: report.clientComment,
     );
     final ribbonTitle = resolvedTitle.isEmpty ? (sprintName.isEmpty ? '-' : sprintName) : resolvedTitle;
 
     pw.Widget kvRow(String k, String v) {
+      final safeV = _sanitizeContentForPdf(v);
       return pw.Padding(
         padding: const pw.EdgeInsets.only(bottom: 3),
         child: pw.RichText(
           text: pw.TextSpan(
             children: [
               pw.TextSpan(text: '${k.trim()}: ', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-              pw.TextSpan(text: v.trim().isEmpty ? '-' : v.trim(), style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
+              pw.TextSpan(text: safeV.trim().isEmpty ? '-' : safeV.trim(), style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
             ],
           ),
         ),
@@ -1060,74 +1048,203 @@ class ReportExportService {
     }
 
     final signOffText = _buildSignOffNotesText(
-      reportContent: report.reportContent,
+      reportContent: normalizedReportContent,
       clientComment: report.clientComment,
       changeRequestDetails: report.changeRequestDetails,
       status: report.status,
     );
 
+    final sprintMap = sprintReport['sprint'] is Map
+        ? Map<String, dynamic>.from(sprintReport['sprint'] as Map)
+        : <String, dynamic>{};
+    final summaryMap = sprintReport['summary'] is Map
+        ? Map<String, dynamic>.from(sprintReport['summary'] as Map)
+        : <String, dynamic>{};
+    final projectMap = sprintReport['project'] is Map
+        ? Map<String, dynamic>.from(sprintReport['project'] as Map)
+        : (sprintMap['project'] is Map
+            ? Map<String, dynamic>.from(sprintMap['project'] as Map)
+            : <String, dynamic>{});
+    final projectTotalsMap = sprintReport['projectSprintTotals'] is Map
+        ? Map<String, dynamic>.from(sprintReport['projectSprintTotals'] as Map)
+        : <String, dynamic>{};
+    final teamMap = sprintReport['team'] is Map
+        ? Map<String, dynamic>.from(sprintReport['team'] as Map)
+        : <String, dynamic>{};
+    final deliverablesList = sprintReport['deliverables'] is List
+        ? (sprintReport['deliverables'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : <Map<String, dynamic>>[];
+
+    String safeString(dynamic v) => _sanitizeContentForPdf(v?.toString() ?? '').trim();
+    String firstNonEmpty(List<String> values) {
+      for (final v in values) {
+        final t = v.trim();
+        if (t.isNotEmpty && t != '-') return t;
+      }
+      return '-';
+    }
+
+    final projectName = firstNonEmpty([
+      projectKv['Name'] ?? '',
+      projectKv['NAME'] ?? '',
+      safeString(projectMap['name']),
+      safeString(sprintMap['project_name']),
+    ]);
+    final projectKey = firstNonEmpty([
+      projectKv['Key'] ?? '',
+      projectKv['KEY'] ?? '',
+      safeString(projectMap['key']),
+      safeString(sprintMap['project_key']),
+    ]);
+    final projectId = firstNonEmpty([
+      projectKv['ID'] ?? '',
+      projectKv['Id'] ?? '',
+      safeString(projectMap['id']),
+      safeString(sprintMap['project_id']),
+    ]);
+
+    final totalSprints = firstNonEmpty([
+      totalsKv['Total Sprints'] ?? '',
+      totalsKv['Total'] ?? '',
+      safeString(projectTotalsMap['Total Sprints']),
+      safeString(projectTotalsMap['total']),
+      safeString(projectTotalsMap['totalSprints']),
+      safeString(projectTotalsMap['total_sprints']),
+    ]);
+    final completedSprints = firstNonEmpty([
+      totalsKv['Completed Sprints'] ?? '',
+      safeString(projectTotalsMap['Completed Sprints']),
+      safeString(projectTotalsMap['completed']),
+      safeString(projectTotalsMap['completedSprints']),
+      safeString(projectTotalsMap['completed_sprints']),
+    ]);
+    final sprintSuccessRate = firstNonEmpty([
+      totalsKv['Sprint Success Rate'] ?? '',
+      safeString(projectTotalsMap['Sprint Success Rate']),
+      safeString(projectTotalsMap['successRate']),
+      safeString(projectTotalsMap['sprintSuccessRate']),
+      safeString(projectTotalsMap['success_rate']),
+    ]);
+
+    final sprintNameEffective = firstNonEmpty([
+      sprintKv['Name'] ?? '',
+      safeString(sprintMap['name']),
+    ]);
+    final sprintIdEffective = firstNonEmpty([
+      sprintKv['ID'] ?? sprintKv['Id'] ?? '',
+      safeString(sprintMap['id']),
+    ]);
+    final sprintStatus = firstNonEmpty([
+      sprintKv['Status'] ?? '',
+      safeString(sprintMap['status']),
+    ]);
+    final sprintStart = firstNonEmpty([
+      sprintKv['Start'] ?? '',
+      safeString(sprintMap['start_date']),
+      safeString(sprintMap['startDate']),
+    ]);
+    final sprintEnd = firstNonEmpty([
+      sprintKv['End'] ?? '',
+      safeString(sprintMap['end_date']),
+      safeString(sprintMap['endDate']),
+    ]);
+
+    final totalDeliverables = firstNonEmpty([
+      summaryKv['Total Deliverables'] ?? '',
+      safeString(summaryMap['total_deliverables']),
+      safeString(summaryMap['totalDeliverables']),
+    ]);
+    final completedDeliverables = firstNonEmpty([
+      summaryKv['Completed'] ?? '',
+      safeString(summaryMap['completed']),
+    ]);
+    final inProgressDeliverables = firstNonEmpty([
+      summaryKv['In Progress'] ?? '',
+      safeString(summaryMap['in_progress']),
+      safeString(summaryMap['inProgress']),
+    ]);
+    final notStartedDeliverables = firstNonEmpty([
+      summaryKv['Not Started'] ?? '',
+      safeString(summaryMap['not_started']),
+      safeString(summaryMap['notStarted']),
+    ]);
+    final overdueDeliverables = firstNonEmpty([
+      summaryKv['Overdue'] ?? '',
+      safeString(summaryMap['overdue']),
+    ]);
+    final blockedDeliverables = firstNonEmpty([
+      summaryKv['Blocked'] ?? '',
+      safeString(summaryMap['blocked']),
+    ]);
+    final sprintProgress = firstNonEmpty([
+      summaryKv['Sprint Progress'] ?? '',
+      safeString(summaryMap['sprint_progress']),
+      safeString(summaryMap['sprintProgress']),
+      safeString(summaryMap['progress']),
+    ]);
+    final completionRate = firstNonEmpty([
+      summaryKv['Completion Rate'] ?? '',
+      safeString(summaryMap['completion_rate']),
+      safeString(summaryMap['completionRate']),
+    ]);
+    final health = firstNonEmpty([
+      summaryKv['Health'] ?? '',
+      safeString(summaryMap['health']),
+    ]);
+
+    List<String> teamLinesEffective = teamLines;
+    if (teamLinesEffective.isEmpty) {
+      final members = teamMap['members'];
+      if (members is List) {
+        teamLinesEffective = members.whereType<Map>().map((m) {
+          final mm = Map<String, dynamic>.from(m);
+          final name = safeString(mm['name'] ?? mm['full_name'] ?? mm['fullName']);
+          final email = safeString(mm['email']);
+          final role = safeString(mm['role'] ?? mm['user_role'] ?? mm['userRole']);
+          final parts = <String>[];
+          if (name.isNotEmpty && name != '-') parts.add(name);
+          if (email.isNotEmpty && email != '-') parts.add(email);
+          if (role.isNotEmpty && role != '-') parts.add(role);
+          return parts.isEmpty ? '-' : parts.join(' | ');
+        }).toList();
+      }
+    }
+
+    List<String> deliverableLinesEffective = deliverableLines;
+    if (deliverableLinesEffective.isEmpty && deliverablesList.isNotEmpty) {
+      deliverableLinesEffective = deliverablesList.map((d) {
+        final name = safeString(d['name'] ?? d['title'] ?? d['deliverable_name'] ?? d['deliverableName']);
+        final owner = safeString(d['owner'] ?? d['owner_name'] ?? d['ownerName'] ?? d['assignee'] ?? d['assignee_name'] ?? d['assigneeName']);
+        final status = safeString(d['status'] ?? d['state']);
+        final progress = safeString(d['progress'] ?? d['percent_complete'] ?? d['percentComplete']);
+        final due = safeString(d['due_date'] ?? d['dueDate'] ?? d['due']);
+        final completedAt = safeString(d['completed_at'] ?? d['completedAt'] ?? d['completed']);
+        final category = safeString(d['category'] ?? d['type']);
+        final overdue = safeString(d['overdue']);
+        final parts = <String>[];
+        parts.add(name.isEmpty || name == '-' ? 'Deliverable' : name);
+        if (owner.isNotEmpty && owner != '-') parts.add('Owner: $owner');
+        if (status.isNotEmpty && status != '-') parts.add('Status: $status');
+        if (progress.isNotEmpty && progress != '-') parts.add('Progress: $progress');
+        if (due.isNotEmpty && due != '-') parts.add('Due: $due');
+        if (completedAt.isNotEmpty && completedAt != '-') parts.add('Completed: $completedAt');
+        if (category.isNotEmpty && category != '-') parts.add('Category: $category');
+        if (overdue.isNotEmpty && overdue != '-') parts.add('Overdue: $overdue');
+        return '- ${parts.join(' | ')}';
+      }).toList();
+    }
+
     pw.Widget twoCol(pw.Widget left, pw.Widget right) {
       return pw.Table(
-        border: pw.TableBorder.all(color: PdfColors.grey300),
         columnWidths: const {0: pw.FlexColumnWidth(1), 1: pw.FlexColumnWidth(1)},
         children: [
           pw.TableRow(children: [
             pw.Padding(padding: const pw.EdgeInsets.all(0), child: left),
             pw.Padding(padding: const pw.EdgeInsets.all(0), child: right),
           ]),
-        ],
-      );
-    }
-
-    pw.Widget signaturesBlock() {
-      final preparedByName = report.preparedByName ?? report.createdBy;
-      final preparedByRole = report.preparedByRole;
-      final preparedSigData = _pickPreparedBySignatureData(report: report, signatures: signatures);
-      final preparedSigType = _pickPreparedBySignatureType(report: report, signatures: signatures);
-      final reviewerSigData = _pickReviewerSignatureData(report: report, signatures: signatures);
-      final reviewerSigType = _pickReviewerSignatureType(report: report, signatures: signatures);
-      final reviewerName = (report.status == ReportStatus.approved
-              ? (report.approvedByName ?? report.reviewedByName ?? report.approvedBy ?? report.reviewedBy)
-              : (report.reviewedByName ?? report.approvedByName ?? report.reviewedBy ?? report.approvedBy))
-          ?.trim();
-      final reviewerRole = (report.status == ReportStatus.approved
-              ? (report.approvedByRole ?? report.reviewedByRole)
-              : (report.reviewedByRole ?? report.approvedByRole))
-          ?.trim();
-      final reviewerSignedAt = report.status == ReportStatus.approved
-          ? (report.approvedAt ?? report.reviewedAt)
-          : (report.reviewedAt ?? report.approvedAt);
-      final reviewerLabel = report.status == ReportStatus.approved
-          ? 'APPROVED BY'
-          : (report.status == ReportStatus.changeRequested ? 'CHANGES REQUESTED BY' : 'REVIEWED BY');
-
-      return pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: [
-          _buildPreparedBySignatureSection(
-            preparedByName: preparedByName,
-            preparedByRole: preparedByRole,
-            signedAt: report.createdAt,
-            signatureData: preparedSigData,
-            signatureType: preparedSigType,
-          ),
-          if ((reviewerSigData ?? '').trim().isNotEmpty ||
-              (reviewerName ?? '').trim().isNotEmpty ||
-              report.reviewedAt != null ||
-              report.approvedAt != null ||
-              report.status == ReportStatus.approved ||
-              report.status == ReportStatus.changeRequested ||
-              report.status == ReportStatus.underReview) ...[
-            pw.SizedBox(height: 8),
-            _buildReviewedBySignatureSection(
-              label: reviewerLabel,
-              reviewerName: (reviewerName ?? '').trim().isEmpty ? '-' : reviewerName!.trim(),
-              reviewerRole: reviewerRole,
-              signedAt: reviewerSignedAt,
-              signatureData: reviewerSigData,
-              signatureType: reviewerSigType,
-            ),
-          ],
         ],
       );
     }
@@ -1153,43 +1270,43 @@ class ReportExportService {
           return [
             pw.SizedBox(height: 6),
             twoCol(
-              cell('Project Detail', [
-                kvRow('Name', projectKv['Name'] ?? projectKv['NAME'] ?? '-'),
-                kvRow('Key', projectKv['Key'] ?? projectKv['KEY'] ?? '-'),
-                kvRow('ID', projectKv['ID'] ?? projectKv['Id'] ?? '-'),
+              cell('Project Detail:', [
+                kvRow('Name', projectName),
+                kvRow('Key', projectKey),
+                kvRow('ID', projectId),
               ]),
-              cell('Project Sprint Totals', [
-                kvRow('Total Sprints', totalsKv['Total Sprints'] ?? totalsKv['Total'] ?? '-'),
-                kvRow('Completed Sprints', totalsKv['Completed Sprints'] ?? '-'),
-                kvRow('Sprint Success Rate', totalsKv['Sprint Success Rate'] ?? '-'),
+              cell('Project Sprint Totals:', [
+                kvRow('Total Sprints', totalSprints),
+                kvRow('Completed Sprints', completedSprints),
+                kvRow('Sprint Success Rate', sprintSuccessRate),
               ]),
             ),
             pw.SizedBox(height: 8),
             twoCol(
-              cell('Sprint Detail', [
-                kvRow('Name', sprintKv['Name'] ?? '-'),
-                kvRow('ID', sprintKv['ID'] ?? sprintKv['Id'] ?? '-'),
-                kvRow('Status', sprintKv['Status'] ?? '-'),
-                kvRow('Start', sprintKv['Start'] ?? '-'),
-                kvRow('End', sprintKv['End'] ?? '-'),
+              cell('Sprint Detail:', [
+                kvRow('Name', sprintNameEffective),
+                kvRow('ID', sprintIdEffective),
+                kvRow('Status', sprintStatus),
+                kvRow('Start', sprintStart),
+                kvRow('End', sprintEnd),
               ]),
-              cell('Sprint Summary', [
-                kvRow('Total Deliverables', summaryKv['Total Deliverables'] ?? '-'),
-                kvRow('Completed', summaryKv['Completed'] ?? '-'),
-                kvRow('In Progress', summaryKv['In Progress'] ?? '-'),
-                kvRow('Not Started', summaryKv['Not Started'] ?? summaryKv['Not Started'] ?? '-'),
-                kvRow('Overdue', summaryKv['Overdue'] ?? '-'),
-                kvRow('Blocked', summaryKv['Blocked'] ?? '-'),
-                kvRow('Sprint Progress', summaryKv['Sprint Progress'] ?? '-'),
-                kvRow('Completion Rate', summaryKv['Completion Rate'] ?? '-'),
-                kvRow('Health', (summaryKv['Health'] ?? '-').toUpperCase()),
+              cell('Sprint Summary:', [
+                kvRow('Total Deliverables', totalDeliverables),
+                kvRow('Completed', completedDeliverables),
+                kvRow('In Progress', inProgressDeliverables),
+                kvRow('Not Started', notStartedDeliverables),
+                kvRow('Overdue', overdueDeliverables),
+                kvRow('Blocked', blockedDeliverables),
+                kvRow('Sprint Progress', sprintProgress),
+                kvRow('Completion Rate', completionRate),
+                kvRow('Health', health.toUpperCase()),
               ]),
             ),
             pw.SizedBox(height: 8),
             section(
               'TEAM MEMBERS',
               pw.Text(
-                teamLines.isEmpty ? '-' : teamLines.join('\n'),
+                teamLinesEffective.isEmpty ? '-' : teamLinesEffective.join('\n'),
                 style: const pw.TextStyle(fontSize: 9),
               ),
             ),
@@ -1197,18 +1314,83 @@ class ReportExportService {
             section(
               'DELIVERABLES',
               pw.Text(
-                deliverableLines.isEmpty ? '-' : deliverableLines.join('\n'),
+                deliverableLinesEffective.isEmpty ? '-' : deliverableLinesEffective.join('\n'),
                 style: const pw.TextStyle(fontSize: 8.5),
               ),
             ),
             pw.SizedBox(height: 8),
-            pw.NewPage(),
             section(
               'SIGN-OFF NOTES',
               pw.Text(signOffText.trim().isEmpty ? '-' : signOffText, style: const pw.TextStyle(fontSize: 9)),
             ),
             pw.SizedBox(height: 8),
-            signaturesBlock(),
+            _subSectionHeader('DIGITAL SIGNATURES'),
+            pw.SizedBox(height: 8),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                _buildPreparedBySignatureSection(
+                  preparedByName: report.preparedByName ?? report.createdBy,
+                  preparedByRole: report.preparedByRole,
+                  signedAt: report.createdAt,
+                  signatureData: _pickPreparedBySignatureData(report: report, signatures: signatures),
+                  signatureType: _pickPreparedBySignatureType(report: report, signatures: signatures),
+                  includeHeader: false,
+                ),
+                if ((_pickReviewerSignatureData(report: report, signatures: signatures) ?? '').trim().isNotEmpty ||
+                    ((report.approvedByName ?? report.reviewedByName ?? report.approvedBy ?? report.reviewedBy) ?? '')
+                        .trim()
+                        .isNotEmpty ||
+                    report.reviewedAt != null ||
+                    report.approvedAt != null ||
+                    report.status == ReportStatus.approved ||
+                    report.status == ReportStatus.changeRequested ||
+                    report.status == ReportStatus.underReview) ...[
+                  pw.SizedBox(height: 8),
+                  _buildReviewedBySignatureSection(
+                    label: report.status == ReportStatus.approved
+                        ? 'APPROVED BY'
+                        : (report.status == ReportStatus.changeRequested
+                            ? 'CHANGES REQUESTED BY'
+                            : 'REVIEWED BY'),
+                    reviewerName: ((report.status == ReportStatus.approved
+                                    ? (report.approvedByName ??
+                                        report.reviewedByName ??
+                                        report.approvedBy ??
+                                        report.reviewedBy)
+                                    : (report.reviewedByName ??
+                                        report.approvedByName ??
+                                        report.reviewedBy ??
+                                        report.approvedBy)) ??
+                                '-')
+                            .trim()
+                            .isEmpty
+                        ? '-'
+                        : ((report.status == ReportStatus.approved
+                                    ? (report.approvedByName ??
+                                        report.reviewedByName ??
+                                        report.approvedBy ??
+                                        report.reviewedBy)
+                                    : (report.reviewedByName ??
+                                        report.approvedByName ??
+                                        report.reviewedBy ??
+                                        report.approvedBy)) ??
+                                '-')
+                            .trim(),
+                    reviewerRole: (report.status == ReportStatus.approved
+                            ? (report.approvedByRole ?? report.reviewedByRole)
+                            : (report.reviewedByRole ?? report.approvedByRole))
+                        ?.trim(),
+                    signedAt: report.status == ReportStatus.approved
+                        ? (report.approvedAt ?? report.reviewedAt)
+                        : (report.reviewedAt ?? report.approvedAt),
+                    signatureData: _pickReviewerSignatureData(report: report, signatures: signatures),
+                    signatureType: _pickReviewerSignatureType(report: report, signatures: signatures),
+                    includeHeader: false,
+                  ),
+                ],
+              ],
+            ),
           ];
         },
       ),
@@ -1254,29 +1436,65 @@ class ReportExportService {
     return out.join('\n').trim();
   }
 
-  String _mergeNotesAndComment(String note, String comment) {
-    final a = _stripFeedbackLabelPrefixes(note);
-    final b = _stripFeedbackLabelPrefixes(comment);
-    if (a.isEmpty && b.isEmpty) return '-';
-    if (a.isNotEmpty && b.isEmpty) return a;
-    if (a.isEmpty && b.isNotEmpty) return b;
-    if (a.toLowerCase().contains(b.toLowerCase())) return a;
-    return '$a\n\n$b';
-  }
-
   String _extractSignOffNote(String reportContent) {
     final raw = reportContent;
     final lines = raw.split('\n');
     final startIdx = lines.indexWhere((l) => l.trim().toUpperCase() == 'SIGN-OFF NOTES');
     if (startIdx == -1) return '';
     final buf = <String>[];
+    bool isHeaderLine(String line) {
+      final t = line.trim();
+      if (t.isEmpty) return false;
+      if (t.contains(':')) return false;
+      if (t.startsWith('-')) return false;
+      final upper = t.toUpperCase();
+      if (upper != t) return false;
+      return t.length <= 40;
+    }
+
     for (var i = startIdx + 1; i < lines.length; i++) {
-      final t = lines[i].trim();
+      final rawLine = lines[i].trimRight();
+      final t = rawLine.trim();
       if (t.isEmpty) continue;
-      if (t.toUpperCase() == 'DELIVERABLES') break;
+      if (isHeaderLine(t) && t.toUpperCase() != 'SIGN-OFF NOTES') break;
       buf.add(t);
     }
-    return _stripFeedbackLabelPrefixes(buf.join('\n')).replaceAll('\n', ' ').trim();
+    return _stripFeedbackLabelPrefixes(buf.join('\n')).trim();
+  }
+
+  String _extractFeedbackText(String reportContent) {
+    final sections = _parseReportSections(reportContent);
+    final out = <String>[];
+
+    void addLines(List<String>? lines) {
+      if (lines == null) return;
+      for (final l in lines) {
+        final t = l.trim();
+        if (t.isEmpty) continue;
+        out.add(t);
+      }
+    }
+
+    addLines(sections['USER FEEDBACK']);
+    addLines(sections['CLIENT FEEDBACK']);
+    addLines(sections['FEEDBACK']);
+
+    final inline = RegExp(
+      r'^(?:[-•*]+\s*)?(?:user|client)?\s*feedback\s*[:\\-–—]\\s*(.+)$',
+      caseSensitive: false,
+    );
+    for (final entry in sections.entries) {
+      if (entry.key == 'SIGN-OFF NOTES') continue;
+      for (final line in entry.value) {
+        final m = inline.firstMatch(line.trim());
+        if (m != null) {
+          final v = (m.group(1) ?? '').trim();
+          if (v.isNotEmpty) out.add(v);
+        }
+      }
+    }
+
+    return _stripFeedbackLabelPrefixes(out.join('\n')).trim();
   }
 
   String _buildSignOffNotesText({
@@ -1288,31 +1506,27 @@ class ReportExportService {
     final note = _extractSignOffNote(reportContent);
     final comment = (clientComment ?? '').trim();
     final changes = (changeRequestDetails ?? '').trim();
+    final feedback = _extractFeedbackText(reportContent);
 
-    var merged = note;
+    final parts = <String>[
+      _stripFeedbackLabelPrefixes(note),
+      _stripFeedbackLabelPrefixes(comment),
+      _stripFeedbackLabelPrefixes(changes),
+      _stripFeedbackLabelPrefixes(feedback),
+    ].where((p) => p.trim().isNotEmpty && p.trim() != '-').toList();
 
-    if (status == ReportStatus.approved) {
-      final c = _stripFeedbackLabelPrefixes(comment);
-      if (c.isNotEmpty) {
-        merged = _mergeNotesAndComment(merged, 'Approval comment:\n$c');
-      }
-    } else if (status == ReportStatus.changeRequested) {
-      final cr = _stripFeedbackLabelPrefixes(changes);
-      if (cr.isNotEmpty) {
-        merged = _mergeNotesAndComment(merged, 'Requested changes:\n$cr');
-      }
-      final c = _stripFeedbackLabelPrefixes(comment);
-      if (c.isNotEmpty && c.toLowerCase() != cr.toLowerCase()) {
-        merged = _mergeNotesAndComment(merged, 'Comment:\n$c');
-      }
-    } else {
-      merged = _mergeNotesAndComment(merged, comment);
-      if (changes.isNotEmpty) {
-        merged = _mergeNotesAndComment(merged, changes);
-      }
+    final deduped = <String>[];
+    for (final p in parts) {
+      final v = p.trim();
+      final lower = v.toLowerCase();
+      final exists = deduped.any((d) {
+        final dl = d.toLowerCase();
+        return dl == lower || dl.contains(lower) || lower.contains(dl);
+      });
+      if (!exists) deduped.add(v);
     }
 
-    return merged;
+    return deduped.isEmpty ? '-' : deduped.join('\n\n');
   }
 
   List<pw.Widget> _buildKeepHeaderWithFirstParagraphSection({
@@ -1362,22 +1576,36 @@ class ReportExportService {
     final lines = content.split('\n');
     final out = <String>[];
     var skipping = false;
+
+    bool isHeaderLine(String line) {
+      final t = line.trim();
+      if (t.isEmpty) return false;
+      if (t.contains(':')) return false;
+      if (t.startsWith('-')) return false;
+      final upper = t.toUpperCase();
+      if (upper != t) return false;
+      return t.length <= 40;
+    }
+
+    bool isFeedbackHeader(String t) {
+      return t == 'CLIENT FEEDBACK' ||
+          t == 'USER FEEDBACK' ||
+          t == 'FEEDBACK' ||
+          t.startsWith('CLIENT FEEDBACK:') ||
+          t.startsWith('USER FEEDBACK:') ||
+          t.startsWith('FEEDBACK:');
+    }
+
     for (final line in lines) {
       final t = line.trim().toUpperCase();
-      if (!skipping &&
-          (t == 'CLIENT FEEDBACK' ||
-              t == 'USER FEEDBACK' ||
-              t.startsWith('CLIENT FEEDBACK:') ||
-              t.startsWith('USER FEEDBACK:') ||
-              t.startsWith('FEEDBACK:'))) {
+      if (!skipping && isFeedbackHeader(t)) {
         skipping = true;
         continue;
       }
       if (skipping) {
-        if (t.isEmpty) continue;
-        if (t == 'SIGN-OFF NOTES' || t == 'SIGN OFF NOTES' || t == 'SIGNOFF NOTES') {
+        if (isHeaderLine(line) && !isFeedbackHeader(t)) {
           skipping = false;
-          out.add('SIGN-OFF NOTES');
+          out.add(line.trim());
         }
         continue;
       }
@@ -1479,22 +1707,19 @@ class ReportExportService {
     }
 
     final sections = _parseReportSections(trimmed);
-    final ordered = <String>[
-      'PROJECT',
-      'PROJECT SPRINT TOTALS',
-      'SPRINT',
-      'SPRINT SUMMARY',
-      'TEAM MEMBERS',
-      'DELIVERABLES',
-    ];
+    const projectKey = 'PROJECT';
+    const totalsKey = 'PROJECT SPRINT TOTALS';
+    const sprintKey = 'SPRINT';
+    const summaryKey = 'SPRINT SUMMARY';
+    const teamKey = 'TEAM MEMBERS';
+    const deliverablesKey = 'DELIVERABLES';
 
-    bool hasAny = false;
-    for (final k in ordered) {
-      if ((sections[k] ?? const <String>[]).isNotEmpty) {
-        hasAny = true;
-        break;
-      }
-    }
+    bool hasAny = (sections[projectKey] ?? const <String>[]).isNotEmpty ||
+        (sections[totalsKey] ?? const <String>[]).isNotEmpty ||
+        (sections[sprintKey] ?? const <String>[]).isNotEmpty ||
+        (sections[summaryKey] ?? const <String>[]).isNotEmpty ||
+        (sections[teamKey] ?? const <String>[]).isNotEmpty ||
+        (sections[deliverablesKey] ?? const <String>[]).isNotEmpty;
 
     if (!hasAny) {
       return [
@@ -1506,12 +1731,16 @@ class ReportExportService {
       ];
     }
 
-    pw.Widget kvList(String header) {
-      final kv = _parseKeyValues(sections[header]);
-      final lines = sections[header] ?? const <String>[];
+    List<String> linesFor(String key) {
+      return (sections[key] ?? const <String>[]).where((l) => l.trim().isNotEmpty).toList();
+    }
+
+    pw.Widget keyValueBlock(String key) {
+      final kv = _parseKeyValues(linesFor(key));
+      final lines = linesFor(key);
       if (kv.isEmpty) {
-        final text = lines.isEmpty ? '-' : lines.join('\n');
-        return pw.Text(text, style: const pw.TextStyle(fontSize: 10));
+        return pw.Text(lines.isEmpty ? '-' : lines.join('\n'),
+            style: const pw.TextStyle(fontSize: 9));
       }
       return pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -1522,12 +1751,16 @@ class ReportExportService {
               text: pw.TextSpan(
                 children: [
                   pw.TextSpan(
-                    text: '${e.key}: ',
-                    style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                    text: '${e.key.trim()}: ',
+                    style: pw.TextStyle(
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.black,
+                    ),
                   ),
                   pw.TextSpan(
-                    text: e.value.isEmpty ? '-' : e.value,
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                    text: e.value.trim().isEmpty ? '-' : e.value.trim(),
+                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.black),
                   ),
                 ],
               ),
@@ -1537,27 +1770,86 @@ class ReportExportService {
       );
     }
 
-    pw.Widget lineList(String header, {double fontSize = 10}) {
-      final lines = (sections[header] ?? const <String>[]).where((l) => l.trim().isNotEmpty).toList();
+    pw.Widget lineBlock(String key, {double fontSize = 9}) {
+      final lines = linesFor(key);
       return pw.Text(lines.isEmpty ? '-' : lines.join('\n'), style: pw.TextStyle(fontSize: fontSize));
     }
 
+    pw.Widget cell(String title, pw.Widget child) {
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          _subSectionHeader(title),
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: child,
+          ),
+        ],
+      );
+    }
+
+    pw.Widget twoCol(String leftTitle, pw.Widget left, String rightTitle, pw.Widget right) {
+      return pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(child: cell(leftTitle, left)),
+          pw.SizedBox(width: 10),
+          pw.Expanded(child: cell(rightTitle, right)),
+        ],
+      );
+    }
+
     final widgets = <pw.Widget>[];
-    for (final header in ordered) {
-      final lines = sections[header] ?? const <String>[];
-      if (lines.isEmpty) continue;
-      widgets.add(_subSectionHeader(header));
+
+    if (linesFor(projectKey).isNotEmpty || linesFor(totalsKey).isNotEmpty) {
       widgets.add(
-        pw.Padding(
-          padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: (header == 'PROJECT' || header == 'PROJECT SPRINT TOTALS' || header == 'SPRINT' || header == 'SPRINT SUMMARY')
-              ? kvList(header)
-              : (header == 'DELIVERABLES' ? lineList(header, fontSize: 9.5) : lineList(header)),
+        twoCol(
+          'Project Detail:',
+          keyValueBlock(projectKey),
+          'Project Sprint Totals:',
+          keyValueBlock(totalsKey),
         ),
       );
       widgets.add(pw.SizedBox(height: 8));
     }
-    if (widgets.isNotEmpty) widgets.removeLast();
+
+    if (linesFor(sprintKey).isNotEmpty || linesFor(summaryKey).isNotEmpty) {
+      widgets.add(
+        twoCol(
+          'Sprint Detail:',
+          keyValueBlock(sprintKey),
+          'Sprint Summary:',
+          keyValueBlock(summaryKey),
+        ),
+      );
+      widgets.add(pw.SizedBox(height: 8));
+    }
+
+    if (linesFor(teamKey).isNotEmpty) {
+      widgets.add(_subSectionHeader(teamKey));
+      widgets.add(
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: lineBlock(teamKey, fontSize: 9),
+        ),
+      );
+      widgets.add(pw.SizedBox(height: 8));
+    }
+
+    if (linesFor(deliverablesKey).isNotEmpty) {
+      widgets.add(_subSectionHeader(deliverablesKey));
+      widgets.add(
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: lineBlock(deliverablesKey, fontSize: 8.5),
+        ),
+      );
+      widgets.add(pw.SizedBox(height: 8));
+    }
+
+    if (widgets.isNotEmpty && widgets.last is pw.SizedBox) {
+      widgets.removeLast();
+    }
     return widgets;
   }
 
@@ -1643,6 +1935,241 @@ class ReportExportService {
       case ReportStatus.rejected:
         return 'Rejected';
     }
+  }
+
+  String _sanitizeContentForPdf(String input) {
+    var s = input;
+    s = s.replaceAll('\u2192', '->');
+    s = s.replaceAll('\u2190', '<-');
+    s = s.replaceAll('\u2013', '-');
+    s = s.replaceAll('\u2014', '-');
+    s = s.replaceAll('\u2018', '\'');
+    s = s.replaceAll('\u2019', '\'');
+    s = s.replaceAll('\u201C', '"');
+    s = s.replaceAll('\u201D', '"');
+    s = s.replaceAll('\u2022', '-');
+    s = s.replaceAll('\u00A0', ' ');
+    return s;
+  }
+
+  String? _extractSprintIdFromContent(String content) {
+    final sections = _parseReportSections(content);
+    final sprintLines = sections['SPRINT'] ?? sections['SPRINT DETAIL'] ?? sections['SPRINT DETAIL:'] ?? const <String>[];
+    for (final l in sprintLines) {
+      final m = RegExp(r'^ID\s*:\s*(.+)$', caseSensitive: false).firstMatch(l.trim());
+      if (m != null) {
+        final v = (m.group(1) ?? '').trim();
+        if (v.isNotEmpty) return v;
+      }
+    }
+    final lines = content.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      final t = lines[i].trim();
+      if (t.toLowerCase().contains('sprint detail')) {
+        for (var j = i + 1; j < lines.length && j < i + 12; j++) {
+          final m = RegExp(r'^ID\s*:\s*(.+)$', caseSensitive: false)
+              .firstMatch(lines[j].trim());
+          if (m != null) {
+            final v = (m.group(1) ?? '').trim();
+            if (v.isNotEmpty) return v;
+          }
+        }
+      }
+    }
+    for (final raw in content.split('\n')) {
+      final line = raw.trim();
+      final m = RegExp(r'^Sprint\s*ID\s*:\s*(.+)$', caseSensitive: false).firstMatch(line);
+      if (m != null) {
+        final v = (m.group(1) ?? '').trim();
+        if (v.isNotEmpty) return v;
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> _enrichSprintReportWithProjectTotals(
+      Map<String, dynamic> sprintReport) async {
+    final sprint = sprintReport['sprint'] is Map
+        ? Map<String, dynamic>.from(sprintReport['sprint'] as Map)
+        : <String, dynamic>{};
+    final project = sprintReport['project'] is Map
+        ? Map<String, dynamic>.from(sprintReport['project'] as Map)
+        : (sprint['project'] is Map
+            ? Map<String, dynamic>.from(sprint['project'] as Map)
+            : <String, dynamic>{});
+    final projectId = (project['id'] ?? sprint['project_id'] ?? sprint['projectId'])?.toString();
+    final projectKey = (project['key'] ?? sprint['project_key'] ?? sprint['projectKey'])?.toString();
+    final key = '${projectId ?? ''}|${projectKey ?? ''}'.trim();
+    if (key.isNotEmpty && _cachedProjectSprintTotalsKey == key && _cachedProjectSprintTotalsFuture != null) {
+      final cached = await _cachedProjectSprintTotalsFuture!;
+      return <String, dynamic>{
+        ...sprintReport,
+        'projectSprintTotals': cached,
+      };
+    }
+    _cachedProjectSprintTotalsKey = key;
+    _cachedProjectSprintTotalsFuture = _fetchProjectSprintTotals(projectId: projectId, projectKey: projectKey);
+    final totals = await _cachedProjectSprintTotalsFuture!;
+    return <String, dynamic>{
+      ...sprintReport,
+      'projectSprintTotals': totals,
+    };
+  }
+
+  Future<Map<String, String>> _fetchProjectSprintTotals({String? projectId, String? projectKey}) async {
+    final id = (projectId ?? '').trim();
+    final key = (projectKey ?? '').trim();
+    if (id.isEmpty && key.isEmpty) {
+      return <String, String>{};
+    }
+    try {
+      final query = <String, String>{'limit': '1000'};
+      if (id.isNotEmpty) query['project_id'] = id;
+      if (key.isNotEmpty) query['project_key'] = key;
+      final resp = await _apiClient.get('/sprints', queryParams: query);
+      if (!resp.isSuccess || resp.data == null) return <String, String>{};
+      final raw = resp.data;
+      List<dynamic> items = const [];
+      if (raw is List) {
+        items = raw;
+      } else if (raw is Map) {
+        final body = raw['data'] ?? raw['sprints'] ?? raw['items'] ?? raw;
+        if (body is List) items = body;
+        if (body is Map && body['data'] is List) items = body['data'] as List;
+      }
+      final sprints = items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      if (sprints.isEmpty) return <String, String>{};
+      final total = sprints.length;
+      final completed = sprints.where((s) {
+        final st = (s['status'] ?? '').toString().toLowerCase();
+        return st == 'completed' || st == 'done';
+      }).length;
+      final successRate = total == 0 ? 0 : ((completed / total) * 100).round();
+      return <String, String>{
+        'Total Sprints': total.toString(),
+        'Completed Sprints': completed.toString(),
+        'Sprint Success Rate': '$successRate%',
+      };
+    } catch (_) {
+      return <String, String>{};
+    }
+  }
+
+  Future<String> _buildCanonicalSprintSignOffContentIfPossible(String originalContent) async {
+    final normalized = _sanitizeContentForPdf(originalContent);
+    final sprintId = _extractSprintIdFromContent(normalized);
+    if (sprintId == null || sprintId.trim().isEmpty) return normalized;
+    final sprintReport = await _fetchSprintReport(sprintId.trim());
+    if (sprintReport == null) return normalized;
+    final enriched = await _enrichSprintReportWithProjectTotals(sprintReport);
+    final sprint = enriched['sprint'] is Map ? Map<String, dynamic>.from(enriched['sprint'] as Map) : <String, dynamic>{};
+    final summary = enriched['summary'] is Map ? Map<String, dynamic>.from(enriched['summary'] as Map) : <String, dynamic>{};
+    final project = enriched['project'] is Map
+        ? Map<String, dynamic>.from(enriched['project'] as Map)
+        : (sprint['project'] is Map ? Map<String, dynamic>.from(sprint['project'] as Map) : <String, dynamic>{});
+    final totals = enriched['projectSprintTotals'] is Map
+        ? Map<String, dynamic>.from(enriched['projectSprintTotals'] as Map)
+        : <String, dynamic>{};
+    final team = enriched['team'] is Map ? Map<String, dynamic>.from(enriched['team'] as Map) : <String, dynamic>{};
+    final deliverables = enriched['deliverables'] is List
+        ? (enriched['deliverables'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : <Map<String, dynamic>>[];
+
+    String safe(dynamic v) => _sanitizeContentForPdf(v?.toString() ?? '').trim();
+    String pick(List<String> values) {
+      for (final v in values) {
+        final t = v.trim();
+        if (t.isNotEmpty && t != '-') return t;
+      }
+      return '-';
+    }
+
+    final signOffNotes = _buildSignOffNotesText(
+      reportContent: normalized,
+      clientComment: null,
+      changeRequestDetails: null,
+      status: ReportStatus.draft,
+    );
+
+    final b = StringBuffer();
+    b.writeln('PROJECT');
+    b.writeln('Name: ${pick([safe(project['name']), safe(sprint['project_name'])])}');
+    b.writeln('Key: ${pick([safe(project['key']), safe(sprint['project_key'])])}');
+    b.writeln('ID: ${pick([safe(project['id']), safe(sprint['project_id'])])}');
+    b.writeln();
+    b.writeln('PROJECT SPRINT TOTALS');
+    b.writeln('Total Sprints: ${pick([safe(totals['Total Sprints']), safe(totals['total']), safe(totals['totalSprints']), safe(totals['total_sprints'])])}');
+    b.writeln('Completed Sprints: ${pick([safe(totals['Completed Sprints']), safe(totals['completed']), safe(totals['completedSprints']), safe(totals['completed_sprints'])])}');
+    b.writeln('Sprint Success Rate: ${pick([safe(totals['Sprint Success Rate']), safe(totals['successRate']), safe(totals['sprintSuccessRate']), safe(totals['success_rate'])])}');
+    b.writeln();
+    b.writeln('SPRINT');
+    b.writeln('Name: ${pick([safe(sprint['name'])])}');
+    b.writeln('ID: ${pick([safe(sprint['id'])])}');
+    b.writeln('Status: ${pick([safe(sprint['status'])])}');
+    b.writeln('Start: ${pick([safe(sprint['start_date']), safe(sprint['startDate'])])}');
+    b.writeln('End: ${pick([safe(sprint['end_date']), safe(sprint['endDate'])])}');
+    b.writeln();
+    b.writeln('SPRINT SUMMARY');
+    b.writeln('Total Deliverables: ${pick([safe(summary['total_deliverables']), safe(summary['totalDeliverables'])])}');
+    b.writeln('Completed: ${pick([safe(summary['completed'])])}');
+    b.writeln('In Progress: ${pick([safe(summary['in_progress']), safe(summary['inProgress'])])}');
+    b.writeln('Not Started: ${pick([safe(summary['not_started']), safe(summary['notStarted'])])}');
+    b.writeln('Overdue: ${pick([safe(summary['overdue'])])}');
+    b.writeln('Blocked: ${pick([safe(summary['blocked'])])}');
+    b.writeln('Sprint Progress: ${pick([safe(summary['sprint_progress']), safe(summary['sprintProgress']), safe(summary['progress'])])}');
+    b.writeln('Completion Rate: ${pick([safe(summary['completion_rate']), safe(summary['completionRate'])])}');
+    b.writeln('Health: ${pick([safe(summary['health'])])}');
+    b.writeln();
+    b.writeln('TEAM MEMBERS');
+    final members = team['members'];
+    if (members is List && members.isNotEmpty) {
+      for (final m in members.whereType<Map>()) {
+        final mm = Map<String, dynamic>.from(m);
+        final name = safe(mm['name'] ?? mm['full_name'] ?? mm['fullName']);
+        final email = safe(mm['email']);
+        final role = safe(mm['role'] ?? mm['user_role'] ?? mm['userRole']);
+        final parts = <String>[];
+        if (name.isNotEmpty && name != '-') parts.add(name);
+        if (email.isNotEmpty && email != '-') parts.add(email);
+        if (role.isNotEmpty && role != '-') parts.add(role);
+        b.writeln(parts.isEmpty ? '-' : parts.join(' | '));
+      }
+    } else {
+      b.writeln('-');
+    }
+    b.writeln();
+    b.writeln('DELIVERABLES');
+    if (deliverables.isNotEmpty) {
+      for (final d in deliverables) {
+        final name = safe(d['name'] ?? d['title'] ?? d['deliverable_name'] ?? d['deliverableName']);
+        final owner = safe(d['owner'] ?? d['owner_name'] ?? d['ownerName'] ?? d['assignee'] ?? d['assignee_name'] ?? d['assigneeName']);
+        final status = safe(d['status'] ?? d['state']);
+        final progress = safe(d['progress'] ?? d['percent_complete'] ?? d['percentComplete']);
+        final due = safe(d['due_date'] ?? d['dueDate'] ?? d['due']);
+        final completedAt = safe(d['completed_at'] ?? d['completedAt'] ?? d['completed']);
+        final category = safe(d['category'] ?? d['type']);
+        final overdue = safe(d['overdue']);
+        final parts = <String>[];
+        parts.add(name.isEmpty || name == '-' ? 'Deliverable' : name);
+        if (owner.isNotEmpty && owner != '-') parts.add('Owner: $owner');
+        if (status.isNotEmpty && status != '-') parts.add('Status: $status');
+        if (progress.isNotEmpty && progress != '-') parts.add('Progress: $progress');
+        if (due.isNotEmpty && due != '-') parts.add('Due: $due');
+        if (completedAt.isNotEmpty && completedAt != '-') parts.add('Completed: $completedAt');
+        if (category.isNotEmpty && category != '-') parts.add('Category: $category');
+        if (overdue.isNotEmpty && overdue != '-') parts.add('Overdue: $overdue');
+        b.writeln('- ${parts.join(' | ')}');
+      }
+    } else {
+      b.writeln('-');
+    }
+    b.writeln();
+    b.writeln('SIGN-OFF NOTES');
+    b.writeln(signOffNotes.trim().isEmpty ? '-' : signOffNotes.trim());
+    return b.toString().trim();
   }
   
   /// Generate SHA-256 hash of file bytes
@@ -1863,6 +2390,7 @@ class ReportExportService {
     required DateTime signedAt,
     required String? signatureData,
     required String signatureType,
+    bool includeHeader = true,
   }) {
     final name = preparedByName.trim().isEmpty ? '-' : preparedByName.trim();
     final role = (preparedByRole ?? '').trim();
@@ -1871,7 +2399,7 @@ class ReportExportService {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        _subSectionHeader('PREPARED BY'),
+        if (includeHeader) _subSectionHeader('PREPARED BY'),
         pw.Container(
           padding: const pw.EdgeInsets.all(10),
           decoration: pw.BoxDecoration(
@@ -1954,6 +2482,7 @@ class ReportExportService {
     required DateTime? signedAt,
     required String? signatureData,
     required String signatureType,
+    bool includeHeader = true,
   }) {
     final name = reviewerName.trim().isEmpty ? '-' : reviewerName.trim();
     final role = (reviewerRole ?? '').trim();
@@ -1963,7 +2492,7 @@ class ReportExportService {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        _subSectionHeader(label),
+        if (includeHeader) _subSectionHeader(label),
         pw.Container(
           padding: const pw.EdgeInsets.all(10),
           decoration: pw.BoxDecoration(

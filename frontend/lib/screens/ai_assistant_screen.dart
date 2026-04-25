@@ -20,6 +20,9 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   String _lastConfirmedReportTitle = '';
+  String? _lastGeneratedReportContent;
+  String? _lastGeneratedReportTitle;
+  bool _isExportingPdf = false;
   final _messages = <Map<String, String>>[
     {
       'role': 'system',
@@ -241,6 +244,89 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     return auth.isSystemAdmin || auth.isDeliveryLead;
   }
 
+  bool _looksLikeSignOffReportContent(String content) {
+    final t = content.trim();
+    if (t.isEmpty) return false;
+    final upper = t.toUpperCase();
+    if (upper.contains('SPRINT SIGN-OFF REPORT') ||
+        upper.contains('SPRINT SIGN OFF REPORT')) {
+      return true;
+    }
+    if (upper.contains('SPRINT SUMMARY') &&
+        upper.contains('TEAM MEMBERS') &&
+        upper.contains('DELIVERABLES')) {
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _exportLastReportAsPdf() async {
+    final content = (_lastGeneratedReportContent ?? '').trim();
+    if (content.isEmpty) return;
+    if (!_canGenerateAiSignOffReports()) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add({
+          'role': 'assistant',
+          'content':
+              'Only Delivery Leads and System Admins can generate and export sign-off reports via FlowPilot.',
+        });
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isExportingPdf = true);
+    try {
+      final sig = await _ensureSignatureForAiExport();
+      final extracted = _extractTitleFromPdfContent(content);
+      final sprintName = _extractSprintNameFromPdfContent(content);
+      final candidates = <String>[
+        sprintName,
+        extracted,
+        _lastGeneratedReportTitle ?? '',
+        _lastConfirmedReportTitle,
+      ];
+      var useTitle = 'Report';
+      for (final c in candidates) {
+        final v = c.trim();
+        if (v.isEmpty) continue;
+        if (_looksLikeFeedbackOrNotes(v)) continue;
+        useTitle = v;
+        break;
+      }
+      await ReportExportService().exportTextAsPDF(
+        title: useTitle,
+        content: content,
+        useSignOffTemplate: true,
+        subtitle: 'SPRINT SIGN-OFF REPORT',
+        preparedBySignatureData: (sig['signatureData'] ?? '').trim().isEmpty
+            ? null
+            : sig['signatureData'],
+        preparedBySignatureType: (sig['signatureType'] ?? '').trim().isEmpty
+            ? null
+            : sig['signatureType'],
+      );
+      if (!mounted) return;
+      setState(() {
+        _messages.add({
+          'role': 'assistant',
+          'content': 'Done. Your PDF export is ready.',
+        });
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add({
+          'role': 'assistant',
+          'content': 'PDF export failed: $e',
+        });
+      });
+    } finally {
+      if (mounted) setState(() => _isExportingPdf = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -350,7 +436,24 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                   preparedBySignatureData: (sig['signatureData'] ?? '').trim().isEmpty ? null : sig['signatureData'],
                   preparedBySignatureType: (sig['signatureType'] ?? '').trim().isEmpty ? null : sig['signatureType'],
                 );
-              } catch (_) {}
+                if (mounted) {
+                  setState(() {
+                    _messages.add({
+                      'role': 'assistant',
+                      'content': 'Done. Your PDF export is ready.',
+                    });
+                  });
+                }
+              } catch (e) {
+                if (mounted) {
+                  setState(() {
+                    _messages.add({
+                      'role': 'assistant',
+                      'content': 'PDF export failed: $e',
+                    });
+                  });
+                }
+              }
             }
           }
         }
@@ -370,6 +473,15 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
             'role': 'assistant',
             'content': safeContent,
           });
+          if (_looksLikeSignOffReportContent(safeContent)) {
+            _lastGeneratedReportContent = safeContent;
+            _lastGeneratedReportTitle =
+                _extractSprintNameFromPdfContent(safeContent).trim().isNotEmpty
+                    ? _extractSprintNameFromPdfContent(safeContent).trim()
+                    : _extractTitleFromPdfContent(safeContent).trim().isNotEmpty
+                        ? _extractTitleFromPdfContent(safeContent).trim()
+                        : null;
+          }
           _suggestions = suggestions;
         });
       } else {
@@ -491,6 +603,21 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                 ),
                 const SizedBox(height: 8),
               ],
+            ),
+          if ((_lastGeneratedReportContent ?? '').trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isExportingPdf ? null : _exportLastReportAsPdf,
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      label: Text(_isExportingPdf ? 'Exporting…' : 'Export PDF'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           SafeArea(
             top: false,

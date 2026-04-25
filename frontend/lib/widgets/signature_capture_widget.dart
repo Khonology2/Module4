@@ -372,8 +372,10 @@ class _SignatureCaptureWidgetState extends SignatureCaptureWidgetState {
 
   Future<String?> _captureSignature() async {
     try {
-      final RenderRepaintBoundary boundary = _signatureKey.currentContext!
-          .findRenderObject() as RenderRepaintBoundary;
+      final boundaryContext = _signatureKey.currentContext;
+      if (boundaryContext == null) return null;
+      final RenderRepaintBoundary boundary =
+          boundaryContext.findRenderObject() as RenderRepaintBoundary;
       final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
       final ByteData? byteData =
           await image.toByteData(format: ui.ImageByteFormat.png);
@@ -620,8 +622,8 @@ class _SignatureCaptureWidgetState extends SignatureCaptureWidgetState {
             child: GestureDetector(
               onPanStart: (DragStartDetails details) {
                 final RenderBox? renderBox =
-                    context.findRenderObject() as RenderBox?;
-                if (renderBox != null) {
+                    _signatureKey.currentContext?.findRenderObject() as RenderBox?;
+                if (renderBox != null && renderBox.hasSize && renderBox.attached) {
                   final Offset localPosition =
                       renderBox.globalToLocal(details.globalPosition);
                   _addPoint(localPosition);
@@ -629,8 +631,8 @@ class _SignatureCaptureWidgetState extends SignatureCaptureWidgetState {
               },
               onPanUpdate: (DragUpdateDetails details) {
                 final RenderBox? renderBox =
-                    context.findRenderObject() as RenderBox?;
-                if (renderBox != null) {
+                    _signatureKey.currentContext?.findRenderObject() as RenderBox?;
+                if (renderBox != null && renderBox.hasSize && renderBox.attached) {
                   final Offset localPosition =
                       renderBox.globalToLocal(details.globalPosition);
 
