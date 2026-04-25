@@ -15,6 +15,10 @@ const baseCandidates = [
 const envSpecificCandidates = [
 	path.resolve(__dirname, '..', '..', `.env.${environment}`),     // node-backend/.env.development, .env.sit, etc.
 ];
+const localOverrideCandidates = [
+	path.resolve(__dirname, '..', '..', '.env.local'),
+	path.resolve(__dirname, '..', '..', `.env.${environment}.local`),
+];
 
 const loadedPaths = [];
 for (const p of baseCandidates) {
@@ -36,10 +40,29 @@ for (const p of envSpecificCandidates) {
 		break;
 	}
 }
+for (const p of localOverrideCandidates) {
+	if (fs.existsSync(p)) {
+		dotenv.config({ path: p, override: true });
+		loadedPaths.push(p);
+	}
+}
 
 if (loadedPaths.length === 0) {
 	dotenv.config({ override: false });
 }
+
+try {
+	const host = (process.env.DB_HOST || process.env.PGHOST || '').trim();
+	const port = (process.env.DB_PORT || process.env.PGPORT || '5432').trim();
+	const name = (process.env.DB_NAME || process.env.PGDATABASE || '').trim();
+	const user = (process.env.DB_USER || process.env.PGUSER || '').trim();
+	const password = (process.env.DB_PASSWORD || process.env.PGPASSWORD || '').trim();
+
+	// Keep local DB connectivity stable across branch switches/pulls.
+	if (host && name && user && password) {
+		process.env.DATABASE_URL = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${name}`;
+	}
+} catch (_) {}
 
 try {
 	if (!process.env.GEMINI_API_KEY) {
