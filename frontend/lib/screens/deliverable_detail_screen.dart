@@ -842,20 +842,8 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
         const SizedBox(height: 16),
         DropTarget(
           onDragDone: (detail) => _handleDroppedFiles(detail.files),
-          onDragEntered: (detail) {
-            if (_isDragging) return;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              setState(() => _isDragging = true);
-            });
-          },
-          onDragExited: (detail) {
-            if (!_isDragging) return;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              setState(() => _isDragging = false);
-            });
-          },
+          onDragEntered: (detail) => setState(() => _isDragging = true),
+          onDragExited: (detail) => setState(() => _isDragging = false),
           child: Container(
             constraints: const BoxConstraints(minHeight: 100),
             decoration: BoxDecoration(

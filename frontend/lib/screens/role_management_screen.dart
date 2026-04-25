@@ -76,13 +76,10 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Role Management'),
-        backgroundColor: Colors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -101,7 +98,6 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'role_management_add_user_fab',
         onPressed: () => _showAddUserDialog(),
         icon: const Icon(Icons.person_add),
         label: const Text('Add User'),

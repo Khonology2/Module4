@@ -1,4 +1,4 @@
-// ignore_for_file: control_flow_in_finally, use_build_context_synchronously, prefer_const_constructors
+// ignore_for_file: use_build_context_synchronously, prefer_const_constructors
 
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -50,42 +50,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _loadProfileData() async {
     try {
       final profile = await ProfileService.getUserProfile();
-      if (!mounted) return;
-
-      _firstNameController.text = profile['first_name'] ?? '';
-      _lastNameController.text = profile['last_name'] ?? '';
-      _emailController.text = profile['email'] ?? '';
-      _phoneController.text = profile['phone_number'] ?? '';
-      _titleController.text = profile['job_title'] ?? '';
-      _departmentController.text = profile['company'] ?? '';
-      _bioController.text = profile['bio'] ?? '';
-
-      final rawUrl = (profile['profile_picture'] ??
-              profile['profileImageUrl'] ??
-              profile['profile_image_url'])
-          ?.toString();
-      final uid = (profile['user_id'] ?? profile['userId'])?.toString();
-
-      if (rawUrl != null && rawUrl.isNotEmpty && uid != null && uid.isNotEmpty) {
-        final base = Uri.parse(Environment.apiBaseUrl);
-        final apiPic =
-            '${base.scheme}://${base.host}:${base.port.toString()}/api/v1/profile/$uid/picture';
-        if (mounted) {
-          setState(() {
-            _profileImageUrl = apiPic;
-          });
+      setState(() async {
+        _firstNameController.text = profile['first_name'] ?? '';
+        _lastNameController.text = profile['last_name'] ?? '';
+        _emailController.text = profile['email'] ?? '';
+        _phoneController.text = profile['phone_number'] ?? '';
+        _titleController.text = profile['job_title'] ?? '';
+        _departmentController.text = profile['company'] ?? '';
+        _bioController.text = profile['bio'] ?? '';
+        final rawUrl = (profile['profile_picture'] ??
+                profile['profileImageUrl'] ??
+                profile['profile_image_url'])
+            ?.toString();
+        final uid = (profile['user_id'] ?? profile['userId'])?.toString();
+        if (rawUrl != null &&
+            rawUrl.isNotEmpty &&
+            uid != null &&
+            uid.isNotEmpty) {
+          final base = Uri.parse(Environment.apiBaseUrl);
+          final apiPic =
+              '${base.scheme}://${base.host}:${base.port.toString()}/api/v1/profile/$uid/picture';
+          _profileImageUrl = apiPic;
+          await _fetchProfileImageBytes(uid);
         }
-        await _fetchProfileImageBytes(uid);
-      } else {
-        setState(() {});
-      }
+      });
     } catch (e) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to load profile: $e')),
       );
     } finally {
-      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -103,7 +96,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         if (token != null) 'Authorization': 'Bearer $token',
       };
       final resp = await http.get(Uri.parse(url), headers: headers);
-      if (!mounted) return;
       if (resp.statusCode == 200) {
         setState(() {
           _profileImageBytes = resp.bodyBytes;

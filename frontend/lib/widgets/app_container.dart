@@ -40,7 +40,7 @@ class AppContainer extends StatelessWidget {
               child: Opacity(
                 opacity: 0.3,
                 child: Image.asset(
-                  'assets/images/khono_bg.png',
+                  'assets/Icons/khono_bg.png',
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) {
                     // Fallback gradient pattern if image fails to load

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
+import '../theme/flownet_theme.dart';
 
 class _RouteHistory {
+  static String? lastAllowedPath;
+
   static String _currentPath(BuildContext context) {
     try {
       final router = GoRouter.maybeOf(context);
@@ -13,22 +16,22 @@ class _RouteHistory {
   }
 
   static void markAllowed(BuildContext context) {
-    _currentPath(context);
+    final path = _currentPath(context);
+    if (path.isNotEmpty) {
+      lastAllowedPath = path;
+    }
   }
-}
 
-class _RedirectToDashboard extends StatelessWidget {
-  const _RedirectToDashboard();
-
-  @override
-  Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final currentPath = _RouteHistory._currentPath(context);
-      if (currentPath != '/dashboard') {
-        GoRouter.of(context).go('/dashboard');
-      }
-    });
-    return const SizedBox.shrink();
+  static void goBack(BuildContext context) {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+      return;
+    }
+    final fallback = (lastAllowedPath != null && lastAllowedPath!.isNotEmpty)
+        ? lastAllowedPath!
+        : '/dashboard';
+    GoRouter.of(context).go(fallback);
   }
 }
 
@@ -49,7 +52,7 @@ class RoleGuard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authService = AuthService();
-
+    
     if (authService.hasPermission(requiredPermission)) {
       _RouteHistory.markAllowed(context);
       return child;
@@ -59,8 +62,52 @@ class RoleGuard extends StatelessWidget {
       return fallback!;
     }
 
-    // Keep users on dashboard instead of rendering access-denied screens.
-    return const _RedirectToDashboard();
+    if (showUnauthorizedMessage) {
+      return _buildUnauthorizedWidget(context);
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildUnauthorizedWidget(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.lock_outline,
+            size: 64,
+            color: FlownetColors.coolGray,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Access Denied',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: FlownetColors.pureWhite,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You don\'t have permission to access this feature.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: FlownetColors.coolGray,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => _RouteHistory.goBack(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: FlownetColors.electricBlue,
+              foregroundColor: FlownetColors.pureWhite,
+            ),
+            child: const Text('Go Back'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -77,13 +124,50 @@ class RouteGuard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authService = AuthService();
-
+    
     if (authService.canAccessRoute(route)) {
       _RouteHistory.markAllowed(context);
       return child;
     }
 
-    return const _RedirectToDashboard();
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.block,
+            size: 64,
+            color: FlownetColors.crimsonRed,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Route Access Denied',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: FlownetColors.pureWhite,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Your role does not have access to this page.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: FlownetColors.coolGray,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => _RouteHistory.goBack(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: FlownetColors.electricBlue,
+              foregroundColor: FlownetColors.pureWhite,
+            ),
+            child: const Text('Go Back'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -102,7 +186,7 @@ class PermissionBuilder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authService = AuthService();
-
+    
     if (authService.hasPermission(permission)) {
       return builder(context);
     }
@@ -127,7 +211,7 @@ class RoleBuilder extends StatelessWidget {
   Widget build(BuildContext context) {
     final authService = AuthService();
     final currentRole = authService.currentUserRole?.name;
-
+    
     if (currentRole != null && allowedRoles.contains(currentRole)) {
       return builder(context);
     }

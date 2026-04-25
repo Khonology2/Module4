@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/sprint_database_service.dart';
-import '../utils/date_utils.dart' as app_date_utils;
 
 class ProjectsOverviewScreen extends StatefulWidget {
   const ProjectsOverviewScreen({super.key});
@@ -16,11 +15,6 @@ class _ProjectsOverviewScreenState extends State<ProjectsOverviewScreen> {
   bool _isLoading = false;
   String _searchQuery = '';
   String _selectedFilter = 'all'; // 'all', 'active', 'completed'
-
-  String _formatProjectDate(String raw) {
-    if (raw.trim().isEmpty) return '';
-    return app_date_utils.DateUtils.formatTimestamp(raw);
-  }
 
   @override
   void initState() {
@@ -299,8 +293,8 @@ class _ProjectsOverviewScreenState extends State<ProjectsOverviewScreen> {
     final name = project['name']?.toString() ?? 'Untitled Project';
     final key = project['key']?.toString() ?? '';
     final description = project['description']?.toString() ?? '';
-    final startDate = _formatProjectDate(project['start_date']?.toString() ?? '');
-    final endDate = _formatProjectDate(project['end_date']?.toString() ?? '');
+    final startDate = project['start_date']?.toString() ?? '';
+    final endDate = project['end_date']?.toString() ?? '';
     final status = project['status']?.toString() ?? 'active';
 
     return Container(

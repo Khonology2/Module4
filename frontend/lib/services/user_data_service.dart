@@ -59,8 +59,6 @@ class UserDataService {
   // Get user by ID
   Future<User?> getUserById(String userId) async {
     try {
-      if (userId.trim().isEmpty) return null;
-
       // Check cache first
       final cachedUser = _cachedUsers.firstWhere(
           (user) => user.id == userId,
@@ -96,26 +94,9 @@ class UserDataService {
           userData = response.data;
         }
         
-        final parsedUser = _parseUserFromApi(userData);
-        if (parsedUser.id.isNotEmpty) {
-          if (!_cachedUsers.any((user) => user.id == parsedUser.id)) {
-            _cachedUsers.add(parsedUser);
-          }
-          return parsedUser;
-        }
+        return _parseUserFromApi(userData);
       }
-
-      // Fallback: some backends return richer data from list endpoints than
-      // the single-user endpoint. Refresh the full user list and search there.
-      try {
-        final users = await getUsers(forceRefresh: true, limit: 1000);
-        for (final user in users) {
-          if (user.id == userId) {
-            return user;
-          }
-        }
-      } catch (_) {}
-
+      
       return null;
     } catch (e) {
       debugPrint('Error fetching user by ID: $e');
@@ -463,7 +444,7 @@ class UserDataService {
         return User(
           id: '',
           email: '',
-          name: '',
+          name: 'Unknown User',
           role: UserRole.teamMember,
           createdAt: DateTime.now(),
           isActive: false,

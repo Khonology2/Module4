@@ -30,55 +30,6 @@ class AuditLogEntry {
   });
 
   factory AuditLogEntry.fromJson(Map<String, dynamic> json) {
-    String? pickString(dynamic v) {
-      if (v == null) return null;
-      final s = v.toString().trim();
-      return s.isEmpty ? null : s;
-    }
-
-    Map<String, dynamic>? pickMap(dynamic v) {
-      if (v == null) return null;
-      if (v is Map<String, dynamic>) return v;
-      if (v is Map) return Map<String, dynamic>.from(v);
-      if (v is String) {
-        try {
-          final decoded = jsonDecode(v);
-          if (decoded is Map) return Map<String, dynamic>.from(decoded);
-        } catch (_) {}
-      }
-      return null;
-    }
-
-    DateTime parseDate(dynamic v) {
-      if (v == null) return DateTime.now();
-      if (v is DateTime) return v;
-      final s = v.toString();
-      try {
-        return DateTime.parse(s);
-      } catch (_) {
-        return DateTime.now();
-      }
-    }
-
-    final userMap = pickMap(json['user']) ?? pickMap(json['actor']) ?? pickMap(json['performed_by']);
-    final actorEmail = pickString(json['user_email']) ??
-        pickString(json['userEmail']) ??
-        pickString(json['actor_email']) ??
-        pickString(json['actorEmail']) ??
-        pickString(userMap?['email']);
-    final actorRole = pickString(json['user_role']) ??
-        pickString(json['userRole']) ??
-        pickString(json['actor_role']) ??
-        pickString(json['actorRole']) ??
-        pickString(userMap?['role']);
-    final actorId = pickString(json['user_id']) ??
-        pickString(json['userId']) ??
-        pickString(json['actor_id']) ??
-        pickString(json['actorId']) ??
-        pickString(userMap?['id']) ??
-        pickString(userMap?['user_id']) ??
-        pickString(userMap?['userId']);
-
     Map<String, dynamic>? parseMap(dynamic value) {
       if (value == null) return null;
       if (value is Map<String, dynamic>) return value;
@@ -110,9 +61,9 @@ class AuditLogEntry {
 
     return AuditLogEntry(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
-      userId: actorId,
-      userEmail: actorEmail,
-      userRole: actorRole,
+      userId: json['user_id']?.toString() ?? json['userId']?.toString(),
+      userEmail: json['user_email']?.toString() ?? json['userEmail']?.toString(),
+      userRole: json['user_role']?.toString() ?? json['userRole']?.toString(),
       action: json['action']?.toString() ?? 'unknown',
       actionCategory: json['action_category']?.toString() ?? json['actionCategory']?.toString(),
       entityType: json['entity_type']?.toString() ?? json['entityType']?.toString(),
@@ -120,7 +71,9 @@ class AuditLogEntry {
       oldValues: parseMap(json['old_values'] ?? json['oldValues']),
       newValues: parseMap(json['new_values'] ?? json['newValues']),
       changedFields: parseList(json['changed_fields'] ?? json['changedFields']),
-      createdAt: parseDate(json['created_at'] ?? json['createdAt'] ?? json['timestamp']),
+      createdAt: json['created_at'] != null 
+          ? DateTime.parse(json['created_at'].toString()) 
+          : DateTime.now(),
     );
   }
 }

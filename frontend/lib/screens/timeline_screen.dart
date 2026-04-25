@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
-import '../utils/date_utils.dart' as app_date_utils;
+import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_card.dart';
@@ -57,42 +57,41 @@ class _TimelineScreenState extends State<TimelineScreen> {
   Future<void> _loadEvents() async {
     // First load local events
     final localEvents = await _timelineEventService.loadEvents();
-
+    
     // Then try to sync with backend
     await _syncWithBackend(localEvents);
   }
 
   Future<void> _syncWithBackend(List<TimelineEvent> localEvents) async {
     setState(() => _isSyncing = true);
-
+    
     try {
       // Get events from backend
       final backendEvents = await _timelineSyncService.syncTimelineEvents();
-
+      
       // Merge local and backend events (backend takes precedence)
       final allEvents = <TimelineEvent>[];
       final seenIds = <String>{};
-
+      
       // Add backend events first
       for (final event in backendEvents) {
         allEvents.add(event);
         seenIds.add(event.id);
       }
-
+      
       // Add local events that don't exist in backend
       for (final event in localEvents) {
         if (!seenIds.contains(event.id)) {
           allEvents.add(event);
         }
       }
-
+      
       // Sort by start time
-      allEvents.sort((a, b) =>
-          _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
-
+      allEvents.sort((a, b) => _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
+      
       // Save merged events to local storage
       await _timelineEventService.saveEvents(allEvents);
-
+      
       if (!mounted) return;
       debugPrint('TimelineScreen: Total events loaded: ${allEvents.length}');
       setState(() {
@@ -101,6 +100,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ..addAll(allEvents);
         _isSyncing = false;
       });
+      
     } catch (e) {
       debugPrint('Error syncing with backend: $e');
       // Fallback to local events only
@@ -126,8 +126,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       // For new events, use startTime and endTime
       if (event.startTime != null) {
         eventStartDate = event.startTime;
-        eventEndDate =
-            event.endTime ?? event.startTime; // Use start time if no end time
+        eventEndDate = event.endTime ?? event.startTime; // Use start time if no end time
       }
       // For legacy events, use date field
       else if (event.date != null) {
@@ -141,16 +140,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
       }
 
       if (eventStartDate == null) return false;
-
+      
       // Check if the day falls within the event's date range (inclusive)
       final dayStart = DateTime(day.year, day.month, day.day);
-      final dayEnd = dayStart
-          .add(const Duration(days: 1))
-          .subtract(const Duration(milliseconds: 1));
-
+      final dayEnd = dayStart.add(const Duration(days: 1)).subtract(const Duration(milliseconds: 1));
+      
       return dayStart.isBefore(eventEndDate!) && dayEnd.isAfter(eventStartDate);
     }).toList();
-
+    
     return dayEvents;
   }
 
@@ -252,8 +249,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
       if (start.isBefore(startOfDay) || !start.isBefore(endOfDay)) return false;
       return !start.isBefore(now) || _isAllDayEvent(e);
     }).toList();
-    tasks.sort((a, b) =>
-        _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
+    tasks.sort((a, b) => _getEventStartDateTime(a).compareTo(_getEventStartDateTime(b)));
     return tasks;
   }
 
@@ -414,42 +410,60 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - 48,
-                maxWidth: 1400,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildViewSwitcher(),
-                  const SizedBox(height: 24),
-                  _buildTaskReminders(),
-                  const SizedBox(height: 24),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOut,
-                    switchOutCurve: Curves.easeIn,
-                    child: KeyedSubtree(
-                      key: ValueKey(_activeView),
-                      child: _buildCalendarContent(),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _buildMyDeliverables(),
-                ],
-              ),
-            ),
-          );
-        },
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            FlownetColors.charcoalBlack,
+            FlownetColors.charcoalBlack.withValues(alpha: 0.95),
+          ],
+        ),
       ),
-      floatingActionButton: _buildFAB(),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 48,
+                  maxWidth: 1400, // Desktop-first max width
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // View Switcher
+                    _buildViewSwitcher(),
+                    const SizedBox(height: 24),
+
+                    _buildTaskReminders(),
+                    const SizedBox(height: 24),
+
+                    // Calendar/Timeline Content with subtle view transition
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOut,
+                      switchOutCurve: Curves.easeIn,
+                      child: KeyedSubtree(
+                        key: ValueKey(_activeView),
+                        child: _buildCalendarContent(),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // My Deliverables
+                    _buildMyDeliverables(),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+        floatingActionButton: _buildFAB(),
+      ),
     );
   }
 
@@ -462,8 +476,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            Expanded(
-                child: _buildViewButton('Month', Icons.calendar_view_month)),
+            Expanded(child: _buildViewButton('Month', Icons.calendar_view_month)),
             const SizedBox(width: 8),
             Expanded(child: _buildViewButton('Week', Icons.calendar_view_week)),
             const SizedBox(width: 8),
@@ -485,8 +498,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.task_alt,
-                  color: FlownetColors.crimsonRed, size: 20),
+              const Icon(Icons.task_alt, color: FlownetColors.crimsonRed, size: 20),
               const SizedBox(width: 8),
               Text(
                 "Today's Task Reminders",
@@ -515,21 +527,17 @@ class _TimelineScreenState extends State<TimelineScreen> {
           else
             ...tasks.take(6).map((task) {
               final start = _getEventStartDateTime(task);
-              final timeLabel = _isAllDayEvent(task)
-                  ? 'All day'
-                  : app_date_utils.DateUtils.formatTime(start);
+              final timeLabel = _isAllDayEvent(task) ? 'All day' : DateFormat('HH:mm').format(start);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: GlassCard(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   borderRadius: 12.0,
                   child: Row(
                     children: [
                       Checkbox(
                         value: task.isCompleted,
-                        onChanged: (v) =>
-                            _toggleTaskCompleted(task, v ?? false),
+                        onChanged: (v) => _toggleTaskCompleted(task, v ?? false),
                         activeColor: FlownetColors.emeraldGreen,
                         checkColor: FlownetColors.pureWhite,
                       ),
@@ -540,10 +548,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                           children: [
                             Text(
                               task.title,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                     color: FlownetColors.pureWhite,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -554,10 +559,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                 task.description,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                       color: FlownetColors.coolGray,
                                     ),
                               ),
@@ -567,11 +569,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
                       ),
                       const SizedBox(width: 12),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: FlownetColors.electricBlue
-                              .withValues(alpha: 0.15),
+                          color: FlownetColors.electricBlue.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
@@ -598,20 +598,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final isHovered = _hoveredView == view;
 
     return MouseRegion(
-      onEnter: (_) {
-        if (_hoveredView == view) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          setState(() => _hoveredView = view);
-        });
-      },
-      onExit: (_) {
-        if (_hoveredView == null) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          setState(() => _hoveredView = null);
-        });
-      },
+      onEnter: (_) => setState(() => _hoveredView = view),
+      onExit: (_) => setState(() => _hoveredView = null),
       child: AnimatedScale(
         scale: isActive ? 1.02 : (isHovered ? 1.01 : 1.0),
         duration: const Duration(milliseconds: 120),
@@ -629,7 +617,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
             });
           },
           borderRadius: 14.0,
-          opacity: isActive ? 0.24 : (isHovered ? 0.16 : 0.10),
+          opacity: isActive
+              ? 0.24
+              : (isHovered ? 0.16 : 0.10),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -710,7 +700,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   },
                 ),
                 Text(
-                  '${app_date_utils.DateUtils.formatDate(weekStart)} - ${app_date_utils.DateUtils.formatDate(weekDays.last)}',
+                  '${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d, yyyy').format(weekDays.last)}',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: FlownetColors.pureWhite,
@@ -828,24 +818,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
                                     return Expanded(
                                       child: MouseRegion(
-                                        onEnter: (_) {
-                                          if (_hoveredSlotStart == slotStart) return;
-                                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                                            if (!mounted) return;
-                                            setState(() => _hoveredSlotStart = slotStart);
-                                          });
-                                        },
-                                        onExit: (_) {
-                                          if (_hoveredSlotStart == null) return;
-                                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                                            if (!mounted) return;
-                                            setState(() => _hoveredSlotStart = null);
-                                          });
-                                        },
+                                        onEnter: (_) => setState(
+                                            () => _hoveredSlotStart = slotStart),
+                                        onExit: (_) =>
+                                            setState(() => _hoveredSlotStart = null),
                                         child: GestureDetector(
                                           behavior: HitTestBehavior.opaque,
-                                          onTap: () => _handleTimeSlotTap(
-                                              day, slotStartHour),
+                                          onTap: () =>
+                                              _handleTimeSlotTap(day, slotStartHour),
                                           child: AnimatedContainer(
                                             duration: const Duration(
                                                 milliseconds: 120),
@@ -884,8 +864,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                 child: Column(
                                   children: [
                                     Text(
-                                      app_date_utils.DateUtils.formatDate(day)
-                                          .substring(0, 3),
+                                      DateFormat('EEE').format(day),
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall
@@ -1063,7 +1042,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 Column(
                   children: [
                     Text(
-                      app_date_utils.DateUtils.formatDateTime(_selectedDay),
+                      DateFormat('EEEE, MMMM d, yyyy').format(_selectedDay),
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: FlownetColors.pureWhite,
@@ -1148,24 +1127,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
                               _selectedDay.day,
                               slotStartHour,
                             );
-                            final isHovered = _hoveredSlotStart == slotStart;
+                            final isHovered =
+                                _hoveredSlotStart == slotStart;
 
                             return Expanded(
                               child: MouseRegion(
-                                onEnter: (_) {
-                                  if (_hoveredSlotStart == slotStart) return;
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    if (!mounted) return;
-                                    setState(() => _hoveredSlotStart = slotStart);
-                                  });
-                                },
-                                onExit: (_) {
-                                  if (_hoveredSlotStart == null) return;
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    if (!mounted) return;
-                                    setState(() => _hoveredSlotStart = null);
-                                  });
-                                },
+                                onEnter: (_) => setState(
+                                    () => _hoveredSlotStart = slotStart),
+                                onExit: (_) =>
+                                    setState(() => _hoveredSlotStart = null),
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
                                   onTap: () => _handleTimeSlotTap(
@@ -1173,7 +1143,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                     slotStartHour,
                                   ),
                                   child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 120),
+                                    duration:
+                                        const Duration(milliseconds: 120),
                                     decoration: BoxDecoration(
                                       color: isHovered
                                           ? FlownetColors.pureWhite
@@ -1403,7 +1374,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 },
               ),
               Text(
-                app_date_utils.DateUtils.formatDate(_focusedDay),
+                DateFormat('MMMM yyyy').format(_focusedDay),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: FlownetColors.pureWhite,
@@ -1524,7 +1495,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
             const Divider(color: FlownetColors.slate),
             const SizedBox(height: 16),
             Text(
-              'Events on ${app_date_utils.DateUtils.formatDate(_selectedDay)}',
+              'Events on ${DateFormat('MMMM d, yyyy').format(_selectedDay)}',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: FlownetColors.pureWhite,
@@ -1621,8 +1592,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     Row(
                       children: [
                         Text(
-                          app_date_utils.DateUtils.formatDate(
-                              event.date ?? DateTime.now()),
+                          DateFormat('MMM d, yyyy')
+                              .format(event.date ?? DateTime.now()),
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: FlownetColors.coolGray,
@@ -1845,19 +1816,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
       children: [
         // Sync button
         FloatingActionButton.extended(
-          heroTag: 'timeline_sync_fab',
           onPressed: _isSyncing ? null : _refreshTimeline,
-          backgroundColor:
-              _isSyncing ? FlownetColors.coolGray : FlownetColors.electricBlue,
+          backgroundColor: _isSyncing 
+              ? FlownetColors.coolGray 
+              : FlownetColors.electricBlue,
           foregroundColor: FlownetColors.pureWhite,
-          icon: _isSyncing
+          icon: _isSyncing 
               ? const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(FlownetColors.pureWhite),
+                    valueColor: AlwaysStoppedAnimation<Color>(FlownetColors.pureWhite),
                   ),
                 )
               : const Icon(Icons.sync),
@@ -1867,7 +1837,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
         const SizedBox(width: 12),
         // Add event button
         FloatingActionButton.extended(
-          heroTag: 'timeline_add_event_fab',
           onPressed: () {
             showAppDialog(
               context: context,

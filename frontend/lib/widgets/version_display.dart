@@ -7,42 +7,63 @@ class VersionDisplay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final versionInfo = VersionService.getVersionDetails();
+    final environment = versionInfo['environment'] as String;
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: FutureBuilder<Map<String, dynamic>>(
-        future: VersionService.getVersionDetailsFromAsset(forceRefresh: true),
-        builder: (context, snapshot) {
-          final versionInfo = snapshot.data ?? VersionService.getVersionDetails();
-          final version = versionInfo['version'].toString();
-          final tooltip = VersionService.getLatestCommitTooltip(versionInfo);
-          return Tooltip(
-            message: tooltip,
-            waitDuration: const Duration(milliseconds: 250),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFF2A1C),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            textStyle: const TextStyle(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Version number
+          Text(
+            versionInfo['version'].toString(),
+            style: GoogleFonts.poppins(
               color: Colors.white,
-              fontSize: 12,
+              fontSize: 10,
               fontWeight: FontWeight.w500,
             ),
-            child: Text(
-              version,
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-              ),
+          ),
+          const SizedBox(width: 6),
+          // Environment indicator with color
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: _getEnvironmentColor(environment),
+              shape: BoxShape.circle,
             ),
-          );
-        },
+          ),
+          const SizedBox(width: 3),
+          // Environment name
+          Text(
+            environment,
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Color _getEnvironmentColor(String env) {
+    switch (env) {
+      case 'PROD':
+        return Colors.red;
+      case 'UAT':
+        return Colors.orange;
+      case 'SIT':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
   }
 }
 

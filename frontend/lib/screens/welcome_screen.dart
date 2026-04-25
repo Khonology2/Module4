@@ -14,7 +14,7 @@ class WelcomeScreen extends StatelessWidget {
           // Background image
           Positioned.fill(
             child: Image.asset(
-              'assets/images/khono_bg.png',
+              'assets/Icons/khono_bg.png',
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) {
                 return Container(color: const Color(0xFF0D0F14));

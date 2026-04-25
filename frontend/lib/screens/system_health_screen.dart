@@ -79,13 +79,8 @@ class _SystemHealthScreenState extends State<SystemHealthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('System Health'),
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(onPressed: _loadHealth, icon: const Icon(Icons.refresh)),
         ],

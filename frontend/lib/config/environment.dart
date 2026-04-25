@@ -22,10 +22,9 @@ class Environment {
 
     // Fallback only if define is unexpectedly empty.
     if (isRenderDeployed) {
-      return "https://backend-532p.onrender.com/api/v1";
+      return 'https://flow-space.onrender.com/api/v1';
     }
-
-    return _apiBaseUrl;
+    return 'http://localhost:8000/api/v1';
   }
 
   // Base URL without version for endpoints that already include version

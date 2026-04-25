@@ -44,6 +44,9 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     await _loadStoredTokens();
     DebugHelper.logEnvironmentInfo();
     debugPrint('API Client initialized with base URL: $_baseUrlWithVersion');
+    debugPrint('DEBUG: Environment.apiBaseUrl = ${Environment.apiBaseUrl}');
+    debugPrint('DEBUG: Environment.isRenderDeployed = ${Environment.isRenderDeployed}');
+    debugPrint('FINAL DEBUG: _baseUrlWithVersion = $_baseUrlWithVersion');
     _initialized = true;
   }
 
@@ -278,6 +281,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       if (_accessToken != null) {
         headers['Authorization'] = 'Bearer $_accessToken';
       }
+      
+      debugPrint('Request Headers: $headers');
 
       // Make request
       http.Response response;
@@ -286,6 +291,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
           response = await http.get(Uri.parse(url), headers: headers).timeout(_timeout);
           break;
         case 'POST':
+          debugPrint('🌐 API POST to: $url');
+          debugPrint('📤 POST body: ${body != null ? jsonEncode(body) : 'null'}');
           response = await http.post(
             Uri.parse(url),
             headers: headers,

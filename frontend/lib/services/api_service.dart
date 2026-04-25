@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 // ignore: depend_on_referenced_packages
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
+import '../models/system_metrics.dart';
 import '../models/project.dart';
 import 'backend_api_service.dart';
 import '../config/environment.dart';
@@ -825,102 +826,89 @@ if (response.statusCode == 200 || response.statusCode == 201) {
   }
 
   // System metrics methods
-  static Future<Map<String, dynamic>> getSystemMetrics() async {
+  static Future<SystemMetrics> getSystemMetrics() async {
     try {
       final backendService = BackendApiService();
-      final started = DateTime.now();
       final response = await backendService.getSystemStats();
-      final responseTimeMs = DateTime.now().difference(started).inMilliseconds;
-
-      Map<String, dynamic> asMap(dynamic v) {
-        if (v is Map<String, dynamic>) return v;
-        if (v is Map) return Map<String, dynamic>.from(v);
-        return <String, dynamic>{};
-      }
-
-      int asInt(dynamic v) {
-        if (v == null) return 0;
-        if (v is int) return v;
-        if (v is double) return v.toInt();
-        if (v is num) return v.toInt();
-        if (v is String) return int.tryParse(v) ?? 0;
-        return 0;
-      }
 
       if (response.isSuccess && response.data != null) {
-        final base = asMap(response.data);
-        final system = asMap(base['system']);
-        final systemUsage = asMap(system['system_usage'] ?? system['systemUsage'] ?? base['system_usage'] ?? base['systemUsage']);
-        final stats = asMap(base['statistics'] ?? base['stats']);
-
-        if (asInt(systemUsage['responseTime']) == 0 && asInt(systemUsage['response_time']) == 0) {
-          systemUsage['responseTime'] = responseTimeMs;
-          system['system_usage'] = systemUsage;
-          base['system'] = system;
-        }
-
-        final dashboard = await getDashboardData();
-        final userActivity = asMap(dashboard['user_activity'] ?? dashboard['userActivity']);
-        final activeUsers = asInt(userActivity['active_users'] ?? userActivity['activeUsers'] ?? userActivity['active_users_24h']);
-        final dailyActions = asInt(userActivity['daily_actions'] ?? userActivity['dailyActions']);
-
-        int totalUsers = 0;
-        try {
-          final usersResp = await backendService.getUsers(page: 1, limit: 500);
-          final dynamic usersRaw = usersResp.isSuccess ? usersResp.data : null;
-          final List<dynamic> usersList = usersRaw is List
-              ? usersRaw
-              : (usersRaw is Map ? (usersRaw['data'] ?? usersRaw['users'] ?? usersRaw['items'] ?? []) : []);
-          totalUsers = usersList.length;
-        } catch (_) {}
-
-        final mergedStats = {...stats};
-        if (mergedStats['users'] == null || asInt(mergedStats['users']) == 0) {
-          if (totalUsers != 0) mergedStats['users'] = totalUsers;
-        }
-        if (mergedStats['active_users_24h'] == null || asInt(mergedStats['active_users_24h']) == 0) {
-          if (activeUsers != 0) mergedStats['active_users_24h'] = activeUsers;
-        }
-        base['statistics'] = mergedStats;
-        base['user_activity'] = {
-          'active_users_24h': activeUsers,
-          'total_sessions': dailyActions,
-          'new_users': asInt(userActivity['new_users'] ?? userActivity['newUsers']),
-          'failed_logins': asInt(userActivity['failed_logins'] ?? userActivity['failedLogins']),
-          'avg_session_duration': userActivity['avg_session_duration'] ?? userActivity['avgSessionDuration'] ?? 0,
-        };
-
-        return base;
+        final data = response.data!;
+        // Extract system metrics from the stats response with proper type conversion
+        final systemMetrics = SystemMetrics(
+          systemHealth: SystemHealthStatus.healthy,
+          performance: PerformanceMetrics(
+                  cpuUsage: _parseDouble(data['system']?['system_usage']?['cpuUsage']) ?? 0.0,
+                  memoryUsage: _parseDouble(data['system']?['system_usage']?['memoryUsage']) ?? 0.0,
+                  diskUsage: _parseDouble(data['system']?['system_usage']?['diskUsage']) ?? 0.0,
+                  responseTime: _parseInt(data['system']?['system_usage']?['responseTime']) ?? 0,
+                  uptime: _parseDouble(data['system']?['system_usage']?['uptime']) ?? 0.0,
+                ),
+          database: DatabaseMetrics(
+            totalRecords: _parseInt(data['statistics']?['totalEntities']) ?? 0,
+            activeConnections: _parseInt(data['system']?['activeConnections']) ?? 0,
+            cacheHitRatio: _parseDouble(data['system']?['cacheHitRatio']) ?? 0.0,
+            queryCount: _parseInt(data['system']?['queryCount']) ?? 0,
+            slowQueries: _parseInt(data['system']?['slowQueries']) ?? 0,
+          ),
+          userActivity: UserActivityMetrics(
+            activeUsers: _parseInt(data['statistics']?['users']) ?? await _fallbackActiveUsers(),
+            totalSessions: _parseInt(data['system']?['totalSessions']) ?? 0,
+            newRegistrations: _parseInt(data['system']?['newRegistrations']) ?? 0,
+            failedLogins: _parseInt(data['system']?['failedLogins']) ?? 0,
+            avgSessionDuration: _parseDouble(data['system']?['avgSessionDuration']) ?? 0.0,
+          ),
+          lastUpdated: DateTime.now(),
+        );
+        return systemMetrics;
       } else {
         debugPrint('Failed to load system metrics: ${response.statusCode} - ${response.error}');
-        final dashboard = await getDashboardData();
-        final userActivity = asMap(dashboard['user_activity'] ?? dashboard['userActivity']);
-        final activeUsers = asInt(userActivity['active_users'] ?? userActivity['activeUsers'] ?? userActivity['active_users_24h']);
-        final dailyActions = asInt(userActivity['daily_actions'] ?? userActivity['dailyActions']);
-        return {
-          'system': {
-            'system_usage': {'responseTime': responseTimeMs},
-          },
-          'statistics': {
-            'users': 0,
-            'active_users_24h': activeUsers,
-          },
-          'user_activity': {
-            'active_users_24h': activeUsers,
-            'total_sessions': dailyActions,
-          },
-        };
+        throw Exception('Failed to load system metrics: ${response.statusCode} - ${response.error}');
       }
     } catch (e) {
       debugPrint('Error loading system metrics: $e');
-      final started = DateTime.now();
-      final responseTimeMs = DateTime.now().difference(started).inMilliseconds;
-      return {
-        'system': {
-          'system_usage': {'responseTime': responseTimeMs},
-        },
-      };
+      throw Exception('Error loading system metrics: $e');
     }
+  }
+
+  static Future<int> _fallbackActiveUsers() async {
+    try {
+      final backendService = BackendApiService();
+      final resp = await backendService.getUsers(page: 1, limit: 500);
+      final dynamic raw = resp.isSuccess ? resp.data : null;
+      final List<dynamic> items = raw is List
+          ? raw
+          : (raw is Map ? (raw['users'] ?? raw['data'] ?? raw['items'] ?? []) : []);
+      int count = 0;
+      for (final u in items) {
+        if (u is Map) {
+          final m = Map<String, dynamic>.from(u);
+          final active = m['is_active'];
+          if (active == true || active == 'true' || active == 1) {
+            count++;
+          }
+        }
+      }
+      return count > 0 ? count : items.length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  // Helper methods for type conversion
+  static double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  static int? _parseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 
   static Future<bool> deleteFile(String fileId) async {

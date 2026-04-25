@@ -446,7 +446,7 @@ class _EnhancedClientReviewScreenState
       final approvedAt = report.approvedAt ?? report.reviewedAt;
       final approver = report.approvedBy ?? report.reviewedBy ?? 'Client';
       final when =
-          approvedAt != null ? _formatDateTime(approvedAt) : 'Unknown time';
+          approvedAt != null ? _formatDate(approvedAt) : 'Unknown time';
       message = 'Approved by $approver on $when';
     } else if (report.status == ReportStatus.changeRequested) {
       final details = report.changeRequestDetails ??
@@ -543,12 +543,8 @@ class _EnhancedClientReviewScreenState
                     'Due Date', _formatDate(_deliverable!.dueDate)),
                 const SizedBox(width: 24),
                 _buildHeaderItem('Submitted By', () {
-                  final name =
-                      (_report?.submittedByName ?? _report?.submittedBy ?? '')
-                          .toString()
-                          .trim();
-                  final role =
-                      (_report?.submittedByRole ?? '').toString().trim();
+                  final name = (_report?.submittedByName ?? _report?.submittedBy ?? '').toString().trim();
+                  final role = (_report?.submittedByRole ?? '').toString().trim();
                   if (name.isEmpty) return '—';
                   if (role.isEmpty) return name;
                   return '$name ($role)';
@@ -1220,12 +1216,6 @@ class _EnhancedClientReviewScreenState
   }
 
   String _formatDate(DateTime date) {
-    final tz = date.toUtc().add(const Duration(hours: 2));
-    String two(int n) => n < 10 ? '0$n' : '$n';
-    return '${two(tz.day)}/${two(tz.month)}/${tz.year}';
-  }
-
-  String _formatDateTime(DateTime date) {
     final tz = date.toUtc().add(const Duration(hours: 2));
     String two(int n) => n < 10 ? '0$n' : '$n';
     return '${two(tz.day)}/${two(tz.month)}/${tz.year} ${two(tz.hour)}:${two(tz.minute)}';

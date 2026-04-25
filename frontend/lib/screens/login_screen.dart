@@ -92,9 +92,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
+          // Background image
           Positioned.fill(
             child: Image.asset(
-                  'assets/images/khono_bg.png',
+              'assets/Icons/khono_bg.png',
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) {
                 return Container(color: const Color(0xFF0D0F14));
@@ -119,7 +120,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.all(8.0),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 400),
                   child: Container(
@@ -293,30 +294,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
-                              onPressed: _showForgotPasswordDialog,
+                              onPressed: () {
+                                _showForgotPasswordDialog();
+                              },
                               child: const Text(
                                 'Forgot Password?',
                                 style: TextStyle(color: Color(0xFFC10D00)),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 24),
+
+                          // Sign In Button
                           SizedBox(
                             width: double.infinity,
-                            height: 58,
+                            height: 56,
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _handleLogin,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFD10D00),
+                                backgroundColor: const Color(0xFFC10D00),
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor:
-                                    const Color(0xFFD10D00).withValues(alpha: 0.6),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                elevation: 8,
-                                shadowColor:
-                                    const Color(0xFFD10D00).withValues(alpha: 0.45),
+                                shape: const StadiumBorder(),
+                                elevation: 2,
                               ),
                               child: _isLoading
                                   ? const SizedBox(
@@ -331,10 +330,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                       ),
                                     )
                                   : const Text(
-                                      'LOGIN',
+                                      'SIGN IN',
                                       style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w800,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                             ),
