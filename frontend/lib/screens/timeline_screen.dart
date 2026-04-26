@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/glass_card.dart';
 import '../theme/flownet_theme.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_modal.dart';
 import '../models/timeline_event.dart';
 import '../services/timeline_event_service.dart';
@@ -410,60 +411,45 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            FlownetColors.charcoalBlack,
-            FlownetColors.charcoalBlack.withValues(alpha: 0.95),
-          ],
-        ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight - 48,
-                  maxWidth: 1400, // Desktop-first max width
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // View Switcher
-                    _buildViewSwitcher(),
-                    const SizedBox(height: 24),
-
-                    _buildTaskReminders(),
-                    const SizedBox(height: 24),
-
-                    // Calendar/Timeline Content with subtle view transition
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      switchInCurve: Curves.easeOut,
-                      switchOutCurve: Curves.easeIn,
-                      child: KeyedSubtree(
-                        key: ValueKey(_activeView),
-                        child: _buildCalendarContent(),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // My Deliverables
-                    _buildMyDeliverables(),
-                  ],
-                ),
+    return AppScaffold(
+      centered: false,
+      scrollable: false,
+      useGlassContainer: false,
+      contentPadding: EdgeInsets.zero,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight - 48,
+                maxWidth: 1400,
               ),
-            );
-          },
-        ),
-        floatingActionButton: _buildFAB(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildViewSwitcher(),
+                  const SizedBox(height: 24),
+                  _buildTaskReminders(),
+                  const SizedBox(height: 24),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    child: KeyedSubtree(
+                      key: ValueKey(_activeView),
+                      child: _buildCalendarContent(),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _buildMyDeliverables(),
+                ],
+              ),
+            ),
+          );
+        },
       ),
+      floatingActionButton: _buildFAB(),
     );
   }
 

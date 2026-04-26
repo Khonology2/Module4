@@ -448,8 +448,12 @@ class _DeliverablesOverviewScreenState
   Widget build(BuildContext context) {
     final canCreate = _authService.canCreateDeliverable();
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Deliverables'),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           if (_hasRealTimeConnection)
             Container(
@@ -942,7 +946,7 @@ class _DeliverablesOverviewScreenState
                       Text.rich(
                         TextSpan(
                           children: [
-                            TextSpan(text: 'by ${log.userEmail ?? 'System'}'),
+                            TextSpan(text: 'by ${log.userName ?? log.userEmail ?? 'System'}'),
                             if (log.userRole != null)
                               TextSpan(
                                   text: ' (${log.userRole})',

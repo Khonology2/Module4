@@ -60,7 +60,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
           label: 'Sprints',
           icon: Icons.timer_outlined,
           iconName: 'sprints',
-          route: '/sprints',
+          route: '/sprint-console',
         ),
         _NavItem(
           label: 'Deliverables',

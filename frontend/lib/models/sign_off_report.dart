@@ -18,6 +18,7 @@ class SignOffReport {
   final String reportContent;
   final List<String> sprintIds;
   final String? sprintPerformanceData;
+  final Map<String, dynamic>? sprintReportData;
   final String? knownLimitations;
   final String? nextSteps;
   final String? preparedBy;
@@ -51,6 +52,7 @@ class SignOffReport {
     required this.reportContent,
     required this.sprintIds,
     this.sprintPerformanceData,
+    this.sprintReportData,
     this.knownLimitations,
     this.nextSteps,
     this.preparedBy,
@@ -84,6 +86,7 @@ class SignOffReport {
     String? reportContent,
     List<String>? sprintIds,
     String? sprintPerformanceData,
+    Map<String, dynamic>? sprintReportData,
     String? knownLimitations,
     String? nextSteps,
     String? preparedBy,
@@ -116,6 +119,7 @@ class SignOffReport {
       reportContent: reportContent ?? this.reportContent,
       sprintIds: sprintIds ?? this.sprintIds,
       sprintPerformanceData: sprintPerformanceData ?? this.sprintPerformanceData,
+      sprintReportData: sprintReportData ?? this.sprintReportData,
       knownLimitations: knownLimitations ?? this.knownLimitations,
       nextSteps: nextSteps ?? this.nextSteps,
       preparedBy: preparedBy ?? this.preparedBy,
@@ -151,6 +155,7 @@ class SignOffReport {
       'reportContent': reportContent,
       'sprintIds': sprintIds,
       'sprintPerformanceData': sprintPerformanceData,
+      'sprintReportData': sprintReportData,
       'knownLimitations': knownLimitations,
       'nextSteps': nextSteps,
       'preparedBy': preparedBy,
@@ -205,6 +210,10 @@ class SignOffReport {
     }
 
     final String? sprintPerformanceData = (json['sprintPerformanceData'] ?? content['sprintPerformanceData'])?.toString();
+    final dynamic sprintReportDataRaw =
+        json['sprintReportData'] ?? json['sprint_report_data'] ?? content['sprintReportData'] ?? content['sprint_report_data'];
+    final Map<String, dynamic>? sprintReportData =
+        sprintReportDataRaw is Map ? Map<String, dynamic>.from(sprintReportDataRaw) : null;
     final String? knownLimitations = (json['knownLimitations'] ?? content['knownLimitations'] ?? content['limitations'])?.toString();
     final String? nextSteps = (json['nextSteps'] ?? content['nextSteps'])?.toString();
 
@@ -297,6 +306,7 @@ class SignOffReport {
       reportContent: reportContent,
       sprintIds: sprintIds,
       sprintPerformanceData: sprintPerformanceData,
+      sprintReportData: sprintReportData,
       knownLimitations: knownLimitations,
       nextSteps: nextSteps,
       preparedBy: preparedBy,

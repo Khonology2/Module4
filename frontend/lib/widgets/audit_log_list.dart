@@ -58,7 +58,7 @@ class AuditLogList extends StatelessWidget {
           children: [
             const SizedBox(height: 2),
             Text(
-              'by ${log.userEmail ?? 'System'}',
+              'by ${log.userName ?? log.userEmail ?? 'System'}',
               style: TextStyle(fontSize: 12, color: Colors.grey[700]),
             ),
             Text(

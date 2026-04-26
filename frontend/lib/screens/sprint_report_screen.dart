@@ -181,8 +181,12 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
     final health = summary['health']?.toString() ?? 'good';
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Text(sprintTitle),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

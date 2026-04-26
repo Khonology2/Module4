@@ -95,7 +95,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           // Background image
           Positioned.fill(
             child: Image.asset(
-              'assets/Icons/khono_bg.png',
+              'assets/images/khono_bg.png',
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) {
                 return Container(color: const Color(0xFF0D0F14));
@@ -157,7 +157,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         children: [
                           // Logo and Title
                           Image.asset(
-                            'assets/Icons/khono.png',
+                            'assets/images/khono.png',
                             height: 80,
                             fit: BoxFit.contain,
                             errorBuilder: (context, error, stackTrace) {

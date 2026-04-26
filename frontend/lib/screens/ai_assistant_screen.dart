@@ -81,7 +81,10 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('AI Assistant'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           Expanded(

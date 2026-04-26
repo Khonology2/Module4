@@ -4,16 +4,64 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import '../models/sign_off_report.dart';
 import 'api_client.dart';
+import '../config/environment.dart';
 import 'package:universal_html/html.dart' as html;
 
 // Platform-specific imports (only import when not on web)
 import 'dart:io' if (dart.library.html) '../services/file_stub.dart';
 import 'package:path_provider/path_provider.dart' if (dart.library.html) '../services/path_provider_stub.dart';
 
+class _BrandingAssets {
+  final pw.ImageProvider? logo;
+  final pw.ImageProvider? headerBackground;
+
+  const _BrandingAssets({this.logo, this.headerBackground});
+}
+
 class ReportExportService {
   final ApiClient _apiClient = ApiClient();
+
+  static const PdfColor _lightRedBar = PdfColor(242 / 255, 204 / 255, 204 / 255);
+  static const PdfColor _darkOverlay = PdfColor(0, 0, 0, 0.55);
+  static const PdfColor _brandRed = PdfColor(0.78, 0.04, 0.04);
+  static const PdfColor _titleBarRed = PdfColor(0.60, 0.00, 0.00);
+  static const PdfColor _ink = PdfColors.black;
+
+  Future<_BrandingAssets> _loadBrandingAssets() async {
+    pw.ImageProvider? logo;
+    pw.ImageProvider? headerBackground;
+    try {
+      final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
+    } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/images/khono_bg.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) headerBackground = pw.MemoryImage(bytes);
+    } catch (_) {}
+    return _BrandingAssets(logo: logo, headerBackground: headerBackground);
+  }
+
+  Future<SignOffReport> _hydrateReportForPdf(SignOffReport report) async {
+    if (report.sprintReportData != null) return report;
+    try {
+      final response = await _apiClient.get('/sign-off-reports/${report.id}');
+      if (response.isSuccess && response.data is Map) {
+        return SignOffReport.fromJson(Map<String, dynamic>.from(response.data as Map));
+      }
+    } catch (_) {}
+    return report;
+  }
+
+  bool _isSprintSignoffReport(SignOffReport report) {
+    final data = report.sprintReportData;
+    if (data == null || data.isEmpty) return false;
+    final sprint = data['sprint'];
+    final summary = data['summary'];
+    return sprint is Map || summary is Map;
+  }
   
   /// Fetch digital signatures for a report
   Future<List<Map<String, dynamic>>> _fetchSignatures(String reportId) async {
@@ -40,251 +88,69 @@ class ReportExportService {
   /// Export report as PDF
   Future<void> exportReportAsPDF(SignOffReport report, {String? filePath}) async {
     try {
-      // Fetch signatures first
-      final signatures = await _fetchSignatures(report.id);
+      final reportForPdf = await _hydrateReportForPdf(report);
+      final signatures = await _fetchSignatures(reportForPdf.id);
+      final branding = await _loadBrandingAssets();
       
       final pdf = pw.Document();
-      
-      // Build PDF content
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(40),
-          build: (pw.Context context) {
-            return [
-              // Header
-              pw.Header(
-                level: 0,
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      'SIGN-OFF REPORT',
-                      style: pw.TextStyle(
-                        fontSize: 24,
-                        fontWeight: pw.FontWeight.bold,
+
+      if (_isSprintSignoffReport(reportForPdf)) {
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: pw.EdgeInsets.zero,
+            header: (pw.Context context) => _buildSprintHeader(branding),
+            footer: (pw.Context context) => _buildSprintFooter(context),
+            build: (pw.Context context) => _buildSprintSignoffBody(
+              reportForPdf,
+              signatures: signatures,
+            ),
+          ),
+        );
+      } else {
+        pdf.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return [
+                pw.Header(
+                  level: 0,
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'SIGN-OFF REPORT',
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    pw.Text(
-                      _formatDate(report.createdAt),
-                      style: const pw.TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 20),
-              
-              // Report Title
-              pw.Text(
-                report.reportTitle,
-                style: pw.TextStyle(
-                  fontSize: 20,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 10),
-              
-              // Report Content
-              pw.Text(
-                'Report Content',
-                style: pw.TextStyle(
-                  fontSize: 16,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 5),
-              pw.Text(
-                report.reportContent,
-                style: const pw.TextStyle(fontSize: 12),
-              ),
-              pw.SizedBox(height: 15),
-              
-              // Known Limitations
-              if (report.knownLimitations != null && report.knownLimitations!.isNotEmpty) ...[
-                pw.Text(
-                  'Known Limitations',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
+                      pw.Text(
+                        _formatDate(reportForPdf.createdAt),
+                        style: const pw.TextStyle(fontSize: 12),
+                      ),
+                    ],
                   ),
                 ),
-                pw.SizedBox(height: 5),
-                pw.Text(
-                  report.knownLimitations!,
-                  style: const pw.TextStyle(fontSize: 12),
-                ),
-                pw.SizedBox(height: 15),
-              ],
-              
-              // Next Steps
-              if (report.nextSteps != null && report.nextSteps!.isNotEmpty) ...[
-                pw.Text(
-                  'Next Steps',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 5),
-                pw.Text(
-                  report.nextSteps!,
-                  style: const pw.TextStyle(fontSize: 12),
-                ),
-                pw.SizedBox(height: 15),
-              ],
-              
-              // Digital Signatures Section
-              if (signatures.isNotEmpty) ...[
-                pw.Divider(),
                 pw.SizedBox(height: 20),
                 pw.Text(
-                  'Digital Signatures',
+                  reportForPdf.reportTitle,
                   style: pw.TextStyle(
-                    fontSize: 16,
+                    fontSize: 20,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
                 pw.SizedBox(height: 10),
                 pw.Text(
-                  'This document has been digitally signed by the following parties:',
-                  style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+                  reportForPdf.reportContent,
+                  style: const pw.TextStyle(fontSize: 12),
                 ),
-                pw.SizedBox(height: 15),
-                
-                // Display all signatures
-                ...signatures.map((sig) {
-                  final signerName = sig['signer_name'] as String? ?? 'Unknown';
-                  final signerRole = sig['signer_role'] as String? ?? 'Unknown';
-                  final signedAt = sig['signed_at'] as String?;
-                  final signatureData = sig['signature_data'] as String?;
-                  final signatureHash = sig['signature_hash'] as String? ?? '';
-                  
-                  return pw.Container(
-                    margin: const pw.EdgeInsets.only(bottom: 20),
-                    padding: const pw.EdgeInsets.all(15),
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: PdfColors.grey400),
-                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-                    ),
-                    child: pw.Row(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        // Signature Image
-                        if (signatureData != null && signatureData.isNotEmpty)
-                          pw.Container(
-                            width: 150,
-                            height: 70,
-                            margin: const pw.EdgeInsets.only(right: 15),
-                            decoration: pw.BoxDecoration(
-                              border: pw.Border.all(color: PdfColors.grey300),
-                              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                            ),
-                            child: pw.ClipRRect(
-                              horizontalRadius: 4,
-                              verticalRadius: 4,
-                              child: _buildSignatureImage(signatureData),
-                            ),
-                          ),
-                        // Signature Details
-                        pw.Expanded(
-                          child: pw.Column(
-                            crossAxisAlignment: pw.CrossAxisAlignment.start,
-                            children: [
-                              pw.Text(
-                                signerName,
-                                style: pw.TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: pw.FontWeight.bold,
-                                ),
-                              ),
-                              pw.SizedBox(height: 4),
-                              pw.Text(
-                                _formatRole(signerRole),
-                                style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
-                              ),
-                              if (signedAt != null) ...[
-                                pw.SizedBox(height: 4),
-                                pw.Text(
-                                  'Signed: ${_formatDateTime(signedAt)}',
-                                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
-                                ),
-                              ],
-                              pw.SizedBox(height: 8),
-                              pw.Row(
-                                children: [
-                                  pw.Container(
-                                    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: const pw.BoxDecoration(
-                                      color: PdfColors.green100,
-                                      borderRadius: pw.BorderRadius.all(pw.Radius.circular(12)),
-                                    ),
-                                    child: pw.Text(
-                                      '✓ Verified',
-                                      style: pw.TextStyle(
-                                        fontSize: 9,
-                                        color: PdfColors.green900,
-                                        fontWeight: pw.FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              pw.SizedBox(height: 6),
-                              pw.Text(
-                                'Hash: ${signatureHash.substring(0, signatureHash.length > 16 ? 16 : signatureHash.length)}...',
-                                style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-                pw.SizedBox(height: 15),
-              ],
-              
-              // Status and Metadata
-              pw.Divider(),
-              pw.SizedBox(height: 10),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'Status: ${_formatStatus(report.status)}',
-                        style: const pw.TextStyle(fontSize: 12),
-                      ),
-                      pw.SizedBox(height: 5),
-                      pw.Text(
-                        'Created by: ${report.createdBy}',
-                        style: const pw.TextStyle(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  if (report.approvedAt != null)
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text(
-                          'Approved on: ${_formatDate(report.approvedAt!)}',
-                          style: const pw.TextStyle(fontSize: 12),
-                        ),
-                        if (report.approvedBy != null)
-                          pw.Text(
-                            'Approved by: ${report.approvedBy}',
-                            style: const pw.TextStyle(fontSize: 12),
-                          ),
-                      ],
-                    ),
-                ],
-              ),
-            ];
-          },
-        ),
-      );
+              ];
+            },
+          ),
+        );
+      }
       
       // Save or share PDF
       final bytes = await pdf.save();
@@ -396,6 +262,467 @@ class ReportExportService {
   
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
+  }
+
+  pw.Widget _buildSprintHeader(_BrandingAssets branding) {
+    return pw.Container(
+      width: double.infinity,
+      height: 92,
+      child: pw.Stack(
+        children: [
+          if (branding.headerBackground != null)
+            pw.Positioned.fill(
+              child: pw.Image(
+                branding.headerBackground!,
+                fit: pw.BoxFit.cover,
+              ),
+            ),
+          pw.Positioned.fill(child: pw.Container(color: _darkOverlay)),
+          pw.Padding(
+            padding: const pw.EdgeInsets.fromLTRB(40, 18, 40, 16),
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    pw.Text(
+                      Environment.appName.toUpperCase(),
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        fontWeight: pw.FontWeight.bold,
+                        color: _brandRed,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    pw.SizedBox(height: 6),
+                    pw.Text(
+                      'SPRINT SIGN-OFF REPORT',
+                      style: pw.TextStyle(
+                        fontSize: 18,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                if (branding.logo != null)
+                  pw.Container(
+                    width: 34,
+                    height: 34,
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.white,
+                      shape: pw.BoxShape.circle,
+                    ),
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Image(branding.logo!, fit: pw.BoxFit.contain),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildSprintFooter(pw.Context context) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.fromLTRB(40, 10, 40, 18),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            Environment.appName,
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+          ),
+          pw.Text(
+            'Page ${context.pageNumber} of ${context.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<pw.Widget> _buildSprintSignoffBody(
+    SignOffReport report, {
+    required List<Map<String, dynamic>> signatures,
+  }) {
+    final data = report.sprintReportData ?? const <String, dynamic>{};
+    final sprint = _asMap(data['sprint']);
+    final summary = _asMap(data['summary']);
+    final projectFromData = _asMap(data['project']);
+    final project = projectFromData.isNotEmpty ? projectFromData : _asMap(sprint['project']);
+    final team = _asList(_asMap(data['team'])['members']);
+    final deliverables = _asList(data['deliverables']);
+
+    final sprintName = _stringOrDash(sprint['name']);
+    final sprintId = _stringOrDash(sprint['id']);
+    final sprintStatus = _stringOrDash(sprint['status']);
+    final sprintStart = _formatIsoDate(sprint['startDate']?.toString());
+    final sprintEnd = _formatIsoDate(sprint['endDate']?.toString());
+
+    final projectName = _stringOrDash(project['name']);
+    final projectKey = _stringOrDash(project['key']);
+    final projectId = _stringOrDash(project['id']);
+
+    final totalDeliverables = _stringOrDash(summary['totalDeliverables']);
+    final completed = _stringOrDash(summary['completedDeliverables']);
+    final inProgress = _stringOrDash(summary['inProgressDeliverables']);
+    final notStarted = _stringOrDash(summary['notStartedDeliverables']);
+    final overdue = _stringOrDash(summary['overdueDeliverables']);
+    final blocked = _stringOrDash(summary['blockedDeliverables']);
+    final sprintProgress = '${_num(summary['sprintProgressPercent'])}%';
+    final completionRate = '${_num(summary['completionRatePercent'])}%';
+    final health = _stringOrDash(summary['health']).toUpperCase();
+    final incomplete = _stringOrDash(summary['incompleteDeliverables']);
+
+    final note = _extractReportSection(report.reportContent, 'SIGN-OFF NOTES') ?? '-';
+    final feedback = _extractReportSection(report.reportContent, 'FEEDBACK');
+
+    final bodyPadding = const pw.EdgeInsets.fromLTRB(40, 16, 40, 0);
+    final titleBar = pw.Container(
+      width: double.infinity,
+      color: _titleBarRed,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            'Title: ${report.reportTitle}',
+            style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+          ),
+          pw.Text(
+            'Date: ${_formatDate(report.createdAt)}',
+            style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+          ),
+        ],
+      ),
+    );
+
+    final projectDetail = pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        _sectionBar('PROJECT DETAIL:'),
+        pw.SizedBox(height: 8),
+        _kvLine('Name:', projectName),
+        _kvLine('Key:', projectKey),
+        _kvLine('ID:', projectId),
+      ],
+    );
+
+    final projectSprintTotals = pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        _sectionBar('PROJECT SPRINT TOTALS:'),
+        pw.SizedBox(height: 8),
+        _kvLine('Total Deliverables:', totalDeliverables),
+        _kvLine('Completed:', completed),
+        _kvLine('Incomplete:', incomplete),
+        _kvLine('Sprint Progress:', sprintProgress),
+        _kvLine('Completion Rate:', completionRate),
+      ],
+    );
+
+    final sprintDetail = pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        _sectionBar('SPRINT DETAIL:'),
+        pw.SizedBox(height: 8),
+        _kvLine('Name:', sprintName),
+        _kvLine('ID:', sprintId),
+        _kvLine('Status:', sprintStatus),
+        _kvLine('Start:', sprintStart),
+        _kvLine('End:', sprintEnd),
+      ],
+    );
+
+    final sprintSummary = pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        _sectionBar('SPRINT SUMMARY:'),
+        pw.SizedBox(height: 8),
+        _kvLine('Total Deliverables:', totalDeliverables),
+        _kvLine('Completed:', completed),
+        _kvLine('In Progress:', inProgress),
+        _kvLine('Not Started:', notStarted),
+        _kvLine('Overdue:', overdue),
+        _kvLine('Blocked:', blocked),
+        _kvLine('Sprint Progress:', sprintProgress),
+        _kvLine('Completion Rate:', completionRate),
+        _kvLine('Health:', health),
+      ],
+    );
+
+    final topRows = pw.Padding(
+      padding: bodyPadding,
+      child: pw.Column(
+        children: [
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(child: projectDetail),
+              pw.SizedBox(width: 16),
+              pw.Expanded(child: projectSprintTotals),
+            ],
+          ),
+          pw.SizedBox(height: 14),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(child: sprintDetail),
+              pw.SizedBox(width: 16),
+              pw.Expanded(child: sprintSummary),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final teamWidgets = <pw.Widget>[
+      pw.Padding(padding: bodyPadding, child: _sectionBar('TEAM MEMBERS')),
+      ...team.map((m) {
+        final mm = _asMap(m);
+        final line = '- ${_stringOrDash(mm['name'])} | ${_stringOrDash(mm['email'])} | ${_stringOrDash(mm['role'])}';
+        return pw.Padding(
+          padding: const pw.EdgeInsets.fromLTRB(40, 4, 40, 0),
+          child: pw.Text(line, style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
+        );
+      }),
+      if (team.isEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.fromLTRB(40, 4, 40, 0),
+          child: pw.Text('None', style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
+        ),
+    ];
+
+    final deliverableWidgets = <pw.Widget>[
+      pw.Padding(padding: bodyPadding, child: _sectionBar('DELIVERABLES')),
+      ...deliverables.map((d) {
+        final dd = _asMap(d);
+        final name = _stringOrDash(dd['name'] ?? dd['title']);
+        final ownerName = _stringOrDash(dd['ownerName']);
+        final status = _stringOrDash(dd['status']);
+        final progress = '${_num(dd['progressPercent'])}%';
+        final due = _formatIsoDate(dd['dueDate']?.toString());
+        final completedOn = _formatIsoDate(dd['completionDate']?.toString());
+        final category = _stringOrDash(dd['category']);
+        final isOverdue = (dd['isOverdue'] == true) ? 'yes' : 'no';
+        final line =
+            '- $name | Owner: $ownerName | Status: $status | Progress: $progress | Due: $due | Completed: $completedOn | Category: $category | Overdue: $isOverdue';
+        return pw.Padding(
+          padding: const pw.EdgeInsets.fromLTRB(40, 4, 40, 0),
+          child: pw.Text(line, style: const pw.TextStyle(fontSize: 8.8, color: PdfColors.black)),
+        );
+      }),
+      if (deliverables.isEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.fromLTRB(40, 4, 40, 0),
+          child: pw.Text('None', style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
+        ),
+    ];
+
+    final notesWidgets = <pw.Widget>[
+      pw.Padding(padding: bodyPadding, child: _sectionBar('SIGN-OFF NOTES')),
+      pw.Padding(
+        padding: const pw.EdgeInsets.fromLTRB(40, 6, 40, 0),
+        child: pw.Text(
+          note.trim().isEmpty ? '-' : note.trim(),
+          style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+        ),
+      ),
+      if (feedback != null && feedback.trim().isNotEmpty && feedback.trim() != '-')
+        pw.Padding(
+          padding: const pw.EdgeInsets.fromLTRB(40, 6, 40, 0),
+          child: pw.Text(
+            'Feedback: ${feedback.trim()}',
+            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+          ),
+        ),
+    ];
+
+    final signatureWidgets = <pw.Widget>[
+      pw.Padding(padding: bodyPadding, child: _sectionBar('DIGITAL SIGNATURES')),
+      if (signatures.isEmpty)
+        pw.SizedBox(height: 20)
+      else
+        ...signatures.map((sig) {
+          final signerName = sig['signer_name'] as String? ?? 'Unknown';
+          final signerRole = sig['signer_role'] as String? ?? 'Unknown';
+          final signedAt = sig['signed_at'] as String?;
+          final signatureData = sig['signature_data'] as String?;
+          final signatureHash = sig['signature_hash'] as String? ?? '';
+
+          return pw.Padding(
+            padding: const pw.EdgeInsets.fromLTRB(40, 10, 40, 0),
+            child: pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey400),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+              ),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  if (signatureData != null && signatureData.isNotEmpty)
+                    pw.Container(
+                      width: 150,
+                      height: 60,
+                      margin: const pw.EdgeInsets.only(right: 12),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: PdfColors.grey300),
+                        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                      ),
+                      child: pw.ClipRRect(
+                        horizontalRadius: 4,
+                        verticalRadius: 4,
+                        child: _buildSignatureImage(signatureData),
+                      ),
+                    ),
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          signerName,
+                          style: pw.TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 3),
+                        pw.Text(
+                          _formatRole(signerRole),
+                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                        ),
+                        if (signedAt != null) ...[
+                          pw.SizedBox(height: 3),
+                          pw.Text(
+                            'Signed: ${_formatDateTime(signedAt)}',
+                            style: const pw.TextStyle(fontSize: 9.5, color: PdfColors.grey600),
+                          ),
+                        ],
+                        pw.SizedBox(height: 6),
+                        pw.Text(
+                          signatureHash.isNotEmpty
+                              ? 'Hash: ${signatureHash.substring(0, signatureHash.length > 16 ? 16 : signatureHash.length)}...'
+                              : 'Hash: -',
+                          style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+    ];
+
+    return [
+      titleBar,
+      topRows,
+      ...teamWidgets,
+      pw.SizedBox(height: 8),
+      ...deliverableWidgets,
+      pw.SizedBox(height: 8),
+      ...notesWidgets,
+      pw.SizedBox(height: 8),
+      ...signatureWidgets,
+      pw.SizedBox(height: 10),
+    ];
+  }
+
+  pw.Widget _sectionBar(String title) {
+    return pw.Container(
+      width: double.infinity,
+      color: _lightRedBar,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: pw.Text(
+        title,
+        style: pw.TextStyle(
+          fontSize: 10,
+          fontWeight: pw.FontWeight.bold,
+          color: _ink,
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _kvLine(String label, String value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 4),
+      child: pw.RichText(
+        text: pw.TextSpan(
+          style: const pw.TextStyle(fontSize: 9.5, color: PdfColors.black),
+          children: [
+            pw.TextSpan(text: '$label '),
+            pw.TextSpan(text: value),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  List<dynamic> _asList(dynamic value) {
+    if (value is List) return value;
+    return const <dynamic>[];
+  }
+
+  String _stringOrDash(dynamic value) {
+    final s = value == null ? '' : value.toString().trim();
+    return s.isEmpty ? '-' : s;
+  }
+
+  int _num(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is num) return value.round();
+    final s = value == null ? '' : value.toString();
+    final n = double.tryParse(s);
+    return n == null ? 0 : n.round();
+  }
+
+  String _formatIsoDate(String? iso) {
+    if (iso == null || iso.trim().isEmpty) return '-';
+    try {
+      final d = DateTime.parse(iso).toLocal();
+      return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return iso.length >= 10 ? iso.substring(0, 10) : iso;
+    }
+  }
+
+  String? _extractReportSection(String reportContent, String sectionTitle) {
+    final lines = reportContent.split('\n');
+    final needle = sectionTitle.trim().toUpperCase();
+    int start = -1;
+    for (int i = 0; i < lines.length; i += 1) {
+      final t = lines[i].trim().toUpperCase();
+      if (t == needle) {
+        start = i + 1;
+        break;
+      }
+    }
+    if (start < 0 || start >= lines.length) return null;
+    int end = lines.length;
+    for (int i = start; i < lines.length; i += 1) {
+      final t = lines[i].trim();
+      final upper = t.toUpperCase();
+      if (t.isNotEmpty && t == upper && upper.length >= 3) {
+        end = i;
+        break;
+      }
+    }
+    final out = lines.sublist(start, end).join('\n').trim();
+    return out.isEmpty ? null : out;
   }
   
   String _formatDateTime(String dateTimeString) {

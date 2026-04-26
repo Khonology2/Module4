@@ -632,7 +632,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const AppScaffold(
-        useBackgroundImage: false,
+        useBackgroundImage: true,
         body: Center(
           child: CircularProgressIndicator(
             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
@@ -644,7 +644,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
     final auth = AuthService();
     final canCreateDeliverable = auth.canCreateDeliverable();
     return AppScaffold(
-      useBackgroundImage: false,
+      useBackgroundImage: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

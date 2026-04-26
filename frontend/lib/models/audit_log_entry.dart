@@ -3,6 +3,7 @@ import 'dart:convert';
 class AuditLogEntry {
   final int id;
   final String? userId;
+  final String? userName;
   final String? userEmail;
   final String? userRole;
   final String action;
@@ -17,6 +18,7 @@ class AuditLogEntry {
   const AuditLogEntry({
     required this.id,
     this.userId,
+    this.userName,
     this.userEmail,
     this.userRole,
     required this.action,
@@ -59,11 +61,34 @@ class AuditLogEntry {
       return null;
     }
 
+    String? parseUserName(dynamic value) {
+      if (value == null) return null;
+      if (value is String) {
+        final s = value.trim();
+        return s.isEmpty ? null : s;
+      }
+      return null;
+    }
+
+    String? computedNameFromUserMap(Map user) {
+      final first = user['first_name']?.toString() ?? user['firstName']?.toString() ?? '';
+      final last = user['last_name']?.toString() ?? user['lastName']?.toString() ?? '';
+      final email = user['email']?.toString() ?? '';
+      final full = ('$first $last').trim();
+      if (full.isNotEmpty) return full;
+      if (email.isNotEmpty) return email;
+      return null;
+    }
+
+    final dynamic userObj = json['user'];
+    final Map? userMap = userObj is Map ? userObj : null;
+
     return AuditLogEntry(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
-      userId: json['user_id']?.toString() ?? json['userId']?.toString(),
-      userEmail: json['user_email']?.toString() ?? json['userEmail']?.toString(),
-      userRole: json['user_role']?.toString() ?? json['userRole']?.toString(),
+      userId: json['user_id']?.toString() ?? json['userId']?.toString() ?? userMap?['id']?.toString(),
+      userName: parseUserName(json['user_name'] ?? json['userName'] ?? json['actor_name'] ?? json['actorName']) ?? (userMap != null ? computedNameFromUserMap(userMap) : null),
+      userEmail: json['user_email']?.toString() ?? json['userEmail']?.toString() ?? userMap?['email']?.toString(),
+      userRole: json['user_role']?.toString() ?? json['userRole']?.toString() ?? userMap?['role']?.toString(),
       action: json['action']?.toString() ?? 'unknown',
       actionCategory: json['action_category']?.toString() ?? json['actionCategory']?.toString(),
       entityType: json['entity_type']?.toString() ?? json['entityType']?.toString(),
@@ -71,8 +96,8 @@ class AuditLogEntry {
       oldValues: parseMap(json['old_values'] ?? json['oldValues']),
       newValues: parseMap(json['new_values'] ?? json['newValues']),
       changedFields: parseList(json['changed_fields'] ?? json['changedFields']),
-      createdAt: json['created_at'] != null 
-          ? DateTime.parse(json['created_at'].toString()) 
+      createdAt: (json['created_at'] ?? json['createdAt']) != null
+          ? DateTime.parse((json['created_at'] ?? json['createdAt']).toString())
           : DateTime.now(),
     );
   }

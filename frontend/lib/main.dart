@@ -396,6 +396,10 @@ final GoRouter _router = GoRouter(
       ),
     ),
     GoRoute(
+      path: '/sprints',
+      redirect: (context, state) => '/sprint-console',
+    ),
+    GoRoute(
       path: '/sprint-console',
             builder: (context, state) {
               final projectKey = state.uri.queryParameters['projectKey'];

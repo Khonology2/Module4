@@ -820,8 +820,11 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: FlownetColors.charcoalBlack,
+      return const AppScaffold(
+        useBackgroundImage: true,
+        useGlassContainer: false,
+        centered: false,
+        scrollable: false,
         body: Center(child: CircularProgressIndicator()),
       );
     }

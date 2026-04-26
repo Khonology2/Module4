@@ -59,6 +59,51 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   // Cache for user names to avoid repeated API calls
   final Map<String, String> _userNamesCache = {};
 
+  String _extractAuditUserId(Map<String, dynamic> log) {
+    final id = (log['user_id'] ?? log['userId'] ?? log['actor_id'] ?? log['actorId'])?.toString();
+    if (id != null && id.trim().isNotEmpty) return id.trim();
+    final userObj = log['user'];
+    if (userObj is Map) {
+      final uid = userObj['id']?.toString();
+      if (uid != null && uid.trim().isNotEmpty) return uid.trim();
+    }
+    return '';
+  }
+
+  String _extractAuditActorLabel(Map<String, dynamic> log) {
+    final direct = (log['actor_name'] ??
+            log['actorName'] ??
+            log['user_name'] ??
+            log['userName'] ??
+            log['user_email'] ??
+            log['userEmail'] ??
+            log['actor'] ??
+            log['user'])
+        ?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    final id = _extractAuditUserId(log);
+    final cached = id.isNotEmpty ? _userNamesCache[id] : null;
+    if (cached != null && cached.trim().isNotEmpty) return cached.trim();
+    return 'System';
+  }
+
+  Future<void> _hydrateAuditActors(List<Map<String, dynamic>> logs) async {
+    final ids = logs
+        .map(_extractAuditUserId)
+        .where((id) => id.isNotEmpty && !_userNamesCache.containsKey(id))
+        .toSet()
+        .toList();
+    if (ids.isNotEmpty) {
+      final futures = ids.map((userId) => _getUserNameById(userId));
+      await Future.wait(futures);
+    }
+
+    for (final log in logs) {
+      log['actor_id'] = _extractAuditUserId(log);
+      log['actor'] = _extractAuditActorLabel(log);
+    }
+  }
+
   // Method to get user name by ID with caching
   Future<String> _getUserNameById(String userId) async {
     // Check cache first
@@ -134,6 +179,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     realtimeService.offAll('approval_updated');
     realtimeService.offAll('project_created');
     realtimeService.offAll('project_updated');
+    realtimeService.offAll('audit_log_created');
     // Do not call offAll for notification_received as it affects other widgets
     super.dispose();
   }
@@ -229,6 +275,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             .whereType<Map>()
             .map((e) => e.cast<String, dynamic>())
             .toList();
+        await _hydrateAuditActors(list);
         setState(() {
           _auditLogs = list;
           _filteredAuditLogs = _auditLogs;
@@ -360,6 +407,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           }).toList();
         }
 
+        await _hydrateAuditActors(filteredLogs);
         setState(() {
           if (loadMore) {
             _auditLogs.addAll(filteredLogs);
@@ -3776,6 +3824,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     realtimeService.offAll('report_change_requested');
     realtimeService.offAll('project_created');
     realtimeService.offAll('project_updated');
+    realtimeService.offAll('audit_log_created');
     // Note: notifications listeners are handled by NotificationCenterWidget, do not offAll here
 
     realtimeService.on('user_role_changed', _handleRoleChanged);
@@ -3812,6 +3861,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     });
     realtimeService.on('project_created', (_) => _loadDashboardProjects());
     realtimeService.on('project_updated', (_) => _loadDashboardProjects());
+    realtimeService.on('audit_log_created', _handleAuditLogCreated);
     realtimeService.on('notification_received', (data) {
       try {
         final type = (data['type'] ?? '').toString();
@@ -3828,6 +3878,24 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         }
       } catch (_) {}
     });
+  }
+
+  void _handleAuditLogCreated(dynamic data) {
+    try {
+      if (data is! Map) return;
+      final log = Map<String, dynamic>.from(data as Map);
+      final id = log['id']?.toString() ?? '';
+      if (id.isNotEmpty && _auditLogs.any((e) => (e['id']?.toString() ?? '') == id)) {
+        return;
+      }
+      _hydrateAuditActors([log]).then((_) {
+        if (!mounted) return;
+        setState(() {
+          _auditLogs = [log, ..._auditLogs];
+        });
+        _applySearchAndSort();
+      });
+    } catch (_) {}
   }
 
   void _handleRoleChanged(dynamic _) {
