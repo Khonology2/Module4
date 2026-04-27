@@ -24,11 +24,9 @@ services:
     name: flow-space-frontend
     env: static
     rootDir: frontend
-    buildCommand: flutter build web --web-renderer html
-    staticPublishPath: build/web
+    buildCommand: cd frontend && curl -L https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.41.7-stable.tar.xz -o flutter.tar.xz && tar xf flutter.tar.xz && export PATH="$PATH:`pwd`/flutter/bin" && flutter config --enable-web && flutter build web
+    staticPublishPath: frontend/build/web
     envVars:
-      - key: BUILDPACK_URL
-        value: https://github.com/subosito/flutter-buildpack
       - key: FLUTTER_WEB_CANVASKIT_URL
         value: https://cdn.jsdelivr.net/gh/flutter/canvaskit@master
     routes:
