@@ -33,6 +33,3 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
-      - type: file
-        source: /assets/*
-        destination: /assets/
