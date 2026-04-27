@@ -11,6 +11,9 @@ class Environment {
     defaultValue: 'http://localhost:3001/api/v1',
   );
 
+  // Production flag
+  static const bool _isProduction = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
+
   // Production fallback detection
   static String get apiBaseUrl {
     // Respect build-time API base URL first (local or deployed).
@@ -19,7 +22,7 @@ class Environment {
     }
 
     // Fallback only if define is unexpectedly empty.
-    if (isRenderDeployed) {
+    if (_isProduction || isRenderDeployed) {
       return 'https://flow-space.onrender.com/api/v1';
     }
     return 'http://localhost:3001/api/v1';
