@@ -37,7 +37,7 @@ class BackgroundImage extends StatelessWidget {
         imagePath ??
         (isDarkMode
             ? 'Icons/khono_bg.png'
-            : 'assets/niice_wrld_white_bg.png');
+            : 'niice_wrld_white_bg.png');
     final List<Color> resolvedGradientColors =
         gradientColors ??
         (isDarkMode
