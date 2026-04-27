@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../config/environment.dart';
+import '../widgets/background_image.dart';
+import '../utils/asset_helper.dart';
 import '../services/auth_service.dart';
 import '../services/backend_settings_service.dart';
 import '../services/error_handler.dart';
@@ -156,7 +159,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           // Logo and Title
-                          Image.asset(
+                          AssetHelper.getImage(
                             'Icons/khono.png',
                             height: 80,
                             fit: BoxFit.contain,

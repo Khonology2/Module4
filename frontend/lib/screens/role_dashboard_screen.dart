@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import '../models/user_role.dart';
+import '../theme/flownet_theme.dart';
+import '../utils/asset_helper.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
 import '../services/realtime_service.dart';
@@ -771,12 +773,11 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return ClipOval(
       child: Transform.scale(
         scale: visualScale,
-        child: Image.asset(
+        child: AssetHelper.getImage(
           assetPath,
           width: size,
           height: size,
           fit: fit,
-          filterQuality: FilterQuality.none,
           errorBuilder: (context, error, stackTrace) {
             return const SizedBox.shrink();
           },
@@ -2115,8 +2116,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Image.asset(
-          'assets/red_icon.png',
+        child: AssetHelper.getImage(
+          'red_icon.png',
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) {
             return Container(
