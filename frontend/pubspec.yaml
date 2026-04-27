@@ -95,3 +95,6 @@ flutter:
   assets:
     - assets/
     - assets/Icons/
+    - assets/white_discs.png
+    - assets/khono_logo.png
+    - assets/Icons/khono_bg.png
