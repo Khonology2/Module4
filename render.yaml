@@ -24,7 +24,7 @@ services:
     name: flow-space-frontend
     env: static
     rootDir: frontend
-    buildCommand: flutter build web --web-renderer html
+    buildCommand: git clone https://github.com/flutter/flutter.git -b stable && export PATH="$PATH:`pwd`/flutter/bin" && flutter doctor && flutter build web --web-renderer html
     staticPublishPath: build/web
     envVars:
       - key: FLUTTER_WEB_CANVASKIT_URL
