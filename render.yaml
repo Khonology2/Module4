@@ -19,14 +19,16 @@ services:
         value: 10000
     healthCheckPath: /health
 
-  # Flutter Frontend - Simple Static Build
+  # Flutter Frontend - Flutter Buildpack
   - type: web
     name: flow-space-frontend
     env: static
     rootDir: frontend
-    buildCommand: git clone https://github.com/flutter/flutter.git -b stable && export PATH="$PATH:`pwd`/flutter/bin" && flutter doctor && flutter build web --web-renderer html
+    buildCommand: flutter build web --web-renderer html
     staticPublishPath: build/web
     envVars:
+      - key: BUILDPACK_URL
+        value: https://github.com/subosito/flutter-buildpack
       - key: FLUTTER_WEB_CANVASKIT_URL
         value: https://cdn.jsdelivr.net/gh/flutter/canvaskit@master
     routes:
