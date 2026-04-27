@@ -5,6 +5,7 @@ import '../services/notification_service.dart';
 import '../services/auth_service.dart';
 import '../services/realtime_service.dart';
 import '../theme/flownet_theme.dart';
+import '../utils/date_utils.dart' as app_date;
 import '../widgets/app_scaffold.dart';
 import 'notification_detail_screen.dart';
 
@@ -324,7 +325,7 @@ class _EnhancedNotificationsScreenState
       final days = difference.inDays;
       return '$days ${days == 1 ? 'day' : 'days'} ago';
     } else {
-      return '${timestamp.day}/${timestamp.month}/${timestamp.year}';
+      return app_date.DateUtils.formatDate(timestamp);
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/sprint_database_service.dart';
 import '../services/auth_service.dart';
+import '../utils/user_label_utils.dart';
 
 class CreateSprintScreen extends StatefulWidget {
   final String? projectId;
@@ -198,7 +199,11 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
     
     // Fallback to owner_id or default message
     if (ownerId != null) {
-      return 'Owner ID: ${ownerId.toString().substring(0, 8)}...';
+      return UserLabelUtils.sanitizeUserLabel(
+        ownerId.toString(),
+        emptyIsUnknown: true,
+        unknownLabel: 'Unknown Owner',
+      );
     }
     
     return 'Not assigned';

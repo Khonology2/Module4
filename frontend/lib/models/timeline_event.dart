@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/date_utils.dart' as app_date;
 
 enum TimelineEventType {
   milestone,
@@ -235,7 +236,7 @@ class TimelineEvent {
 
   String get formattedDate {
     if (date == null) return 'No date';
-    return '${date!.day}/${date!.month}/${date!.year}';
+    return app_date.DateUtils.formatDate(date!);
   }
 
   String get formattedTime {

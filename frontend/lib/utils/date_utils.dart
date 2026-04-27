@@ -3,12 +3,12 @@ import 'package:intl/intl.dart';
 class DateUtils {
   /// Formats a DateTime object into a string like "Oct 24, 2023 2:30 PM"
   static String formatDateTime(DateTime date) {
-    return DateFormat('MMM d, yyyy h:mm a').format(date);
+    return DateFormat('d MMM yyyy, h:mm a').format(date);
   }
 
   /// Formats a DateTime object into a date string like "Oct 24, 2023"
   static String formatDate(DateTime date) {
-    return DateFormat('MMM d, yyyy').format(date);
+    return DateFormat('d MMM yyyy').format(date);
   }
 
   /// Formats a DateTime object into a time string like "2:30 PM"

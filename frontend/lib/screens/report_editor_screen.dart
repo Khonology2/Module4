@@ -852,12 +852,18 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
 
   /// Show enhanced signing dialog before submission with typed signature option
   Future<String?> _showSigningDialog() async {
-    String? signatureData;
+    String? signatureData = _existingReport?.digitalSignature;
     String signatureType = 'drawn'; // 'drawn', 'typed', 'saved'
     bool saveSignature = false;
-    String? signatureName;
+    final currentUser = _authService.currentUser;
+    final currentUserName = currentUser?.name.trim() ?? '';
+    final currentUserEmail = currentUser?.email.trim() ?? '';
+    String signatureName = currentUserName.isNotEmpty
+        ? currentUserName
+        : (currentUserEmail.isNotEmpty ? currentUserEmail : 'My Signature');
+    final signatureNameController = TextEditingController(text: signatureName);
 
-    return showDialog<String>(
+    final result = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
@@ -1008,9 +1014,11 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                   if (signatureType == 'drawn') ...[
                     SignatureCaptureWidget(
                       key: _signatureKey,
+                      existingSignature: _existingReport?.digitalSignature,
                       allowSignatureReuse: true,
                       showAuditInfo: true,
                       reportId: widget.reportId,
+                      signatureStorageNamespace: 'delivery_lead',
                     ),
                   ] else if (signatureType == 'typed') ...[
                     Container(
@@ -1106,6 +1114,7 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                         if (saveSignature) ...[
                           const SizedBox(height: 8),
                           TextField(
+                            controller: signatureNameController,
                             onChanged: (value) {
                               signatureName = value;
                             },
@@ -1168,8 +1177,7 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                               finalSignature.isNotEmpty) {
                             // Save signature if requested
                             if (saveSignature &&
-                                signatureName != null &&
-                                signatureName!.isNotEmpty) {
+                                signatureName.isNotEmpty) {
                               try {
                                 debugPrint(
                                     '💾 Saving signature: type=$signatureType, name=$signatureName');
@@ -1201,7 +1209,7 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                                 // Fallback to local storage
                                 try {
                                   await _saveSignatureLocally(finalSignature,
-                                      signatureType, signatureName!);
+                                      signatureType, signatureName);
                                   if (mounted) {
                                     scaffoldMessenger.showSnackBar(
                                       const SnackBar(
@@ -1257,6 +1265,8 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
         ),
       ),
     );
+    signatureNameController.dispose();
+    return result;
   }
 
   /// Convert typed signature to base64 image format

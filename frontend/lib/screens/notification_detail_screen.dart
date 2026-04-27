@@ -4,6 +4,7 @@ import '../models/notification_item.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../theme/flownet_theme.dart';
+import '../utils/date_utils.dart' as app_date;
 import '../widgets/app_scaffold.dart';
 import 'client_review_workflow_screen.dart';
 import 'report_editor_screen.dart';
@@ -107,7 +108,7 @@ class _NotificationDetailScreenState extends ConsumerState<NotificationDetailScr
       final days = difference.inDays;
       return '$days ${days == 1 ? 'day' : 'days'} ago';
     } else {
-      return '${timestamp.day}/${timestamp.month}/${timestamp.year}';
+      return app_date.DateUtils.formatDate(timestamp);
     }
   }
 

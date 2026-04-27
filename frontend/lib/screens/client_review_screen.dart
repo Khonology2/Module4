@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/deliverable.dart';
 import '../models/sign_off_report.dart';
+import '../services/api_client.dart';
+import '../services/auth_service.dart';
 import '../services/backend_api_service.dart';
+import '../services/signature_service.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/flownet_logo.dart';
 import '../widgets/signature_capture_widget.dart';
@@ -31,9 +35,20 @@ class ClientReviewScreen extends ConsumerStatefulWidget {
 class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
   final _commentController = TextEditingController();
   final _changeRequestController = TextEditingController();
-  final GlobalKey<SignatureCaptureWidgetState> _signatureKey =
-      GlobalKey<SignatureCaptureWidgetState>();
   String? _capturedSignature;
+  DateTime? _clientSignatureCapturedAt;
+
+  String? get _clientSignature {
+    final captured = _capturedSignature?.trim();
+    if (captured == null || captured.isEmpty) return null;
+    final deliveryLeadSig = _report?.digitalSignature?.trim();
+    if (deliveryLeadSig != null &&
+        deliveryLeadSig.isNotEmpty &&
+        captured == deliveryLeadSig) {
+      return null;
+    }
+    return captured;
+  }
 
   SignOffReport? _report;
   Deliverable? _deliverable;
@@ -43,6 +58,7 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLastSavedClientSignature();
     if (widget.initialReport != null) {
       _report = widget.initialReport;
       _deliverable = widget.initialDeliverable;
@@ -60,6 +76,51 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
     } else {
       _loadReportData();
     }
+  }
+
+  Future<void> _loadLastSavedClientSignature() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('saved_signatures_client_reviewer');
+      if (raw == null || raw.isEmpty) return;
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! List || decoded.isEmpty) return;
+
+      Map<String, dynamic>? candidate;
+      for (final item in decoded) {
+        if (item is Map<String, dynamic>) {
+          final isActive = item['is_active'] == true;
+          final isDefault = item['is_default'] == true;
+          if (isDefault && isActive) {
+            candidate = item;
+            break;
+          }
+        }
+      }
+      candidate ??= decoded.last is Map<String, dynamic>
+          ? decoded.last as Map<String, dynamic>
+          : null;
+
+      final sig = candidate?['signature_data']?.toString().trim();
+      DateTime? capturedAt;
+      final updatedAtRaw = candidate?['updated_at']?.toString();
+      if (updatedAtRaw != null && updatedAtRaw.isNotEmpty) {
+        capturedAt = DateTime.tryParse(updatedAtRaw);
+      }
+      final createdAtRaw = candidate?['created_at']?.toString();
+      if (capturedAt == null && createdAtRaw != null && createdAtRaw.isNotEmpty) {
+        capturedAt = DateTime.tryParse(createdAtRaw);
+      }
+      if (!mounted || sig == null || sig.isEmpty) return;
+
+      setState(() {
+        if (_capturedSignature == null || _capturedSignature!.isEmpty) {
+          _capturedSignature = sig;
+          _clientSignatureCapturedAt = capturedAt;
+        }
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadReportData() async {
@@ -211,14 +272,17 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
     try {
       final backendService = BackendApiService();
       if (_selectedAction == 'approve') {
-        String? signature = _capturedSignature;
-        signature ??= await _signatureKey.currentState?.getSignature();
+        String? signature = _clientSignature;
+        if (signature == null || signature.isEmpty) {
+          await _openSignatureModal();
+          signature = _clientSignature;
+        }
         if (signature == null || signature.isEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
-                    'Digital signature is required to approve this report.'),
+                    'Client digital signature is required to approve this report.'),
                 backgroundColor: Colors.orange,
               ),
             );
@@ -747,17 +811,58 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                   ),
             ),
             const SizedBox(height: 16),
-            SignatureCaptureWidget(
-              key: _signatureKey,
-              allowSignatureReuse: true,
-              showAuditInfo: true,
-              reportId: _report?.id,
-              onSignatureCaptured: (sig) {
-                setState(() {
-                  _capturedSignature = sig;
-                });
-              },
+            if (_report?.digitalSignature != null &&
+                _report!.digitalSignature!.isNotEmpty) ...[
+              Text(
+                _deliveryLeadAuditLabel,
+                style: const TextStyle(color: FlownetColors.coolGray, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[700]!),
+                ),
+                child: _buildReadOnlySignaturePreview(_report!.digitalSignature!),
+              ),
+              const SizedBox(height: 16),
+            ],
+            Text(
+              _clientAuditLabel,
+              style: const TextStyle(color: FlownetColors.coolGray, fontSize: 12),
             ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: FlownetColors.slate,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: FlownetColors.electricBlue),
+              ),
+              child: _buildSignaturePreview(),
+            ),
+            const SizedBox(height: 12),
+            if (_selectedAction == 'approve')
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _openSignatureModal,
+                  icon: const Icon(Icons.edit),
+                  label: Text(
+                    (_clientSignature == null || _clientSignature!.isEmpty)
+                        ? 'Sign Report Before Submission'
+                        : 'Update Client Signature',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: FlownetColors.electricBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -783,6 +888,590 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
         ),
       ),
     );
+  }
+
+  String get _deliveryLeadAuditLabel {
+    final leadName = (_report?.submittedByName ?? _report?.submittedBy ?? '').trim();
+    final displayName = leadName.isNotEmpty ? leadName : 'Delivery Lead';
+    final when = _report?.submittedAt;
+    if (when != null) {
+      return 'Signed by Delivery Lead: $displayName • ${formatDate(when)}';
+    }
+    return 'Signed by Delivery Lead: $displayName';
+  }
+
+  String get _clientAuditLabel {
+    final user = AuthService().currentUser;
+    final userName = user?.name.trim() ?? '';
+    final displayName = userName.isNotEmpty ? userName : 'Client';
+    final when = _clientSignatureCapturedAt;
+    if (when != null) {
+      return 'Signed by Client: $displayName • ${formatDate(when)}';
+    }
+    return 'Signed by Client: $displayName';
+  }
+
+  Widget _buildSignaturePreview() {
+    final signature = _clientSignature;
+    if (signature == null || signature.isEmpty) {
+      return const Column(
+        children: [
+          Icon(Icons.draw, color: Colors.grey, size: 40),
+          SizedBox(height: 8),
+          Text(
+            'No client signature captured',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Use "Sign Report Before Submission" to add your signature',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      );
+    }
+
+    if (signature.startsWith('data:text/plain;base64,')) {
+      try {
+        final textBytes = base64Decode(signature.split(',').last);
+        final typedSignature = utf8.decode(textBytes);
+        return Column(
+          children: [
+            Container(
+              height: 96,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade400),
+              ),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                typedSignature,
+                style: const TextStyle(
+                  fontSize: 28,
+                  color: Colors.black,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  'Client typed signature captured',
+                  style: TextStyle(color: Colors.green, fontSize: 12),
+                ),
+              ],
+            ),
+          ],
+        );
+      } catch (_) {}
+    }
+
+    try {
+      final imageBytes = base64Decode(
+        signature.contains(',') ? signature.split(',').last : signature,
+      );
+
+      return Column(
+        children: [
+          Container(
+            height: 96,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade400),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(imageBytes, fit: BoxFit.contain),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 16),
+              SizedBox(width: 6),
+              Text(
+                'Client signature captured',
+                style: TextStyle(color: Colors.green, fontSize: 12),
+              ),
+            ],
+          ),
+        ],
+      );
+    } catch (_) {
+      return const Column(
+        children: [
+          Icon(Icons.error_outline, color: Colors.orange, size: 30),
+          SizedBox(height: 8),
+          Text(
+            'Signature present (preview unavailable)',
+            style: TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ],
+      );
+    }
+  }
+
+  Widget _buildReadOnlySignaturePreview(String signature) {
+    try {
+      if (signature.startsWith('data:text/plain;base64,')) {
+        final textBytes = base64Decode(signature.split(',').last);
+        final typedSignature = utf8.decode(textBytes);
+        return Container(
+          height: 80,
+          width: double.infinity,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade400),
+          ),
+          child: Text(
+            typedSignature,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 24,
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }
+
+      final imageBytes =
+          base64Decode(signature.contains(',') ? signature.split(',').last : signature);
+      return Container(
+        height: 96,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade400),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(imageBytes, fit: BoxFit.contain),
+        ),
+      );
+    } catch (_) {
+      return const Text(
+        'Delivery lead signature is attached',
+        style: TextStyle(color: Colors.white70),
+      );
+    }
+  }
+
+  Future<void> _openSignatureModal() async {
+    final signatureKey = GlobalKey<SignatureCaptureWidgetState>();
+    String? modalSignature = _clientSignature;
+    String signatureType = 'drawn';
+    bool saveSignature = false;
+    final typedSignatureController = TextEditingController();
+    final signatureNameController = TextEditingController();
+    final currentUser = AuthService().currentUser;
+    final currentUserName = currentUser == null ? '' : currentUser.name.trim();
+    final currentUserEmail = currentUser == null ? '' : currentUser.email.trim();
+    final defaultSignatureName = currentUserName.isNotEmpty
+        ? currentUserName
+        : (currentUserEmail.isNotEmpty ? currentUserEmail : 'My Signature');
+    signatureNameController.text = defaultSignatureName;
+
+    final savedSignature = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          backgroundColor: FlownetColors.graphiteGray,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            width: 600,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Sign Report Before Submission',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: FlownetColors.pureWhite,
+                      ),
+                    ),
+                    IconButton(
+                      icon:
+                          const Icon(Icons.close, color: FlownetColors.pureWhite),
+                      onPressed: () => Navigator.pop(context, null),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Please sign this report to confirm your review decision.',
+                  style: TextStyle(
+                    color: FlownetColors.coolGray,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[600]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Choose Signature Method:',
+                        style: TextStyle(
+                          color: FlownetColors.pureWhite,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setDialogState(() => signatureType = 'drawn'),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: signatureType == 'drawn'
+                                      ? FlownetColors.electricBlue
+                                      : Colors.grey[700],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: signatureType == 'drawn'
+                                        ? FlownetColors.electricBlue
+                                        : Colors.grey[500]!,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.draw,
+                                      color: signatureType == 'drawn'
+                                          ? Colors.white
+                                          : Colors.grey[400],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Draw Signature',
+                                      style: TextStyle(
+                                        color: signatureType == 'drawn'
+                                            ? Colors.white
+                                            : Colors.grey[400],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setDialogState(() => signatureType = 'typed'),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: signatureType == 'typed'
+                                      ? FlownetColors.electricBlue
+                                      : Colors.grey[700],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: signatureType == 'typed'
+                                        ? FlownetColors.electricBlue
+                                        : Colors.grey[500]!,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.keyboard,
+                                      color: signatureType == 'typed'
+                                          ? Colors.white
+                                          : Colors.grey[400],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Type Signature',
+                                      style: TextStyle(
+                                        color: signatureType == 'typed'
+                                            ? Colors.white
+                                            : Colors.grey[400],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: signatureType == 'drawn'
+                        ? SignatureCaptureWidget(
+                            key: signatureKey,
+                            existingSignature: modalSignature,
+                            allowSignatureReuse: true,
+                            showAuditInfo: false,
+                            reportId: _report?.id,
+                            signatureStorageNamespace: 'client_reviewer',
+                            onSignatureCaptured: (sig) {
+                              setDialogState(() {
+                                modalSignature = sig;
+                              });
+                            },
+                          )
+                        : Container(
+                            height: 140,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: Colors.grey[400]!),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: TextField(
+                              controller: typedSignatureController,
+                              onChanged: (_) => setDialogState(() {}),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 28,
+                                color: Colors.black,
+                              ),
+                              decoration: const InputDecoration(
+                                hintText: 'Type your signature here',
+                                hintStyle: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 20,
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.all(16),
+                              ),
+                              maxLines: 2,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: saveSignature,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                saveSignature = value ?? false;
+                              });
+                            },
+                            activeColor: FlownetColors.electricBlue,
+                          ),
+                          const Text(
+                            'Save this signature for future use',
+                            style: TextStyle(
+                              color: FlownetColors.pureWhite,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (saveSignature) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: signatureNameController,
+                          style: const TextStyle(color: FlownetColors.pureWhite),
+                          decoration: InputDecoration(
+                            hintText: 'Signature name (e.g. My Client Signature)',
+                            hintStyle: TextStyle(color: Colors.grey[400]),
+                            filled: true,
+                            fillColor: Colors.black26,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: Colors.grey[600]!),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: Colors.grey[600]!),
+                            ),
+                            focusedBorder: const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(8)),
+                              borderSide: BorderSide(
+                                  color: FlownetColors.electricBlue, width: 2),
+                            ),
+                          ),
+                          onChanged: (_) => setDialogState(() {}),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, null),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () async {
+                        String? finalSignature;
+                        if (signatureType == 'drawn') {
+                          final captured =
+                              await signatureKey.currentState?.getSignature();
+                          finalSignature =
+                              (captured != null && captured.isNotEmpty)
+                                  ? captured
+                                  : modalSignature;
+                        } else {
+                          final typed = typedSignatureController.text.trim();
+                          if (typed.isNotEmpty) {
+                            finalSignature = await _convertTypedSignature(typed);
+                          }
+                        }
+
+                        if (finalSignature == null || finalSignature.isEmpty) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Please provide a signature before saving.',
+                                ),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+                          return;
+                        }
+
+                        if (saveSignature &&
+                            signatureNameController.text.trim().isEmpty) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Please provide a signature name to save it.',
+                                ),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+                          return;
+                        }
+
+                        if (saveSignature) {
+                          final signatureName =
+                              signatureNameController.text.trim();
+                          try {
+                            final signatureService = SignatureService(ApiClient());
+                            await signatureService.saveSignature(
+                              finalSignature,
+                              signatureType,
+                              false,
+                            );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Signature saved successfully!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } catch (_) {
+                            if (signatureType == 'drawn' &&
+                                signatureKey.currentState != null) {
+                              try {
+                                await signatureKey.currentState!.saveSignatureLocally(
+                                  finalSignature,
+                                  signatureType,
+                                  signatureName,
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Signature saved locally for reuse.'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                }
+                              } catch (_) {}
+                            }
+                          }
+                        }
+
+                        Navigator.pop(context, finalSignature);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: FlownetColors.electricBlue,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    typedSignatureController.dispose();
+    signatureNameController.dispose();
+
+    if (savedSignature != null && savedSignature.isNotEmpty && mounted) {
+      setState(() {
+        _capturedSignature = savedSignature;
+        _clientSignatureCapturedAt = DateTime.now();
+      });
+    }
+  }
+
+  Future<String> _convertTypedSignature(String typedText) async {
+    final bytes = utf8.encode(typedText);
+    return 'data:text/plain;base64,${base64Encode(bytes)}';
   }
 
   String formatDate(DateTime date) {

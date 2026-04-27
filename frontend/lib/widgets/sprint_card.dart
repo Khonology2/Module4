@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'glass_card.dart';
+import '../utils/date_utils.dart' as app_date;
 
 class SprintCard extends StatelessWidget {
   final Map<String, dynamic> sprint;
@@ -137,7 +138,7 @@ class SprintCard extends StatelessWidget {
             const SizedBox(height: 8),
             if (startDate != null && endDate != null) ...[
               Text(
-                '${DateFormat('MMM d').format(startDate)} - ${DateFormat('MMM d, yyyy').format(endDate)}',
+                '${DateFormat('d MMM').format(startDate)} - ${app_date.DateUtils.formatDate(endDate)}',
                 style: TextStyle(
                   color: onSurfaceColor.withAlpha(179),  // 0.7 * 255 ≈ 179
                   fontSize: 12,

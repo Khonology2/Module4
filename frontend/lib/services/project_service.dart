@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../models/project.dart';
 import '../config/environment.dart';
 import 'auth_service.dart';
+import '../utils/date_utils.dart' as app_date;
 
 class ProjectService {
   static final String _baseUrl = Environment.apiBaseUrl;
@@ -267,12 +268,12 @@ class ProjectService {
 
   static String formatDate(DateTime? date) {
     if (date == null) return 'Not set';
-    return '${date.day}/${date.month}/${date.year}';
+    return app_date.DateUtils.formatDate(date);
   }
 
   static String formatFullDate(DateTime? date) {
     if (date == null) return 'Not set';
-    return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    return app_date.DateUtils.formatDateTime(date);
   }
 
   static bool isProjectOverdue(Project project) {

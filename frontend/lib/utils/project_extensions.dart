@@ -2,6 +2,7 @@
 // This file provides temporary fixes while database migration is pending
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/project.dart';
 
 extension ProjectExtensions on Project {
@@ -32,13 +33,13 @@ extension ProjectExtensions on Project {
   }
   
   String get formattedStartDate {
-    return '${displayStartDate.day}/${displayStartDate.month}/${displayStartDate.year}';
+    return DateFormat('d MMM yyyy').format(displayStartDate);
   }
   
   String get formattedEndDate {
     final end = displayEndDate;
     if (end != null) {
-      return '${end.day}/${end.month}/${end.year}';
+      return DateFormat('d MMM yyyy').format(end);
     }
     return 'Not set';
   }

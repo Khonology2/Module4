@@ -14,6 +14,7 @@ class SignatureCaptureWidget extends StatefulWidget {
   final bool allowSignatureReuse;
   final bool showAuditInfo;
   final String? reportId; // For audit tracking
+  final String signatureStorageNamespace; // isolates local saved signatures
 
   const SignatureCaptureWidget({
     super.key,
@@ -22,6 +23,7 @@ class SignatureCaptureWidget extends StatefulWidget {
     this.allowSignatureReuse = true,
     this.showAuditInfo = true,
     this.reportId,
+    this.signatureStorageNamespace = 'default',
   });
 
   @override
@@ -40,6 +42,7 @@ abstract class SignatureCaptureWidgetState
 class _SignatureCaptureWidgetState extends SignatureCaptureWidgetState {
   final GlobalKey _signatureKey = GlobalKey();
   List<Offset?> _points = <Offset?>[];
+  Size _canvasSize = const Size(0, 0);
   bool _hasSignature = false;
   bool _showSavedSignatures = false;
   List<UserSignature> _savedSignatures = [];
@@ -204,8 +207,10 @@ class _SignatureCaptureWidgetState extends SignatureCaptureWidgetState {
   }
 
   // Persistent storage for signatures
-  static const String _signaturesKey = 'saved_signatures';
   List<UserSignature> _localSignatures = [];
+
+  String get _signaturesKey =>
+      'saved_signatures_${widget.signatureStorageNamespace}';
 
   Future<List<UserSignature>> _loadLocalSignatures() async {
     try {
@@ -285,8 +290,9 @@ class _SignatureCaptureWidgetState extends SignatureCaptureWidgetState {
 
   /// Constrain drawing points to stay within canvas boundaries
   Offset? _constrainPointToCanvas(Offset point) {
-    const canvasWidth = 400.0; // Approximate canvas width
-    const canvasHeight = 150.0; // Canvas height from Container
+    final canvasWidth = _canvasSize.width;
+    final canvasHeight = _canvasSize.height;
+    if (canvasWidth <= 0 || canvasHeight <= 0) return point;
     const padding = 2.0; // Small padding from edges
 
     final constrainedX = point.dx.clamp(padding, canvasWidth - padding);
@@ -619,31 +625,20 @@ class _SignatureCaptureWidgetState extends SignatureCaptureWidgetState {
           child: ClipRect(
             child: GestureDetector(
               onPanStart: (DragStartDetails details) {
-                final RenderBox? renderBox =
-                    context.findRenderObject() as RenderBox?;
-                if (renderBox != null) {
-                  final Offset localPosition =
-                      renderBox.globalToLocal(details.globalPosition);
-                  _addPoint(localPosition);
-                }
+                _addPoint(details.localPosition);
               },
               onPanUpdate: (DragUpdateDetails details) {
-                final RenderBox? renderBox =
-                    context.findRenderObject() as RenderBox?;
-                if (renderBox != null) {
-                  final Offset localPosition =
-                      renderBox.globalToLocal(details.globalPosition);
+                final localPosition = details.localPosition;
 
-                  // Calculate smooth drawing with interpolation
-                  if (_lastPoint != null && _isDrawing) {
-                    final interpolatedPoints =
-                        _interpolatePoints(_lastPoint!, localPosition);
-                    for (final point in interpolatedPoints) {
-                      _addPoint(point);
-                    }
-                  } else {
-                    _addPoint(localPosition);
+                // Calculate smooth drawing with interpolation
+                if (_lastPoint != null && _isDrawing) {
+                  final interpolatedPoints =
+                      _interpolatePoints(_lastPoint!, localPosition);
+                  for (final point in interpolatedPoints) {
+                    _addPoint(point);
                   }
+                } else {
+                  _addPoint(localPosition);
                 }
               },
               onPanEnd: (DragEndDetails details) {
@@ -651,78 +646,83 @@ class _SignatureCaptureWidgetState extends SignatureCaptureWidgetState {
               },
               child: RepaintBoundary(
                 key: _signatureKey,
-                child: Stack(
-                  children: [
-                    // Grid pattern for better visual guidance
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: GridPainter(),
-                      ),
-                    ),
-                    // Render existing or selected signature
-                    if (_currentSignatureData != null)
-                      Positioned.fill(
-                        child: _buildSignatureImage(_currentSignatureData!),
-                      ),
-                    if (widget.existingSignature != null &&
-                        _currentSignatureData == null)
-                      Positioned.fill(
-                        child: _buildExistingSignature(),
-                      ),
-                    // Draw signature canvas with enhanced visibility
-                    if (_points.isNotEmpty && _selectedSignature == null)
-                      CustomPaint(
-                        painter: SignaturePainter(
-                          _points,
-                          isDrawing: _isDrawing,
-                          currentPenPressure: _currentPenPressure,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    _canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
+                    return Stack(
+                      children: [
+                        // Grid pattern for better visual guidance
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: GridPainter(),
+                          ),
                         ),
-                        child: const SizedBox.shrink(),
-                      ),
-                    // Enhanced placeholder with drawing instructions
-                    if (!_hasSignature &&
-                        widget.existingSignature == null &&
-                        _selectedSignature == null)
-                      const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.create,
-                              size: 32,
-                              color: Colors.grey,
+                        // Render existing or selected signature
+                        if (_currentSignatureData != null)
+                          Positioned.fill(
+                            child: _buildSignatureImage(_currentSignatureData!),
+                          ),
+                        if (widget.existingSignature != null &&
+                            _currentSignatureData == null)
+                          Positioned.fill(
+                            child: _buildExistingSignature(),
+                          ),
+                        // Draw signature canvas with enhanced visibility
+                        if (_points.isNotEmpty && _selectedSignature == null)
+                          CustomPaint(
+                            painter: SignaturePainter(
+                              _points,
+                              isDrawing: _isDrawing,
+                              currentPenPressure: _currentPenPressure,
                             ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Sign here',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
+                            child: const SizedBox.shrink(),
+                          ),
+                        // Enhanced placeholder with drawing instructions
+                        if (!_hasSignature &&
+                            widget.existingSignature == null &&
+                            _selectedSignature == null)
+                          const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.create,
+                                  size: 32,
+                                  color: Colors.grey,
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Sign here',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Use your finger or stylus to draw your signature',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 10,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Drawing will be constrained to this area',
+                                  style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 10,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
                             ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Use your finger or stylus to draw your signature',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 10,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Drawing will be constrained to this area',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 10,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

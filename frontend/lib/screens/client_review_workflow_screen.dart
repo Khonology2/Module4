@@ -824,6 +824,7 @@ class _ClientReviewWorkflowScreenState
                                   allowSignatureReuse: true,
                                   showAuditInfo: true,
                                   reportId: _report?.id,
+                                  signatureStorageNamespace: 'client_reviewer',
                                 ),
                               ],
                             ] else ...[
@@ -833,6 +834,7 @@ class _ClientReviewWorkflowScreenState
                                 allowSignatureReuse: true,
                                 showAuditInfo: true,
                                 reportId: _report?.id,
+                                signatureStorageNamespace: 'client_reviewer',
                               ),
                             ],
                           ],

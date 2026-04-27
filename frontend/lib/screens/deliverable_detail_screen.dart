@@ -13,6 +13,7 @@ import 'package:csv/csv.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../utils/date_utils.dart' as app_date;
 
 import '../models/deliverable.dart';
 import '../services/deliverable_service.dart';
@@ -655,7 +656,7 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
                     const SizedBox(width: 8),
                     Text(
                       _selectedDueDate != null 
-                          ? DateFormat('MMM d, yyyy').format(_selectedDueDate!)
+                          ? app_date.DateUtils.formatDate(_selectedDueDate!)
                           : 'Select Due Date',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).primaryColor,
@@ -667,7 +668,7 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
               )
             else
               Text(
-                'Due Date: ${DateFormat('MMM d, yyyy').format(_deliverable.dueDate)}',
+                'Due Date: ${app_date.DateUtils.formatDate(_deliverable.dueDate)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             const SizedBox(height: 16),

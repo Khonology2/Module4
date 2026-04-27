@@ -10,6 +10,7 @@ import '../models/timeline_event.dart';
 import '../services/timeline_event_service.dart';
 import '../services/timeline_sync_service.dart';
 import 'add_event_modal.dart';
+import '../utils/date_utils.dart' as app_date;
 
 /// Timeline/Calendar Screen
 /// Accessible by all users
@@ -700,7 +701,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   },
                 ),
                 Text(
-                  '${DateFormat('MMM d').format(weekStart)} - ${DateFormat('MMM d, yyyy').format(weekDays.last)}',
+                  '${DateFormat('d MMM').format(weekStart)} - ${app_date.DateUtils.formatDate(weekDays.last)}',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: FlownetColors.pureWhite,
@@ -1592,8 +1593,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     Row(
                       children: [
                         Text(
-                          DateFormat('MMM d, yyyy')
-                              .format(event.date ?? DateTime.now()),
+                          app_date.DateUtils.formatDate(event.date ?? DateTime.now()),
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: FlownetColors.coolGray,
