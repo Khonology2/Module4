@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/ticket_service.dart';
+import '../models/epic.dart';
 import '../theme/flownet_theme.dart';
 
 class BacklogScreen extends StatefulWidget {
@@ -10,7 +10,7 @@ class BacklogScreen extends StatefulWidget {
 }
 
 class _BacklogScreenState extends State<BacklogScreen> {
-  List<Ticket> _tickets = [];
+  List<Epic> _epics = [];
   bool _isLoading = false;
   String? _selectedProjectId;
   String _filterStatus = 'all';
@@ -25,10 +25,14 @@ class _BacklogScreenState extends State<BacklogScreen> {
     setState(() => _isLoading = true);
     
     try {
-      final tickets = await TicketService.getTickets(projectId: _selectedProjectId);
+      // Mock data since TicketService doesn't exist yet
+      final mockEpics = [
+        Epic(id: '1', title: 'User Authentication', description: 'Implement login and registration', projectId: _selectedProjectId, sprintIds: [], deliverableIds: [], createdAt: DateTime.now()),
+        Epic(id: '2', title: 'Dashboard UI', description: 'Create main dashboard interface', projectId: _selectedProjectId, sprintIds: [], deliverableIds: [], createdAt: DateTime.now()),
+      ];
       
       setState(() {
-        _tickets = tickets;
+        _epics = mockEpics;
         _isLoading = false;
       });
     } catch (e) {
@@ -194,7 +198,7 @@ class _BacklogScreenState extends State<BacklogScreen> {
                           valueColor: AlwaysStoppedAnimation<Color>(FlownetColors.crimsonRed),
                         ),
                       )
-                    : _tickets.isEmpty
+                    : _epics.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -232,10 +236,10 @@ class _BacklogScreenState extends State<BacklogScreen> {
                             ),
                           )
                         : ListView.builder(
-                            itemCount: _tickets.length,
+                            itemCount: _epics.length,
                             itemBuilder: (context, index) {
-                              final ticket = _tickets[index];
-                              return _TicketCard(ticket: ticket);
+                              final epic = _epics[index];
+                              return _EpicCard(epic: epic);
                             },
                           ),
               ),
@@ -248,7 +252,7 @@ class _BacklogScreenState extends State<BacklogScreen> {
 }
 
 class _CreateTicketForm extends StatefulWidget {
-  final Function(Ticket) onTicketCreated;
+  final Function(Epic) onTicketCreated;
 
   const _CreateTicketForm({required this.onTicketCreated});
 
@@ -290,17 +294,19 @@ class _CreateTicketFormState extends State<_CreateTicketForm> {
     setState(() => _isLoading = true);
 
     try {
-      final ticket = await TicketService.createTicket(
-        summary: _summaryController.text,
+      // Mock ticket creation since TicketService doesn't exist yet
+      final newEpic = Epic(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: _summaryController.text,
         description: _descriptionController.text,
-        issueType: _issueTypeController.text,
-        priority: _priorityController.text,
-        assignee: _assigneeController.text.isEmpty ? null : _assigneeController.text,
         projectId: _selectedProjectId!,
-        sprintId: _selectedSprintId,
+        sprintIds: _selectedSprintId != null ? [_selectedSprintId!] : [],
+        deliverableIds: [],
+        createdAt: DateTime.now(),
       );
 
-      widget.onTicketCreated(ticket);
+      widget.onTicketCreated(newEpic);
+      Navigator.of(context).pop();
     } catch (e) {
       // Show error
     } finally {
@@ -470,10 +476,15 @@ class _CreateEpicFormState extends State<_CreateEpicForm> {
     setState(() => _isLoading = true);
 
     try {
-      final epic = await TicketService.createEpic(
-        name: _nameController.text,
+      // Mock epic creation since TicketService doesn't exist yet
+      final epic = Epic(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: _nameController.text,
         description: _descriptionController.text,
-        color: _colorController.text,
+        projectId: 'default-project',
+        sprintIds: [],
+        deliverableIds: [],
+        createdAt: DateTime.now(),
       );
 
       widget.onEpicCreated(epic);
@@ -570,14 +581,14 @@ class _CreateEpicFormState extends State<_CreateEpicForm> {
   }
 }
 
-class _TicketCard extends StatelessWidget {
-  final Ticket ticket;
+class _EpicCard extends StatelessWidget {
+  final Epic epic;
 
-  const _TicketCard({required this.ticket});
+  const _EpicCard({required this.epic});
 
   @override
   Widget build(BuildContext context) {
-    final priorityColor = _getPriorityColor(ticket.priority);
+    const priorityColor = FlownetColors.emeraldGreen; // Default color for epics
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -612,7 +623,7 @@ class _TicketCard extends StatelessWidget {
                     Row(
                       children: [
                         Text(
-                          ticket.ticketKey,
+                          epic.id,
                           style: const TextStyle(
                             color: FlownetColors.coolGray,
                             fontSize: 12,
@@ -622,7 +633,7 @@ class _TicketCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            ticket.summary,
+                            epic.title,
                             style: const TextStyle(
                               color: FlownetColors.pureWhite,
                               fontSize: 16,
@@ -635,18 +646,18 @@ class _TicketCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      ticket.issueType,
-                      style: const TextStyle(
+                    const Text(
+                      'Epic',
+                      style: TextStyle(
                         color: FlownetColors.electricBlue,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (ticket.assignee != null) ...[
+                    if (epic.projectId != null) ...[
                       Text(
-                        'Assigned to: ${ticket.assignee}',
+                        'Project: ${epic.projectId}',
                         style: const TextStyle(
                           color: FlownetColors.coolGray,
                           fontSize: 12,
@@ -655,9 +666,9 @@ class _TicketCard extends StatelessWidget {
                     ],
                     const SizedBox(height: 8),
                     Text(
-                      'Status: ${ticket.status}',
+                      'Status: ${epic.status}',
                       style: TextStyle(
-                        color: _getStatusColor(ticket.status),
+                        color: _getStatusColor(epic.status),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -670,9 +681,9 @@ class _TicketCard extends StatelessWidget {
           const SizedBox(height: 8),
           
           // Description
-          if (ticket.description != null && ticket.description!.isNotEmpty) ...[
+          if (epic.description != null && epic.description!.isNotEmpty) ...[
             Text(
-              ticket.description!,
+              epic.description!,
               style: const TextStyle(
                 color: FlownetColors.coolGray,
                 fontSize: 14,
@@ -686,21 +697,7 @@ class _TicketCard extends StatelessWidget {
     );
   }
 
-  Color _getPriorityColor(String priority) {
-    switch (priority.toLowerCase()) {
-      case 'low':
-        return FlownetColors.emeraldGreen;
-      case 'medium':
-        return FlownetColors.amberOrange;
-      case 'high':
-        return FlownetColors.crimsonRed;
-      case 'critical':
-        return FlownetColors.purple;
-      default:
-        return FlownetColors.slate;
-    }
-  }
-
+  
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'to do':
