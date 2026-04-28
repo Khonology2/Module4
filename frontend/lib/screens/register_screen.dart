@@ -5,7 +5,6 @@ import '../services/auth_service.dart';
 import '../services/error_handler.dart';
 import '../models/user_role.dart';
 import '../widgets/fixed_footer_version_display.dart';
-import '../utils/asset_helper.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -161,7 +160,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             // Logo and Title
-                            AssetHelper.getImage(
+                            Image.asset(
                               'Icons/khono.png',
                               height: 60,
                               fit: BoxFit.contain,

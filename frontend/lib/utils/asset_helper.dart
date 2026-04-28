@@ -35,7 +35,7 @@ class AssetHelper {
   static Widget _defaultErrorBuilder(
     BuildContext context,
     Object error,
-    StackTrace stackTrace,
+    StackTrace? stackTrace,
   ) {
     return Container(
       decoration: BoxDecoration(

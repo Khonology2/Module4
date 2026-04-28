@@ -59,19 +59,6 @@ class BackgroundImage extends StatelessWidget {
             fit: fit,
             // Render background sharply
             filterQuality: FilterQuality.high,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: isDarkMode 
-                        ? [Colors.black, Colors.black.withValues(alpha: 0.8)]
-                        : [Colors.grey.shade100, Colors.grey.shade200],
-                  ),
-                ),
-              );
-            },
           ),
         ),
         

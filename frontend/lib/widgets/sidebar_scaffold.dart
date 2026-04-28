@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/flownet_theme.dart';
-import '../utils/asset_helper.dart';
 import '../services/auth_service.dart';
 import '../providers/service_providers.dart';
 import '../utils/app_icons.dart';
@@ -294,8 +293,8 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                 ),
                 child: Row(
                   children: [
-                    AssetHelper.getImage(
-                      'images/flownet_logo.png',
+                    Image.asset(
+                      'assets/images/flownet_logo.png',
                       height: 32,
                       width: 32,
                     ),

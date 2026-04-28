@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../theme/flownet_theme.dart';
-import 'asset_helper.dart';
 
 /// Utility class for managing app icons.
 /// Provides a centralized way to get icons by name with fallback support.
@@ -127,7 +125,7 @@ class AppIcons {
     if (assetPath.isNotEmpty) {
       return Transform.scale(
         scale: visualScale,
-        child: AssetHelper.getImage(
+        child: Image.asset(
           assetPath,
           width: size,
           height: size,
