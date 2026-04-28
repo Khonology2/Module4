@@ -3036,7 +3036,7 @@ app.post('/api/v1/sprints', authenticateToken, async (req, res) => {
       if (metricsFields.length > 0) {
         const placeholders = metricsVals.map((_, i) => `$${i + 1}`).join(', ');
         await client.query(
-          `INSERT INTO sprint_metrics (sprint_id, ${metricsFields.join(', ')}) VALUES ($1, ${placeholders})`,
+          `INSERT INTO sprint_metrics (sprint_id, ${metricsFields.join(', ')}) VALUES ($1::UUID, ${placeholders})`,
           [sprintId, ...metricsVals]
         );
       }
