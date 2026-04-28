@@ -480,6 +480,7 @@ async function initializeDatabase() {
         carried_over_points INTEGER DEFAULT 0,
         test_pass_rate DOUBLE PRECISION DEFAULT 0,
         code_coverage INTEGER DEFAULT 0,
+        escaped_defects INTEGER DEFAULT 0,
         defects_opened INTEGER DEFAULT 0,
         defects_closed INTEGER DEFAULT 0,
         critical_defects INTEGER DEFAULT 0,
@@ -641,11 +642,18 @@ async function initializeDatabase() {
             ) THEN
                 ALTER TABLE sprint_metrics ADD COLUMN code_coverage INTEGER DEFAULT 0;
             END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'sprint_metrics' AND column_name = 'escaped_defects'
+            ) THEN
+                ALTER TABLE sprint_metrics ADD COLUMN escaped_defects INTEGER DEFAULT 0;
+            END IF;
         END $$
       `);
-      console.log('✅ Added code_coverage column to sprint_metrics table');
+      console.log('✅ Added code_coverage and escaped_defects columns to sprint_metrics table');
     } catch (err) {
-      console.log('⚠️ code_coverage column may already exist:', err.message);
+      console.log('⚠️ sprint_metrics columns may already exist:', err.message);
     }
     
     // Create timeline table if missing
@@ -656,6 +664,7 @@ async function initializeDatabase() {
             event_type VARCHAR(100) NOT NULL,
             title TEXT NOT NULL,
             description TEXT,
+            entity_type VARCHAR(50),
             project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
             sprint_id UUID REFERENCES sprints(id) ON DELETE CASCADE,
             user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -665,6 +674,20 @@ async function initializeDatabase() {
         )
       `);
       console.log('✅ Created timeline table');
+      
+      // Add entity_type column if table already exists without it
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'entity_type'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN entity_type VARCHAR(50);
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added entity_type column to timeline table');
     } catch (err) {
       console.log('⚠️ Timeline table may already exist:', err.message);
     }
