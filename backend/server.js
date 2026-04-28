@@ -3634,11 +3634,11 @@ app.post('/api/v1/populate-timeline', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
     
-    // Only allow admins to run this operation
-    if (!['systemAdmin', 'admin'].includes(userRole)) {
+    // Only allow admins and delivery leads to run this operation
+    if (!['systemAdmin', 'admin', 'deliveryLead'].includes(userRole)) {
       return res.status(403).json({
         success: false,
-        error: 'Admin access required'
+        error: 'Admin or delivery lead access required'
       });
     }
     
