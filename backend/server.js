@@ -689,6 +689,7 @@ async function initializeDatabase() {
             project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
             sprint_id UUID REFERENCES sprints(id) ON DELETE CASCADE,
             user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+            created_by UUID REFERENCES users(id) ON DELETE SET NULL,
             metadata JSONB DEFAULT '{}',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -727,9 +728,16 @@ async function initializeDatabase() {
             ) THEN
                 ALTER TABLE timeline ADD COLUMN end_date TIMESTAMP;
             END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'created_by'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+            END IF;
         END $$
       `);
-      console.log('✅ Added entity_type, entity_id, start_date, and end_date columns to timeline table');
+      console.log('✅ Added entity_type, entity_id, start_date, end_date, and created_by columns to timeline table');
       
       // Add client_name to projects table if missing
       await pool.query(`
