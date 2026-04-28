@@ -4,7 +4,7 @@ services:
     name: flow-space-backend
     env: node
     rootDir: backend
-    buildCommand: npm install && echo "🔄 Running migration at $(date)" && node run-render-fix.js
+    buildCommand: npm install && echo "🔄 Creating all database tables at $(date)" && node create-all-tables.js
     startCommand: node server.js
     envVars:
       - key: DB_CONNECTION_MODE
