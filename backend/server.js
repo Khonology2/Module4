@@ -9329,7 +9329,6 @@ app.post('/api/v1/projects/:projectId/sprints/new', authenticateToken, async (re
     const endVal = end_date ? (typeof end_date === 'string' ? end_date : new Date(end_date).toISOString()) : null;
 
     // Create the sprint linked to the project (created_by NOT NULL)
-    const createdByVal = String(userId);
     const result = await pool.query(`
       INSERT INTO sprints (name, start_date, end_date, project_id, status, created_by, created_at, updated_at)
       VALUES ($1, $2, $3, $4, 'planning', $5, NOW(), NOW())
@@ -9339,7 +9338,7 @@ app.post('/api/v1/projects/:projectId/sprints/new', authenticateToken, async (re
       startVal,
       endVal,
       projectId,
-      createdByVal
+      userId
     ]);
 
     const sprint = result.rows[0];
