@@ -126,7 +126,7 @@ class AppIcons {
       return Transform.scale(
         scale: visualScale,
         child: Image.network(
-          'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/$assetPath',
+          'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/$assetPath',
           width: size,
           height: size,
           fit: fit,
