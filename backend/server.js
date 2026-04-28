@@ -263,6 +263,7 @@ async function initializeDatabase() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name VARCHAR(255) NOT NULL,
         description TEXT,
+        client_name VARCHAR(255),
         owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
         status VARCHAR(50) DEFAULT 'active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -627,6 +628,22 @@ async function initializeDatabase() {
       `);
       console.log('✅ Updated existing users with name data');
       
+      // Ensure name column is never null for new registrations
+      await pool.query(`
+        UPDATE users 
+        SET name = CASE 
+            WHEN name IS NULL OR name = '' THEN 
+                CASE 
+                    WHEN first_name IS NOT NULL AND last_name IS NOT NULL THEN first_name || ' ' || last_name
+                    WHEN first_name IS NOT NULL THEN first_name
+                    ELSE COALESCE(name, 'Unknown User')
+                END
+            ELSE name
+        END
+        WHERE name IS NULL OR name = ''
+      `);
+      console.log('✅ Ensured name column is never null');
+      
     } catch (err) {
       console.log('⚠️ User column updates may have already run:', err.message);
     }
@@ -666,6 +683,8 @@ async function initializeDatabase() {
             description TEXT,
             entity_type VARCHAR(50),
             entity_id UUID,
+            start_date TIMESTAMP,
+            end_date TIMESTAMP,
             project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
             sprint_id UUID REFERENCES sprints(id) ON DELETE CASCADE,
             user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -693,9 +712,37 @@ async function initializeDatabase() {
             ) THEN
                 ALTER TABLE timeline ADD COLUMN entity_id UUID;
             END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'start_date'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN start_date TIMESTAMP;
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'end_date'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN end_date TIMESTAMP;
+            END IF;
         END $$
       `);
-      console.log('✅ Added entity_type and entity_id columns to timeline table');
+      console.log('✅ Added entity_type, entity_id, start_date, and end_date columns to timeline table');
+      
+      // Add client_name to projects table if missing
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'projects' AND column_name = 'client_name'
+            ) THEN
+                ALTER TABLE projects ADD COLUMN client_name VARCHAR(255);
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added client_name column to projects table');
     } catch (err) {
       console.log('⚠️ Timeline table may already exist:', err.message);
     }
