@@ -286,6 +286,7 @@ async function initializeDatabase() {
         start_date TIMESTAMP,
         end_date TIMESTAMP,
         status VARCHAR(50) DEFAULT 'planning',
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -743,6 +744,20 @@ async function initializeDatabase() {
         END $$
       `);
       console.log('✅ Added client_name column to projects table');
+      
+      // Add created_by to sprints table if missing
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'sprints' AND column_name = 'created_by'
+            ) THEN
+                ALTER TABLE sprints ADD COLUMN created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added created_by column to sprints table');
     } catch (err) {
       console.log('⚠️ Timeline table may already exist:', err.message);
     }
