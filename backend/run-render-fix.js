@@ -10,6 +10,16 @@ const pool = new Pool({
 async function runRenderFix() {
   try {
     console.log('🚀 Starting Render database fix...');
+    console.log('🔗 DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+    
+    // Test database connection first
+    try {
+      const testResult = await pool.query('SELECT NOW() as current_time');
+      console.log('✅ Database connection successful:', testResult.rows[0].current_time);
+    } catch (testErr) {
+      console.error('❌ Database connection failed:', testErr.message);
+      throw testErr;
+    }
     
     // Fix users table - add first_name and last_name
     console.log('📝 Fixing users table...');
@@ -128,6 +138,27 @@ async function runRenderFix() {
       console.log('✅ sprint_metrics table created/verified');
     } catch (err) {
       console.log('⚠️ sprint_metrics table may already exist:', err.message);
+    }
+    
+    // Create timeline table if it doesn't exist
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS timeline (
+            id SERIAL PRIMARY KEY,
+            event_type VARCHAR(100) NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+            sprint_id INTEGER REFERENCES sprints(id) ON DELETE CASCADE,
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('✅ timeline table created/verified');
+    } catch (err) {
+      console.log('⚠️ timeline table may already exist:', err.message);
     }
     
     // Verification
