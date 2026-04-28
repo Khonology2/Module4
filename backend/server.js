@@ -2773,6 +2773,11 @@ app.get('/api/v1/sprints', authenticateToken, async (req, res) => {
     query += ' ORDER BY s.start_date DESC NULLS LAST, s.created_at DESC';
     const result = await pool.query(query, params);
 
+    console.log(`🔍 Sprints query for user ${userId} (role: ${userRole}):`);
+    console.log(`📊 Query: ${query}`);
+    console.log(`📋 Params:`, params);
+    console.log(`🎯 Found ${result.rows.length} sprints:`, result.rows.map(s => ({ id: s.id, name: s.name, project_id: s.project_id })));
+
     res.json({ success: true, data: result.rows });
   } catch (error) {
     console.error('Error fetching sprints:', error);
