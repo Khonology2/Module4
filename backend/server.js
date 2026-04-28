@@ -245,6 +245,8 @@ async function initializeDatabase() {
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
+        first_name VARCHAR(255),
+        last_name VARCHAR(255),
         role VARCHAR(50) NOT NULL DEFAULT 'teamMember',
         avatar_url TEXT,
         is_active BOOLEAN DEFAULT true,
@@ -477,6 +479,7 @@ async function initializeDatabase() {
         completed_points INTEGER DEFAULT 0,
         carried_over_points INTEGER DEFAULT 0,
         test_pass_rate DOUBLE PRECISION DEFAULT 0,
+        code_coverage INTEGER DEFAULT 0,
         defects_opened INTEGER DEFAULT 0,
         defects_closed INTEGER DEFAULT 0,
         critical_defects INTEGER DEFAULT 0,
@@ -585,6 +588,89 @@ async function initializeDatabase() {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_user_signatures_user_id ON user_signatures(user_id)').catch(() => {});
     await pool.query('CREATE INDEX IF NOT EXISTS idx_user_signatures_default_active ON user_signatures(user_id, is_default, is_active)').catch(() => {});
     console.log('✅ Ensured user_signatures table exists');
+    
+    // Add missing columns to existing tables
+    console.log('🔧 Adding missing columns to existing tables...');
+    
+    // Add first_name and last_name to users table if missing
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'first_name'
+            ) THEN
+                ALTER TABLE users ADD COLUMN first_name VARCHAR(255);
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'last_name'
+            ) THEN
+                ALTER TABLE users ADD COLUMN last_name VARCHAR(255);
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added first_name and last_name columns to users table');
+      
+      // Update existing users with name data
+      await pool.query(`
+        UPDATE users 
+        SET first_name = SPLIT_PART(name, ' ', 1), 
+            last_name = CASE 
+                WHEN POSITION(' ' IN name) > 0 THEN SPLIT_PART(name, ' ', 2)
+                ELSE ''
+            END
+        WHERE first_name IS NULL AND name IS NOT NULL
+      `);
+      console.log('✅ Updated existing users with name data');
+      
+    } catch (err) {
+      console.log('⚠️ User column updates may have already run:', err.message);
+    }
+    
+    // Add code_coverage to sprint_metrics if missing
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'sprint_metrics' AND column_name = 'code_coverage'
+            ) THEN
+                ALTER TABLE sprint_metrics ADD COLUMN code_coverage INTEGER DEFAULT 0;
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added code_coverage column to sprint_metrics table');
+    } catch (err) {
+      console.log('⚠️ code_coverage column may already exist:', err.message);
+    }
+    
+    // Create timeline table if missing
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS timeline (
+            id SERIAL PRIMARY KEY,
+            event_type VARCHAR(100) NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+            sprint_id UUID REFERENCES sprints(id) ON DELETE CASCADE,
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('✅ Created timeline table');
+    } catch (err) {
+      console.log('⚠️ Timeline table may already exist:', err.message);
+    }
+    
+    console.log('🎉 Database schema updates completed!');
+    
   } catch (error) {
     console.error('Database initialization error:', error);
   }
@@ -3002,16 +3088,16 @@ app.get('/api/v1/profile/:userId/picture', async (req, res) => {
   try {
     const { userId } = req.params;
     
-    // Check user profile using UserProfile model
-    const profile = await UserProfile.findOne({ where: { user_id: userId } });
-    if (!profile || !profile.profile_picture) {
+    // Check user avatar_url from users table
+    const result = await pool.query('SELECT avatar_url, first_name, last_name, name FROM users WHERE id = $1', [userId]);
+    if (!result.rows[0] || !result.rows[0].avatar_url) {
       return res.status(404).json({
         success: false,
         error: 'Profile picture not found'
       });
     }
     
-    const picUrl = profile.profile_picture.toString();
+    const picUrl = result.rows[0].avatar_url;
     
     // If user has an uploaded avatar, serve the file
     if (picUrl && picUrl.startsWith('/uploads/')) {
@@ -3039,7 +3125,9 @@ app.get('/api/v1/profile/:userId/picture', async (req, res) => {
     
     // If no uploaded avatar, fetch and serve default avatar
     try {
-      const defaultAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'User')}&background=0D47A1&color=fff&size=200`;
+      const user = result.rows[0];
+      const userName = user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : (user.name || 'User');
+      const defaultAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=0D47A1&color=fff&size=200`;
       const response = await fetch(defaultAvatarUrl);
       
       if (response.ok) {
