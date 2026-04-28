@@ -160,8 +160,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             // Logo and Title
-                            Image.asset(
-                              'Icons/khono.png',
+                            Image.network(
+                              'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/Icons/khono.png',
                               height: 60,
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) {

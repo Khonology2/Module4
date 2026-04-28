@@ -42,8 +42,8 @@ class WelcomeScreen extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Image.asset(
-                      'khono_logo.png',
+                    Image.network(
+                      'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/khono_logo.png',
                       width: 360,
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) {
@@ -129,8 +129,8 @@ class WelcomeScreen extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 64),
-                    Image.asset(
-                      'white_discs.png',
+                    Image.network(
+                      'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/white_discs.png',
                       width: 120,
                       height: 44,
                       fit: BoxFit.contain,

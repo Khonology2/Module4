@@ -293,8 +293,8 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                 ),
                 child: Row(
                   children: [
-                    Image.asset(
-                      'assets/images/flownet_logo.png',
+                    Image.network(
+                      'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/images/flownet_logo.png',
                       height: 32,
                       width: 32,
                     ),

@@ -125,12 +125,11 @@ class AppIcons {
     if (assetPath.isNotEmpty) {
       return Transform.scale(
         scale: visualScale,
-        child: Image.asset(
-          assetPath,
+        child: Image.network(
+          'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/$assetPath',
           width: size,
           height: size,
           fit: fit,
-          filterQuality: FilterQuality.none,
           errorBuilder: (context, error, stackTrace) {
             debugPrint('Failed to load icon asset: $assetPath -> $error');
             return Icon(

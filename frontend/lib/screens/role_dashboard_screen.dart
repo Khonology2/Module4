@@ -771,8 +771,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return ClipOval(
       child: Transform.scale(
         scale: visualScale,
-        child: Image.asset(
-          assetPath,
+        child: Image.network(
+          'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/$assetPath',
           width: size,
           height: size,
           fit: fit,
@@ -2115,8 +2115,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Image.asset(
-          'assets/red_icon.png',
+        child: Image.network(
+          'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/red_icon.png',
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) {
             return Container(

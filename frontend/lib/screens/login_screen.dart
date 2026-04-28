@@ -156,8 +156,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           // Logo and Title
-                          Image.asset(
-                            'Icons/khono.png',
+                          Image.network(
+                            'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/Icons/khono.png',
                             height: 80,
                             fit: BoxFit.contain,
                             errorBuilder: (context, error, stackTrace) {
