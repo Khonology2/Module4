@@ -22,7 +22,7 @@ APP_URL=https://flowspace.example.com
 
 ### PORT
 Port on which the backend server runs.
-- **Default**: `3001`
+- **Default**: `8000`
 
 ### NODE_ENV
 Application environment mode.
@@ -98,7 +98,7 @@ Create a `.env` file in the `backend` directory with the following content:
 ```env
 # Application
 APP_URL=http://localhost:3000
-PORT=3001
+PORT=8000
 NODE_ENV=development
 
 # Database

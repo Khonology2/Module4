@@ -1,0 +1,5 @@
+# Protect authentication and configuration files
+backend/server.js merge=ours
+lib/config/api_config.dart merge=ours
+lib/config/environment.dart merge=ours
+lib/services/api_client.dart merge=ours

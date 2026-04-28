@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Deliverable, DeliverableSprint, AuditLog, User, DeliverableArtifact, Project } = require('../models');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fileUploadService = require('../services/fileUploadService');
@@ -168,7 +168,11 @@ router.get('/:id/overview', async (req, res) => {
  * @desc Create a new deliverable
  * @access Private
  */
-router.post('/', authenticateToken, async (req, res) => {
+router.post(
+  '/',
+  authenticateToken,
+  requireRole(['teamMember', 'deliveryLead', 'systemAdmin', 'admin', 'developer', 'projectManager', 'scrumMaster', 'qaEngineer']),
+  async (req, res) => {
   try {
     const { sprintIds, ...deliverableData } = req.body || {};
     
@@ -231,11 +235,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     // Role-based access control for owner assignment
     if (updateData.owner_id && updateData.owner_id !== deliverable.owner_id) {
-       // Check if the user is allowed to assign owners
-       // Allowed roles: owner (legacy/project), systemAdmin (admin), deliveryLead (manager)
-       const allowedRoles = ['owner', 'admin', 'system_admin', 'systemAdmin', 'deliveryLead', 'projectManager'];
-       if (!allowedRoles.includes(req.user.role)) {
-         return res.status(403).json({ error: 'Only Owners, Admins, and Delivery Leads can assign deliverable owners' });
+       const nextOwnerId = String(updateData.owner_id);
+       const currentUserId = String(req.user && req.user.id);
+       const normalizeRole = (r) => String(r || '').toLowerCase().replace(/[\s_-]+/g, '');
+       const role = normalizeRole(req.user && req.user.role);
+       const isPrivileged = ['owner', 'admin', 'systemadmin', 'deliverylead', 'projectmanager'].includes(role);
+       const isSelfAssign = nextOwnerId && currentUserId && nextOwnerId === currentUserId;
+       if (!isPrivileged && !isSelfAssign) {
+         return res.status(403).json({ error: 'Only Project Owners/Admins/Delivery Leads can assign deliverable owners (or self-assign)' });
        }
     }
 

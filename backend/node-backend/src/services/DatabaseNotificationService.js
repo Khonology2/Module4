@@ -18,14 +18,26 @@ class DatabaseNotificationService extends EventEmitter {
         this.setupGlobalEventEmitter();
     }
 
+    shouldUseSsl(connectionString) {
+        if (String(process.env.NODE_ENV || '').toLowerCase() !== 'production') return false;
+        const cs = (connectionString || '').toString();
+        if (/sslmode=disable/i.test(cs)) return false;
+        return true;
+    }
+
     /**
      * Initialize the database notification service
      * @param {string} connectionString - PostgreSQL connection string
      */
     async initialize(connectionString) {
         try {
+            const ssl = this.shouldUseSsl(connectionString)
+                ? { rejectUnauthorized: false }
+                : undefined;
+
             this.client = new Client({
                 connectionString,
+                ssl,
                 connectionTimeoutMillis: 10000,
                 keepAlive: true
             });

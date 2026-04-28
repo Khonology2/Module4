@@ -1,0 +1,35 @@
+services:
+  # Node.js Backend - Web Service
+  - type: web
+    name: flow-space-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DB_CONNECTION_MODE
+        value: external
+      - key: DATABASE_URL
+        value: ${DATABASE_URL}
+      - key: JWT_SECRET
+        value: ${JWT_SECRET}
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    healthCheckPath: /health
+
+  # Flutter Frontend - Static Site (No Docker)
+  - type: web
+    name: flow-space-frontend
+    env: static
+    rootDir: frontend
+    buildCommand: flutter build web --release --base-href /
+    publishDirectory: build/web
+    envVars:
+      - key: FLUTTER_WEB_CANVASKIT_URL
+        value: https://cdn.jsdelivr.net/gh/flutter/canvaskit@master
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

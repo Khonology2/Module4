@@ -1,22 +1,27 @@
 const { Sequelize } = require('sequelize');
-require('dotenv').config();
+require('dotenv').config({ path: '../../.env' });
 
-const DB_HOST = process.env.DB_HOST;
-const DB_PORT = process.env.DB_PORT || '5432';
-const DB_NAME = process.env.DB_NAME;
-const DB_USER = process.env.DB_USER;
-const DB_PASSWORD = process.env.DB_PASSWORD;
-const NODE_ENV = process.env.NODE_ENV || 'development';
+const NODE_ENV = String(process.env.NODE_ENV || 'development').toLowerCase();
+const DATABASE_URL = (process.env.DATABASE_URL || '').trim();
+const DB_DIALECT = String(process.env.DB_DIALECT || '').trim().toLowerCase();
+const DB_HOST = (process.env.DB_HOST || process.env.PGHOST || '').trim();
+const DB_PORT = (process.env.DB_PORT || process.env.PGPORT || '5432').trim();
+const DB_NAME = (process.env.DB_NAME || process.env.PGDATABASE || '').trim();
+const DB_USER = (process.env.DB_USER || process.env.PGUSER || '').trim();
+const DB_PASSWORD = (process.env.DB_PASSWORD || process.env.PGPASSWORD || '').trim();
+const SQLITE_PATH = (process.env.SQLITE_PATH || '').trim();
 
 let sequelize;
 
-// Use SQLite for development, PostgreSQL for production
-if (NODE_ENV === 'development' && DB_USER === 'sqlite') {
+if (NODE_ENV !== 'production' &&
+    (DB_DIALECT === 'sqlite' ||
+        DB_USER.toLowerCase() === 'sqlite' ||
+        DATABASE_URL.toLowerCase().startsWith('sqlite:'))) {
   // SQLite configuration for development
   sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: DB_NAME || './database.sqlite',
-    logging: console.log,
+    storage: SQLITE_PATH || DB_NAME || './database.sqlite',
+    logging: NODE_ENV === 'development' ? console.log : false,
     pool: {
       max: 5,
       min: 0,
@@ -25,29 +30,55 @@ if (NODE_ENV === 'development' && DB_USER === 'sqlite') {
     }
   });
 } else {
-  // PostgreSQL configuration for production
-  if (!DB_HOST || !DB_NAME || !DB_USER || !DB_PASSWORD) {
-    throw new Error('Missing PostgreSQL env vars: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD');
-  }
+  const enableSsl = NODE_ENV === 'production';
 
-  sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
-    host: DB_HOST,
-    port: parseInt(DB_PORT, 10),
-    dialect: 'postgres',
-    logging: NODE_ENV === 'development' ? console.log : false,
-    pool: {
-      max: 10,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    },
-    dialectOptions: NODE_ENV === 'production' ? {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false
-      }
-    } : {}
-  });
+  if (DATABASE_URL) {
+    sequelize = new Sequelize(DATABASE_URL, {
+      dialect: 'postgres',
+      logging: NODE_ENV === 'development' ? console.log : false,
+      pool: {
+        max: 10,
+        min: 0,
+        acquire: 30000,
+        idle: 10000
+      },
+      dialectOptions: enableSsl
+          ? {
+              ssl: {
+                require: true,
+                rejectUnauthorized: false
+              }
+            }
+          : {}
+    });
+  } else {
+    if (!DB_HOST || !DB_NAME || !DB_USER) {
+      throw new Error(
+        'Missing PostgreSQL env vars: DATABASE_URL or DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD'
+      );
+    }
+
+    sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
+      host: DB_HOST,
+      port: parseInt(DB_PORT, 10),
+      dialect: 'postgres',
+      logging: NODE_ENV === 'development' ? console.log : false,
+      pool: {
+        max: 10,
+        min: 0,
+        acquire: 30000,
+        idle: 10000
+      },
+      dialectOptions: enableSsl
+          ? {
+              ssl: {
+                require: true,
+                rejectUnauthorized: false
+              }
+            }
+          : {}
+    });
+  }
 }
 
 // Test database connection

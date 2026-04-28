@@ -1,7 +1,7 @@
 # Testing AI-Powered Release Readiness Gate
 
 ## ✅ Current Status
-- ✅ Server running on port 3001
+- ✅ Server running on port 8000
 - ✅ OpenAI GPT-3.5-turbo initialized
 - ✅ Email server ready
 

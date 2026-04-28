@@ -33,6 +33,22 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Backend Configuration Protection
+backend/.env
+backend/.env.*
+backend/node-backend/.env
+backend/node-backend/.env.*
+backend/dbPool.js
+backend/node-backend/src/config/database.js
+backend/node-backend/src/config/connection.js
+
+# Database Connection Scripts (exclude main server files)
+**/dbPool.js
+!backend/server.js
+**/database.js
+**/connection.js
+**/config/database*
+
 # Database
 *.db
 *.sqlite
@@ -51,3 +67,6 @@ fix_*.py
 
 # Daemon/Service files
 backend/daemon/
+
+flutter-web/
+web/

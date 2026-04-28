@@ -157,19 +157,23 @@ class FileUploadService {
                 throw error;
             }
             
-            const files = await fs.readdir(directoryPath);
             const fileDetails = [];
-            
-            for (const file of files) {
-                try {
-                    const filePath = path.join(directoryPath, file);
-                    // Skip metadata files in listing
-                    if (file.endsWith('.meta.json')) continue;
 
-                    const stats = await fs.stat(filePath);
-                    
-                    if (stats.isFile()) {
-                        let originalName = file;
+            const walk = async (dirPath, relPrefix) => {
+                const entries = await fs.readdir(dirPath, { withFileTypes: true });
+                for (const entry of entries) {
+                    const entryPath = path.join(dirPath, entry.name);
+                    if (entry.isDirectory()) {
+                        const nextRel = relPrefix ? path.posix.join(relPrefix, entry.name) : entry.name;
+                        await walk(entryPath, nextRel);
+                        continue;
+                    }
+                    if (!entry.isFile()) continue;
+                    if (entry.name.endsWith('.meta.json')) continue;
+
+                    try {
+                        const stats = await fs.stat(entryPath);
+                        let originalName = entry.name;
                         let title = undefined;
                         let description = '';
                         let tags = [];
@@ -177,7 +181,7 @@ class FileUploadService {
                         let uploadedBy = undefined;
                         let uploaderName = undefined;
                         try {
-                            const metaRaw = await fs.readFile(`${filePath}.meta.json`, 'utf8');
+                            const metaRaw = await fs.readFile(`${entryPath}.meta.json`, 'utf8');
                             const meta = JSON.parse(metaRaw);
                             if (meta && meta.originalName) originalName = meta.originalName;
                             if (meta && meta.title) title = meta.title;
@@ -187,25 +191,29 @@ class FileUploadService {
                             if (meta && meta.uploadedBy) uploadedBy = meta.uploadedBy;
                             if (meta && meta.uploaderName) uploaderName = meta.uploaderName;
                         } catch (_) {}
+
+                        const relFile = relPrefix ? path.posix.join(relPrefix, entry.name) : entry.name;
                         fileDetails.push({
-                            filename: file,
+                            filename: entry.name,
                             originalName: originalName,
                             title: title,
                             description: description,
                             tags: tags,
                             size: stats.size,
                             uploadDate: uploadDate,
-                            url: `${this.baseUrl}/${prefix ? prefix + '/' : ''}${file}`,
+                            url: `${this.baseUrl}/${relFile}`,
                             uploadedBy: uploadedBy,
                             uploaderName: uploaderName,
                             storageProvider: 'local'
                         });
+                    } catch (error) {
+                        console.error(`Error getting details for file ${entry.name}:`, error);
                     }
-                } catch (error) {
-                    console.error(`Error getting details for file ${file}:`, error);
-                    // Continue with other files
                 }
-            }
+            };
+
+            const relRoot = prefix ? prefix.split(path.sep).join(path.posix.sep) : '';
+            await walk(directoryPath, relRoot);
             
             return fileDetails;
             
