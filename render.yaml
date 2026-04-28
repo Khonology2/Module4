@@ -4,7 +4,7 @@ services:
     name: flow-space-backend
     env: node
     rootDir: backend
-    buildCommand: npm install && echo "🔄 Diagnosing database at $(date)" && node diagnose-db.js
+    buildCommand: npm install && echo "🔄 Installing dependencies at $(date)"
     startCommand: node server.js
     envVars:
       - key: DB_CONNECTION_MODE
