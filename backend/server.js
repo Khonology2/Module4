@@ -665,6 +665,7 @@ async function initializeDatabase() {
             title TEXT NOT NULL,
             description TEXT,
             entity_type VARCHAR(50),
+            entity_id UUID,
             project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
             sprint_id UUID REFERENCES sprints(id) ON DELETE CASCADE,
             user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -675,7 +676,7 @@ async function initializeDatabase() {
       `);
       console.log('✅ Created timeline table');
       
-      // Add entity_type column if table already exists without it
+      // Add missing columns if table already exists without them
       await pool.query(`
         DO $$
         BEGIN
@@ -685,9 +686,16 @@ async function initializeDatabase() {
             ) THEN
                 ALTER TABLE timeline ADD COLUMN entity_type VARCHAR(50);
             END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'entity_id'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN entity_id UUID;
+            END IF;
         END $$
       `);
-      console.log('✅ Added entity_type column to timeline table');
+      console.log('✅ Added entity_type and entity_id columns to timeline table');
     } catch (err) {
       console.log('⚠️ Timeline table may already exist:', err.message);
     }
