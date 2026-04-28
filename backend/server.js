@@ -1881,6 +1881,78 @@ app.get('/api/v1/dashboard', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
+    // Active sprints
+    let activeSprints = [];
+    try {
+      let sprintsQuery = `
+        SELECT s.*, 
+               sm.planned_points,
+               sm.committed_points,
+               sm.completed_points,
+               sm.carried_over_points,
+               sm.test_pass_rate,
+               sm.code_coverage,
+               sm.escaped_defects,
+               sm.defects_opened,
+               sm.defects_closed,
+               sm.code_review_completion,
+               sm.documentation_status,
+               sm.uat_notes,
+               sm.uat_pass_rate,
+               sm.risks,
+               sm.blockers,
+               sm.decisions
+        FROM sprints s 
+        LEFT JOIN sprint_metrics sm ON s.id = sm.sprint_id
+        WHERE s.status NOT IN ('completed', 'cancelled')
+      `;
+      const sprintsParams = [];
+
+      if (userRole === 'teamMember') {
+        sprintsQuery += ` LEFT JOIN project_members pm ON pm.project_id = s.project_id WHERE pm.user_id = $1`;
+        sprintsParams.push(userId);
+      }
+
+      sprintsQuery += ' ORDER BY s.start_date DESC NULLS LAST, s.created_at DESC LIMIT 10';
+      const sprintsResult = await pool.query(sprintsQuery, sprintsParams);
+      activeSprints = sprintsResult.rows || [];
+      
+      console.log(`🔍 Dashboard found ${activeSprints.length} active sprints for user ${userId}`);
+    } catch (error) {
+      if (!(error && error.code === '42P01')) {
+        console.error('Dashboard sprints query error:', error);
+      }
+    }
+
+    // Active projects
+    let activeProjects = [];
+    try {
+      let projectsQuery = `
+        SELECT p.*, 
+               COUNT(s.id) as sprint_count,
+               COUNT(CASE WHEN s.status NOT IN ('completed', 'cancelled') THEN 1 END) as active_sprint_count
+        FROM projects p
+        LEFT JOIN sprints s ON p.id = s.project_id
+        WHERE p.status NOT IN ('completed', 'cancelled')
+      `;
+      const projectsParams = [];
+
+      if (userRole === 'teamMember') {
+        projectsQuery += ` LEFT JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = $1`;
+        projectsParams.push(userId);
+      }
+
+      projectsQuery += ' GROUP BY p.id ORDER BY p.created_at DESC LIMIT 10';
+      const projectsResult = await pool.query(projectsQuery, projectsParams);
+      activeProjects = projectsResult.rows || [];
+      
+      console.log(`🔍 Dashboard found ${activeProjects.length} active projects for user ${userId}`);
+    } catch (error) {
+      if (!(error && error.code === '42P01')) {
+        console.error('Dashboard projects query error:', error);
+      }
+    }
+
     // Deliverables
     let deliverables = [];
     try {
@@ -1995,6 +2067,8 @@ app.get('/api/v1/dashboard', authenticateToken, async (req, res) => {
 
     res.json({
       deliverables: deliverables,
+      activeSprints: activeSprints,
+      activeProjects: activeProjects,
       recentActivity: recentActivity,
       statistics: statistics,
     });
@@ -3529,6 +3603,123 @@ app.get('/api/v1/sprints/:sprintId/tickets', authenticateToken, async (req, res)
 // Timeline routes
 import timelineRoutes from './timeline-api.js';
 app.use('/api/v1/timeline', timelineRoutes);
+
+// Populate timeline entries for existing sprints and projects
+app.post('/api/v1/populate-timeline', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Only allow admins to run this operation
+    if (!['systemAdmin', 'admin'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Admin access required'
+      });
+    }
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      console.log('🔍 Checking for sprints without timeline entries...');
+      
+      // Get sprints without timeline entries
+      const sprintsResult = await client.query(`
+        SELECT s.id, s.name, s.status, s.start_date, s.end_date, s.created_by
+        FROM sprints s
+        LEFT JOIN timeline t ON s.id = t.entity_id AND t.entity_type = 'sprint'
+        WHERE t.id IS NULL
+      `);
+      
+      console.log(`📊 Found ${sprintsResult.rows.length} sprints without timeline entries`);
+      
+      for (const sprint of sprintsResult.rows) {
+        await client.query(`
+          INSERT INTO timeline (
+            entity_type, entity_id, title, description, 
+            start_date, end_date, created_by, status, 
+            priority, tags, metadata
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
+          'sprint',
+          sprint.id,
+          sprint.name,
+          `Sprint: ${sprint.name}`,
+          sprint.start_date,
+          sprint.end_date,
+          sprint.created_by,
+          sprint.status || 'planning',
+          'medium',
+          '[]',
+          '{}'
+        ]);
+        
+        console.log(`✅ Created timeline entry for sprint: ${sprint.name}`);
+      }
+      
+      console.log('🔍 Checking for projects without timeline entries...');
+      
+      // Get projects without timeline entries
+      const projectsResult = await client.query(`
+        SELECT p.id, p.name, p.status, p.start_date, p.end_date, p.created_by
+        FROM projects p
+        LEFT JOIN timeline t ON p.id = t.entity_id AND t.entity_type = 'project'
+        WHERE t.id IS NULL
+      `);
+      
+      console.log(`📊 Found ${projectsResult.rows.length} projects without timeline entries`);
+      
+      for (const project of projectsResult.rows) {
+        await client.query(`
+          INSERT INTO timeline (
+            entity_type, entity_id, title, description, 
+            start_date, end_date, created_by, status, 
+            priority, tags, metadata
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
+          'project',
+          project.id,
+          project.name,
+          `Project: ${project.name}`,
+          project.start_date,
+          project.end_date,
+          project.created_by,
+          project.status || 'active',
+          'medium',
+          '[]',
+          '{}'
+        ]);
+        
+        console.log(`✅ Created timeline entry for project: ${project.name}`);
+      }
+      
+      await client.query('COMMIT');
+      
+      res.json({
+        success: true,
+        message: 'Timeline population completed successfully',
+        sprintsCreated: sprintsResult.rows.length,
+        projectsCreated: projectsResult.rows.length
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('Error populating timeline:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to populate timeline'
+    });
+  }
+});
 
 // ==================== NOTIFICATION ENDPOINTS ====================
 

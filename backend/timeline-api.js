@@ -451,6 +451,14 @@ router.get('/active', async (req, res) => {
 
     const result = await pool.query(query, params);
 
+    console.log(`🔍 Active timeline query found ${result.rows.length} events:`, result.rows.map(r => ({ 
+      id: r.id, 
+      type: r.entity_type, 
+      title: r.title, 
+      entity_status: r.entity_status,
+      status: r.status 
+    })));
+
     // Transform to match frontend TimelineEvent model
     const transformedEvents = result.rows.map(row => ({
       id: row.id,
