@@ -113,8 +113,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         children: [
           // Background image
           Positioned.fill(
-            child: Image.asset(
-              'Icons/khono_bg.png',
+            child: Image.network(
+              'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/Icons/khono_bg.png',
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) {
                 return Container(color: const Color(0xFF0D0F14));
@@ -160,8 +160,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             // Logo and Title
-                            Image.asset(
-                              'Icons/khono.png',
+                            Image.network(
+                              'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/Icons/khono.png',
                               height: 60,
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) {

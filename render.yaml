@@ -4,7 +4,7 @@ services:
     name: flow-space-backend
     env: node
     rootDir: backend
-    buildCommand: npm install
+    buildCommand: npm install && echo "🔄 Installing dependencies at $(date)"
     startCommand: node server.js
     envVars:
       - key: DB_CONNECTION_MODE
@@ -19,13 +19,13 @@ services:
         value: 10000
     healthCheckPath: /health
 
-  # Flutter Frontend - Docker Deployment
+  # Flutter Frontend - Flutter Buildpack
   - type: web
     name: flow-space-frontend
-    env: docker
+    env: static
     rootDir: frontend
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    buildCommand: curl -L https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.41.7-stable.tar.xz -o flutter.tar.xz && tar xf flutter.tar.xz && export PATH="$PATH:`pwd`/flutter/bin" && flutter config --enable-web && flutter clean && flutter pub get && flutter build web --dart-define=API_BASE_URL=https://flow-space.onrender.com/api/v1 --dart-define=IS_PRODUCTION=true && cp -r build/web/* .
+    staticPublishPath: .
     envVars:
       - key: FLUTTER_WEB_CANVASKIT_URL
         value: https://cdn.jsdelivr.net/gh/flutter/canvaskit@master

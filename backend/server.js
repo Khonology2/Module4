@@ -245,6 +245,8 @@ async function initializeDatabase() {
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
+        first_name VARCHAR(255),
+        last_name VARCHAR(255),
         role VARCHAR(50) NOT NULL DEFAULT 'teamMember',
         avatar_url TEXT,
         is_active BOOLEAN DEFAULT true,
@@ -261,6 +263,7 @@ async function initializeDatabase() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name VARCHAR(255) NOT NULL,
         description TEXT,
+        client_name VARCHAR(255),
         owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
         status VARCHAR(50) DEFAULT 'active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -283,6 +286,7 @@ async function initializeDatabase() {
         start_date TIMESTAMP,
         end_date TIMESTAMP,
         status VARCHAR(50) DEFAULT 'planning',
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -477,6 +481,8 @@ async function initializeDatabase() {
         completed_points INTEGER DEFAULT 0,
         carried_over_points INTEGER DEFAULT 0,
         test_pass_rate DOUBLE PRECISION DEFAULT 0,
+        code_coverage INTEGER DEFAULT 0,
+        escaped_defects INTEGER DEFAULT 0,
         defects_opened INTEGER DEFAULT 0,
         defects_closed INTEGER DEFAULT 0,
         critical_defects INTEGER DEFAULT 0,
@@ -585,6 +591,211 @@ async function initializeDatabase() {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_user_signatures_user_id ON user_signatures(user_id)').catch(() => {});
     await pool.query('CREATE INDEX IF NOT EXISTS idx_user_signatures_default_active ON user_signatures(user_id, is_default, is_active)').catch(() => {});
     console.log('✅ Ensured user_signatures table exists');
+    
+    // Add missing columns to existing tables
+    console.log('🔧 Adding missing columns to existing tables...');
+    
+    // Add first_name and last_name to users table if missing
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'first_name'
+            ) THEN
+                ALTER TABLE users ADD COLUMN first_name VARCHAR(255);
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'last_name'
+            ) THEN
+                ALTER TABLE users ADD COLUMN last_name VARCHAR(255);
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added first_name and last_name columns to users table');
+      
+      // Update existing users with name data
+      await pool.query(`
+        UPDATE users 
+        SET first_name = SPLIT_PART(name, ' ', 1), 
+            last_name = CASE 
+                WHEN POSITION(' ' IN name) > 0 THEN SPLIT_PART(name, ' ', 2)
+                ELSE ''
+            END
+        WHERE first_name IS NULL AND name IS NOT NULL
+      `);
+      console.log('✅ Updated existing users with name data');
+      
+      // Ensure name column is never null for new registrations
+      await pool.query(`
+        UPDATE users 
+        SET name = CASE 
+            WHEN name IS NULL OR name = '' THEN 
+                CASE 
+                    WHEN first_name IS NOT NULL AND last_name IS NOT NULL THEN first_name || ' ' || last_name
+                    WHEN first_name IS NOT NULL THEN first_name
+                    ELSE COALESCE(name, 'Unknown User')
+                END
+            ELSE name
+        END
+        WHERE name IS NULL OR name = ''
+      `);
+      console.log('✅ Ensured name column is never null');
+      
+    } catch (err) {
+      console.log('⚠️ User column updates may have already run:', err.message);
+    }
+    
+    // Add code_coverage to sprint_metrics if missing
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'sprint_metrics' AND column_name = 'code_coverage'
+            ) THEN
+                ALTER TABLE sprint_metrics ADD COLUMN code_coverage INTEGER DEFAULT 0;
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'sprint_metrics' AND column_name = 'escaped_defects'
+            ) THEN
+                ALTER TABLE sprint_metrics ADD COLUMN escaped_defects INTEGER DEFAULT 0;
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added code_coverage and escaped_defects columns to sprint_metrics table');
+    } catch (err) {
+      console.log('⚠️ sprint_metrics columns may already exist:', err.message);
+    }
+    
+    // Create timeline table if missing
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS timeline (
+            id SERIAL PRIMARY KEY,
+            event_type VARCHAR(100) NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            entity_type VARCHAR(50),
+            entity_id UUID,
+            start_date TIMESTAMP,
+            end_date TIMESTAMP,
+            project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+            sprint_id UUID REFERENCES sprints(id) ON DELETE CASCADE,
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+            created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+            status VARCHAR(50) DEFAULT 'active',
+            priority VARCHAR(20) DEFAULT 'medium',
+            tags TEXT DEFAULT '[]',
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('✅ Created timeline table');
+      
+      // Add missing columns if table already exists without them
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'entity_type'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN entity_type VARCHAR(50);
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'entity_id'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN entity_id UUID;
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'start_date'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN start_date TIMESTAMP;
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'end_date'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN end_date TIMESTAMP;
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'created_by'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'status'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN status VARCHAR(50) DEFAULT 'active';
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'priority'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN priority VARCHAR(20) DEFAULT 'medium';
+            END IF;
+            
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'timeline' AND column_name = 'tags'
+            ) THEN
+                ALTER TABLE timeline ADD COLUMN tags TEXT DEFAULT '[]';
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added entity_type, entity_id, start_date, end_date, created_by, status, priority, and tags columns to timeline table');
+      
+      // Add client_name to projects table if missing
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'projects' AND column_name = 'client_name'
+            ) THEN
+                ALTER TABLE projects ADD COLUMN client_name VARCHAR(255);
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added client_name column to projects table');
+      
+      // Add created_by to sprints table if missing
+      await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'sprints' AND column_name = 'created_by'
+            ) THEN
+                ALTER TABLE sprints ADD COLUMN created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+            END IF;
+        END $$
+      `);
+      console.log('✅ Added created_by column to sprints table');
+    } catch (err) {
+      console.log('⚠️ Timeline table may already exist:', err.message);
+    }
+    
+    console.log('🎉 Database schema updates completed!');
+    
   } catch (error) {
     console.error('Database initialization error:', error);
   }
@@ -1694,6 +1905,78 @@ app.get('/api/v1/dashboard', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
+    // Active sprints
+    let activeSprints = [];
+    try {
+      let sprintsQuery = `
+        SELECT s.*, 
+               sm.planned_points,
+               sm.committed_points,
+               sm.completed_points,
+               sm.carried_over_points,
+               sm.test_pass_rate,
+               sm.code_coverage,
+               sm.escaped_defects,
+               sm.defects_opened,
+               sm.defects_closed,
+               sm.code_review_completion,
+               sm.documentation_status,
+               sm.uat_notes,
+               sm.uat_pass_rate,
+               sm.risks,
+               sm.blockers,
+               sm.decisions
+        FROM sprints s 
+        LEFT JOIN sprint_metrics sm ON s.id = sm.sprint_id
+        WHERE s.status NOT IN ('completed', 'cancelled')
+      `;
+      const sprintsParams = [];
+
+      if (userRole === 'teamMember') {
+        sprintsQuery += ` LEFT JOIN project_members pm ON pm.project_id = s.project_id WHERE pm.user_id = $1`;
+        sprintsParams.push(userId);
+      }
+
+      sprintsQuery += ' ORDER BY s.start_date DESC NULLS LAST, s.created_at DESC LIMIT 10';
+      const sprintsResult = await pool.query(sprintsQuery, sprintsParams);
+      activeSprints = sprintsResult.rows || [];
+      
+      console.log(`🔍 Dashboard found ${activeSprints.length} active sprints for user ${userId}`);
+    } catch (error) {
+      if (!(error && error.code === '42P01')) {
+        console.error('Dashboard sprints query error:', error);
+      }
+    }
+
+    // Active projects
+    let activeProjects = [];
+    try {
+      let projectsQuery = `
+        SELECT p.*, 
+               COUNT(s.id) as sprint_count,
+               COUNT(CASE WHEN s.status NOT IN ('completed', 'cancelled') THEN 1 END) as active_sprint_count
+        FROM projects p
+        LEFT JOIN sprints s ON p.id = s.project_id
+        WHERE p.status NOT IN ('completed', 'cancelled')
+      `;
+      const projectsParams = [];
+
+      if (userRole === 'teamMember') {
+        projectsQuery += ` LEFT JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = $1`;
+        projectsParams.push(userId);
+      }
+
+      projectsQuery += ' GROUP BY p.id ORDER BY p.created_at DESC LIMIT 10';
+      const projectsResult = await pool.query(projectsQuery, projectsParams);
+      activeProjects = projectsResult.rows || [];
+      
+      console.log(`🔍 Dashboard found ${activeProjects.length} active projects for user ${userId}`);
+    } catch (error) {
+      if (!(error && error.code === '42P01')) {
+        console.error('Dashboard projects query error:', error);
+      }
+    }
+
     // Deliverables
     let deliverables = [];
     try {
@@ -1808,6 +2091,8 @@ app.get('/api/v1/dashboard', authenticateToken, async (req, res) => {
 
     res.json({
       deliverables: deliverables,
+      activeSprints: activeSprints,
+      activeProjects: activeProjects,
       recentActivity: recentActivity,
       statistics: statistics,
     });
@@ -2586,6 +2871,11 @@ app.get('/api/v1/sprints', authenticateToken, async (req, res) => {
     query += ' ORDER BY s.start_date DESC NULLS LAST, s.created_at DESC';
     const result = await pool.query(query, params);
 
+    console.log(`🔍 Sprints query for user ${userId} (role: ${userRole}):`);
+    console.log(`📊 Query: ${query}`);
+    console.log(`📋 Params:`, params);
+    console.log(`🎯 Found ${result.rows.length} sprints:`, result.rows.map(s => ({ id: s.id, name: s.name, project_id: s.project_id })));
+
     res.json({ success: true, data: result.rows });
   } catch (error) {
     console.error('Error fetching sprints:', error);
@@ -2855,9 +3145,9 @@ app.post('/api/v1/sprints', authenticateToken, async (req, res) => {
       
       // Insert sprint metrics
       if (metricsFields.length > 0) {
-        const placeholders = metricsVals.map((_, i) => `$${i + 1}`).join(', ');
+        const placeholders = metricsVals.map((_, i) => `$${i + 2}`).join(', ');
         await client.query(
-          `INSERT INTO sprint_metrics (sprint_id, ${metricsFields.join(', ')}) VALUES ($1, ${placeholders})`,
+          `INSERT INTO sprint_metrics (sprint_id, ${metricsFields.join(', ')}) VALUES ($1::UUID, ${placeholders})`,
           [sprintId, ...metricsVals]
         );
       }
@@ -3002,16 +3292,16 @@ app.get('/api/v1/profile/:userId/picture', async (req, res) => {
   try {
     const { userId } = req.params;
     
-    // Check user profile using UserProfile model
-    const profile = await UserProfile.findOne({ where: { user_id: userId } });
-    if (!profile || !profile.profile_picture) {
+    // Check user avatar_url from users table
+    const result = await pool.query('SELECT avatar_url, first_name, last_name, name FROM users WHERE id = $1', [userId]);
+    if (!result.rows[0] || !result.rows[0].avatar_url) {
       return res.status(404).json({
         success: false,
         error: 'Profile picture not found'
       });
     }
     
-    const picUrl = profile.profile_picture.toString();
+    const picUrl = result.rows[0].avatar_url;
     
     // If user has an uploaded avatar, serve the file
     if (picUrl && picUrl.startsWith('/uploads/')) {
@@ -3039,7 +3329,9 @@ app.get('/api/v1/profile/:userId/picture', async (req, res) => {
     
     // If no uploaded avatar, fetch and serve default avatar
     try {
-      const defaultAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'User')}&background=0D47A1&color=fff&size=200`;
+      const user = result.rows[0];
+      const userName = user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : (user.name || 'User');
+      const defaultAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=0D47A1&color=fff&size=200`;
       const response = await fetch(defaultAvatarUrl);
       
       if (response.ok) {
@@ -3335,6 +3627,123 @@ app.get('/api/v1/sprints/:sprintId/tickets', authenticateToken, async (req, res)
 // Timeline routes
 import timelineRoutes from './timeline-api.js';
 app.use('/api/v1/timeline', timelineRoutes);
+
+// Populate timeline entries for existing sprints and projects
+app.post('/api/v1/populate-timeline', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Only allow admins and delivery leads to run this operation
+    if (!['systemAdmin', 'admin', 'deliveryLead'].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Admin or delivery lead access required'
+      });
+    }
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      console.log('🔍 Checking for sprints without timeline entries...');
+      
+      // Get sprints without timeline entries
+      const sprintsResult = await client.query(`
+        SELECT s.id, s.name, s.status, s.start_date, s.end_date, s.created_by
+        FROM sprints s
+        LEFT JOIN timeline t ON s.id = t.entity_id AND t.entity_type = 'sprint'
+        WHERE t.id IS NULL
+      `);
+      
+      console.log(`📊 Found ${sprintsResult.rows.length} sprints without timeline entries`);
+      
+      for (const sprint of sprintsResult.rows) {
+        await client.query(`
+          INSERT INTO timeline (
+            entity_type, entity_id, title, description, 
+            start_date, end_date, created_by, status, 
+            priority, tags, metadata
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
+          'sprint',
+          sprint.id,
+          sprint.name,
+          `Sprint: ${sprint.name}`,
+          sprint.start_date,
+          sprint.end_date,
+          sprint.created_by,
+          sprint.status || 'planning',
+          'medium',
+          '[]',
+          '{}'
+        ]);
+        
+        console.log(`✅ Created timeline entry for sprint: ${sprint.name}`);
+      }
+      
+      console.log('🔍 Checking for projects without timeline entries...');
+      
+      // Get projects without timeline entries
+      const projectsResult = await client.query(`
+        SELECT p.id, p.name, p.status, p.start_date, p.end_date, p.created_by
+        FROM projects p
+        LEFT JOIN timeline t ON p.id = t.entity_id AND t.entity_type = 'project'
+        WHERE t.id IS NULL
+      `);
+      
+      console.log(`📊 Found ${projectsResult.rows.length} projects without timeline entries`);
+      
+      for (const project of projectsResult.rows) {
+        await client.query(`
+          INSERT INTO timeline (
+            entity_type, entity_id, title, description, 
+            start_date, end_date, created_by, status, 
+            priority, tags, metadata
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
+          'project',
+          project.id,
+          project.name,
+          `Project: ${project.name}`,
+          project.start_date,
+          project.end_date,
+          project.created_by,
+          project.status || 'active',
+          'medium',
+          '[]',
+          '{}'
+        ]);
+        
+        console.log(`✅ Created timeline entry for project: ${project.name}`);
+      }
+      
+      await client.query('COMMIT');
+      
+      res.json({
+        success: true,
+        message: 'Timeline population completed successfully',
+        sprintsCreated: sprintsResult.rows.length,
+        projectsCreated: projectsResult.rows.length
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('Error populating timeline:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to populate timeline'
+    });
+  }
+});
 
 // ==================== NOTIFICATION ENDPOINTS ====================
 
@@ -9148,7 +9557,6 @@ app.post('/api/v1/projects/:projectId/sprints/new', authenticateToken, async (re
     const endVal = end_date ? (typeof end_date === 'string' ? end_date : new Date(end_date).toISOString()) : null;
 
     // Create the sprint linked to the project (created_by NOT NULL)
-    const createdByVal = String(userId);
     const result = await pool.query(`
       INSERT INTO sprints (name, start_date, end_date, project_id, status, created_by, created_at, updated_at)
       VALUES ($1, $2, $3, $4, 'planning', $5, NOW(), NOW())
@@ -9158,7 +9566,7 @@ app.post('/api/v1/projects/:projectId/sprints/new', authenticateToken, async (re
       startVal,
       endVal,
       projectId,
-      createdByVal
+      userId
     ]);
 
     const sprint = result.rows[0];

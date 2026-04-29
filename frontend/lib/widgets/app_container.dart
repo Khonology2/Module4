@@ -39,8 +39,8 @@ class AppContainer extends StatelessWidget {
             Positioned.fill(
               child: Opacity(
                 opacity: 0.3,
-                child: Image.asset(
-                  'Icons/khono_bg.png',
+                child: Image.network(
+                  'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/Icons/khono_bg.png',
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) {
                     // Fallback gradient pattern if image fails to load

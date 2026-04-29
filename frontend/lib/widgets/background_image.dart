@@ -36,8 +36,8 @@ class BackgroundImage extends StatelessWidget {
     final String resolvedImagePath =
         imagePath ??
         (isDarkMode
-            ? 'Icons/khono_bg.png'
-            : 'assets/niice_wrld_white_bg.png');
+            ? 'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/Icons/khono_bg.png'
+            : 'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/niice_wrld_white_bg.png');
     final List<Color> resolvedGradientColors =
         gradientColors ??
         (isDarkMode
@@ -54,7 +54,7 @@ class BackgroundImage extends StatelessWidget {
       children: [
         // Background image
         Positioned.fill(
-          child: Image.asset(
+          child: Image.network(
             resolvedImagePath,
             fit: fit,
             // Render background sharply
