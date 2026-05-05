@@ -926,17 +926,30 @@ if (response.statusCode == 200 || response.statusCode == 201) {
   static Future<List<Map<String, dynamic>>> getUsers() async {
     try {
       final backendService = BackendApiService();
-      final response = await backendService.getUsers(page: 1, limit: 200);
+      final response = await backendService.getUsers(page: 1, limit: 1000);
 
       if (response.isSuccess && response.data != null) {
         final dynamic raw = response.data;
-        if (raw is List) {
-          return raw.cast<Map<String, dynamic>>();
+
+        List<dynamic> extractList(dynamic v) {
+          if (v is List) return v;
+          if (v is Map) {
+            final map = Map<String, dynamic>.from(v);
+            dynamic inner = map['users'] ?? map['data'] ?? map['items'];
+            if (inner is Map) {
+              final innerMap = Map<String, dynamic>.from(inner);
+              inner = innerMap['users'] ?? innerMap['data'] ?? innerMap['items'];
+            }
+            if (inner is List) return inner;
+          }
+          return const <dynamic>[];
         }
-        final List<dynamic> items = (raw is Map)
-            ? (raw['data'] ?? raw['users'] ?? raw['items'] ?? [])
-            : [];
-        return items.cast<Map<String, dynamic>>();
+
+        final items = extractList(raw);
+        return items
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
       } else {
         debugPrint('Failed to load users: ${response.statusCode} - ${response.error}');
         return [];

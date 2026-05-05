@@ -216,7 +216,7 @@ class _ClientReviewWorkflowScreenState
             reportId: widget.reportId,
             signerEmail: _signerEmail.trim(),
             signerName: AuthService().currentUser?.name ?? 'Signer',
-            reportTitle: _report?.reportTitle ?? 'Sign-Off Report',
+            reportTitle: _report?.displayTitle ?? 'Sign-Off Report',
             reportContent: _report?.reportContent ?? '',
           );
           if (envelopeId != null) {
@@ -279,8 +279,8 @@ class _ClientReviewWorkflowScreenState
               ? 'Report Approved'
               : 'Report Changes Requested';
           final message = _selectedAction == 'approve'
-              ? '$actor approved "${_report?.reportTitle ?? 'Report'}"'
-              : '$actor requested changes for "${_report?.reportTitle ?? 'Report'}"';
+              ? '$actor approved "${_report?.displayTitle ?? 'Report'}"'
+              : '$actor requested changes for "${_report?.displayTitle ?? 'Report'}"';
           final type = _selectedAction == 'approve'
               ? NotificationType.reportApproved
               : NotificationType.reportChangesRequested;
@@ -295,7 +295,7 @@ class _ClientReviewWorkflowScreenState
               : 'report_change_requested';
           rt.emit(event, {
             'reportId': widget.reportId,
-            'title': _report?.reportTitle ?? 'Report',
+            'title': _report?.displayTitle ?? 'Report',
           });
           rt.emit('approval_updated', {
             'reportId': widget.reportId,
@@ -352,7 +352,7 @@ class _ClientReviewWorkflowScreenState
         {
           'role': 'user',
           'content':
-              '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nKnown limitations: ${_report!.knownLimitations ?? '-'}\nNext steps: ${_report!.nextSteps ?? '-'}'
+              '${_report!.displayTitle}\n\n${_report!.reportContent}\n\nKnown limitations: ${_report!.knownLimitations ?? '-'}\nNext steps: ${_report!.nextSteps ?? '-'}'
         }
       ];
       final resp =
@@ -384,7 +384,7 @@ class _ClientReviewWorkflowScreenState
         {
           'role': 'user',
           'content':
-              '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nFocus on gaps, risks, and necessary updates.'
+              '${_report!.displayTitle}\n\n${_report!.reportContent}\n\nFocus on gaps, risks, and necessary updates.'
         }
       ];
       final resp =
@@ -479,7 +479,7 @@ class _ClientReviewWorkflowScreenState
 
         // Report Title
         Text(
-          _report!.reportTitle,
+          _report!.displayTitle,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 color: FlownetColors.pureWhite,
                 fontWeight: FontWeight.bold,

@@ -785,6 +785,10 @@ router.get('/:id', async (req, res) => {
       const reviewedBy = c.reviewedBy || c.reviewed_by;
       const approvedBy = c.approvedBy || c.approved_by;
       const preparedBy = c.preparedBy || c.prepared_by || (row.created_by || '').toString();
+      const sprintIds = c.sprintIds || c.sprint_ids || [];
+      const sprintReportDataFromContent = c.sprintReportData || c.sprint_report_data || null;
+      const sprintReportData =
+        sprintReportDataFromContent != null ? sprintReportDataFromContent : await buildSprintReportDataBySprintIds(sprintIds);
       const extraIds = [];
       if (looksLikeUserId(submittedBy)) extraIds.push(String(submittedBy));
       if (looksLikeUserId(reviewedBy)) extraIds.push(String(reviewedBy));
@@ -814,9 +818,9 @@ router.get('/:id', async (req, res) => {
         deliverableId: (row.deliverable_id || '').toString(),
         reportTitle: (c.reportTitle || c.report_title || 'Untitled Report'),
         reportContent: (c.reportContent || c.report_content || ''),
-        sprintIds: c.sprintIds || c.sprint_ids || [],
+        sprintIds,
         sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
-        sprintReportData: c.sprintReportData || c.sprint_report_data || null,
+        sprintReportData,
         knownLimitations: c.knownLimitations || c.known_limitations,
         nextSteps: c.nextSteps || c.next_steps,
         preparedBy: preparedBy,

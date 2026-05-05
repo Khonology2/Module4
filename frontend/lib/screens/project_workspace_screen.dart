@@ -166,94 +166,17 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
       final deliverables = await ApiService.getDeliverables();
       final sprints = await ApiService.getSprints();
       
-      // Try direct API call first - more reliable
       List<User> users = [];
       try {
-        debugPrint('🔍 Trying direct API call for users...');
-        final backend = BackendApiService();
-        final response = await backend.getUsers(limit: 1000);
-        
-        if (response.isSuccess && response.data != null) {
-          debugPrint('✅ Direct API call successful - response type: ${response.data.runtimeType}');
-          
-          final responseData = response.data;
-          List<dynamic> usersDataList = [];
-          
-          if (responseData is Map && responseData['data'] is List) {
-            usersDataList = responseData['data'];
-            debugPrint('📦 Extracted ${usersDataList.length} users from data array');
-          } else if (responseData is List) {
-            usersDataList = responseData;
-            debugPrint('📦 Extracted ${usersDataList.length} users from direct list');
-          }
-          
-          users = usersDataList.map((userData) {
-            String displayName;
-            if (userData['name'] != null && userData['name'].toString().isNotEmpty) {
-              displayName = userData['name'];
-            } else {
-              displayName = userData['email'] ?? 'Unknown User';
-            }
-            
-            // Parse role string to UserRole enum
-            UserRole userRole = UserRole.teamMember; // default
-            final roleString = userData['role']?.toString().toLowerCase();
-            if (roleString != null) {
-              switch (roleString) {
-                case 'systemadmin':
-                  userRole = UserRole.systemAdmin;
-                  break;
-                case 'projectmanager':
-                  userRole = UserRole.projectManager;
-                  break;
-                case 'deliverylead':
-                  userRole = UserRole.deliveryLead;
-                  break;
-                case 'developer':
-                  userRole = UserRole.developer;
-                  break;
-                case 'qaengineer':
-                  userRole = UserRole.qaEngineer;
-                  break;
-                case 'client':
-                  userRole = UserRole.client;
-                  break;
-                case 'clientreviewer':
-                  userRole = UserRole.clientReviewer;
-                  break;
-                case 'scrummaster':
-                  userRole = UserRole.scrumMaster;
-                  break;
-                case 'stakeholder':
-                  userRole = UserRole.stakeholder;
-                  break;
-                default:
-                  userRole = UserRole.teamMember;
-              }
-            }
-            
-            debugPrint('👤 Processing user: $displayName (${userData['id']}) - Role: ${userRole.name}');
-            
-            return User(
-              id: userData['id'],
-              email: userData['email'] ?? '',
-              name: displayName,
-              role: userRole,
-              isActive: userData['is_active'] ?? userData['isActive'] ?? true,
-              emailVerified: userData['emailVerified'] ?? true,
-              createdAt: DateTime.tryParse(userData['createdAt'] ?? '') ?? DateTime.now(),
-            );
-          }).toList();
-          
-          debugPrint('✅ Successfully processed ${users.length} users from direct API');
-        } else {
-          debugPrint('❌ Direct API call failed: ${response.error}');
-          throw Exception('Direct API call failed');
-        }
+        final rawUsers = await ApiService.getUsers();
+        users = rawUsers
+            .map((u) => User.fromJson(Map<String, dynamic>.from(u)))
+            .where((u) => u.id.isNotEmpty)
+            .toList();
+        debugPrint('✅ Loaded ${users.length} users via ApiService.getUsers()');
       } catch (e) {
-        debugPrint('❌ Direct API call failed, trying UserDataService: $e');
+        debugPrint('❌ Loading users via ApiService failed, trying UserDataService: $e');
         
-        // Fallback to UserDataService
         try {
           users = await UserDataService().getUsers(limit: 1000);
           debugPrint('✅ Successfully loaded ${users.length} users from UserDataService');
@@ -266,7 +189,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
       setState(() {
         _availableDeliverables = deliverables.map((d) => Deliverable.fromJson(d)).toList();
         _availableSprints = sprints.map((s) => Sprint.fromJson(s)).toList();
-        _availableUsers = users;
+        _availableUsers = users.where((u) => u.isActive).toList();
 
         debugPrint('📊 Final state: ${_availableUsers.length} users available');
 

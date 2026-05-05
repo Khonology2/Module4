@@ -282,7 +282,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Report: ${_report!.reportTitle}',
+                  'Report: ${_report!.displayTitle}',
                   style: const TextStyle(
                     color: FlownetColors.coolGray,
                     fontSize: 14,
@@ -780,7 +780,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      _report!.reportTitle.isNotEmpty ? _report!.reportTitle : 'Sign-Off Report',
+                      _report!.displayTitle.isNotEmpty ? _report!.displayTitle : 'Sign-Off Report',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color: FlownetColors.pureWhite,
                         fontWeight: FontWeight.bold,

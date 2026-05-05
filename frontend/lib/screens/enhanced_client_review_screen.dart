@@ -313,7 +313,7 @@ class _EnhancedClientReviewScreenState
         },
         {
           'role': 'user',
-          'content': '${_report!.reportTitle}\n${_report!.reportContent}'
+          'content': '${_report!.displayTitle}\n${_report!.reportContent}'
         }
       ];
       final resp =
@@ -346,7 +346,7 @@ class _EnhancedClientReviewScreenState
         {
           'role': 'user',
           'content':
-              '${_report!.reportTitle}\n${_report!.reportContent}\nFocus on gaps, risks, and necessary updates.'
+              '${_report!.displayTitle}\n${_report!.reportContent}\nFocus on gaps, risks, and necessary updates.'
         }
       ];
       final resp =

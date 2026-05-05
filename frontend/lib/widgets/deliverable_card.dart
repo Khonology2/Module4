@@ -190,7 +190,12 @@ class DeliverableCard extends StatelessWidget {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            deliverable.ownerName!,
+                                            (deliverable.ownerName?.trim().isNotEmpty == true
+                                                    ? deliverable.ownerName!.trim()
+                                                    : (deliverable.assignedToName?.trim().isNotEmpty == true
+                                                        ? deliverable.assignedToName!.trim()
+                                                        : 'Unknown'))
+                                                .toString(),
                                             style: TextStyle(
                                               color: Colors.blue[700],
                                               fontSize: 12,
