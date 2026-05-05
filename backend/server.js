@@ -154,8 +154,8 @@ app.use(cors({
   origin: [
     "https://flow-space-1.onrender.com",
     "https://flow-space.onrender.com",
-    "http://localhost:3000",
-    "http://localhost:8080"
+    /^http:\/\/localhost:\d+$/,
+    /^http:\/\/127\.0\.0\.1:\d+$/
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
