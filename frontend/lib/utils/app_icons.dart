@@ -125,8 +125,8 @@ class AppIcons {
     if (assetPath.isNotEmpty) {
       return Transform.scale(
         scale: visualScale,
-        child: Image.network(
-          'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/$assetPath',
+        child: Image.asset(
+          assetPath,
           width: size,
           height: size,
           fit: fit,

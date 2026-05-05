@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class AssetHelper {
-  static const String _githubBaseUrl = 'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/';
+  static const String _githubBaseUrl = 'https://raw.githubusercontent.com/Khonology2/Module4/new/frontend/assets/';
   
   /// Convert asset path to GitHub CDN URL
   static String getAssetUrl(String assetPath) {
