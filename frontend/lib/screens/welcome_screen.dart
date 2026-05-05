@@ -12,11 +12,15 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
-  static const bool showManualSsoTokenField = true;
+  static const bool showManualSsoTokenField = false;
 
   final TextEditingController _tokenController = TextEditingController();
   bool _isSsoLoading = false;
   String? _errorMessage;
+  String? _pendingSsoToken;
+  String? _pendingAccessToken;
+  String? _pendingRefreshToken;
+  String _pendingDashboard = '/dashboard';
 
   @override
   void initState() {
@@ -33,23 +37,51 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   Future<void> _consumeTokenFromUrl() async {
     final appAccessToken = Uri.base.queryParameters['access_token'];
     if (appAccessToken != null && appAccessToken.trim().isNotEmpty) {
-      final refreshToken = Uri.base.queryParameters['refresh_token'] ?? '';
-      final dashboard = Uri.base.queryParameters['dashboard'] ?? '/dashboard';
-      await BackendApiService().saveTokens(
-        appAccessToken.trim(),
-        refreshToken.trim(),
-        DateTime.now().add(const Duration(minutes: 15)),
-      );
-      await AuthService().refreshCurrentUser();
-      if (mounted) context.go(dashboard);
+      setState(() {
+        _pendingAccessToken = appAccessToken.trim();
+        _pendingRefreshToken = (Uri.base.queryParameters['refresh_token'] ?? '').trim();
+        _pendingDashboard = Uri.base.queryParameters['dashboard'] ?? '/dashboard';
+      });
       return;
     }
 
     final token = Uri.base.queryParameters['token'] ?? Uri.base.queryParameters['ssoToken'];
     if (token != null && token.trim().isNotEmpty) {
-      _tokenController.text = token.trim();
-      await _handleSsoLogin(token.trim());
+      setState(() {
+        _pendingSsoToken = token.trim();
+        _tokenController.text = token.trim();
+      });
     }
+  }
+
+  Future<void> _onGetStartedPressed() async {
+    if (_isSsoLoading) return;
+
+    if (_pendingAccessToken != null && _pendingAccessToken!.isNotEmpty) {
+      setState(() {
+        _isSsoLoading = true;
+        _errorMessage = null;
+      });
+      await BackendApiService().saveTokens(
+        _pendingAccessToken!,
+        _pendingRefreshToken ?? '',
+        DateTime.now().add(const Duration(minutes: 15)),
+      );
+      await AuthService().refreshCurrentUser();
+      if (!mounted) return;
+      context.go(_pendingDashboard);
+      return;
+    }
+
+    final tokenFromField = _tokenController.text.trim();
+    final token = _pendingSsoToken ?? tokenFromField;
+    if (token.isNotEmpty) {
+      await _handleSsoLogin(token);
+      return;
+    }
+
+    if (!mounted) return;
+    context.go('/login');
   }
 
   Future<void> _handleSsoLogin(String token) async {
@@ -214,7 +246,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                               width: 180,
                               height: 42,
                               child: ElevatedButton(
-                                onPressed: () => context.go('/login'),
+                                onPressed: _isSsoLoading ? null : _onGetStartedPressed,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFFC10D00),
                                   foregroundColor: Colors.white,
