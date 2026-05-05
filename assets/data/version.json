@@ -1,24 +1,14 @@
 {
-  "version": "Ver 2026.04DD3 SIT",
-  "branch": "ClientSign",
-  "generated_at": "2026-04-23T11:55:37Z",
+  "version": "Ver 2026.05AB1 SIT",
+  "branch": "integration/thabang",
+  "generated_at": "2026-05-05T09:02:33Z",
   "commits": [
     {
-      "author": "BhutSipho",
-      "message": "add local asset pack under lib/assets",
-      "timestamp": "2026-04-23T13:53:45+02:00"
-    },
-    {
-      "author": "GitHub Action",
-      "message": "Update version data [2026-04-23]",
-      "timestamp": "2026-04-23T11:51:22Z"
-    },
-    {
-      "author": "BhutSipho",
-      "message": "sync client UI/sidebar with branch baselines",
-      "timestamp": "2026-04-23T13:50:51+02:00"
+      "author": "thabang127",
+      "message": "feat: improve report title handling and user data parsing",
+      "timestamp": "2026-05-05T11:01:59+02:00"
     }
   ],
-  "total_commits": 3,
-  "date_range": "2026-04-23"
+  "total_commits": 1,
+  "date_range": "2026-05-05"
 }
