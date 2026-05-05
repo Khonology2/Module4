@@ -27,14 +27,20 @@ function toRepositoryFile(file) {
 
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { search, fileType, project_id, project_key } = req.query;
+    const { search, fileType } = req.query;
+    const project_id = req.query.project_id ?? req.query.projectId;
+    const project_key = req.query.project_key ?? req.query.projectKey;
+    const sprint_id = req.query.sprint_id ?? req.query.sprintId;
+    const deliverable_id = req.query.deliverable_id ?? req.query.deliverableId;
     const files = await fileUploadService.listFiles();
 
     let filtered = files;
 
+    const normalizeId = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : '');
+
     // Project-scoped filtering
-    const pid = typeof project_id === 'string' && project_id.trim() !== '' ? project_id.trim() : '';
-    const pkey = typeof project_key === 'string' && project_key.trim() !== '' ? project_key.trim() : '';
+    const pid = normalizeId(project_id);
+    const pkey = normalizeId(project_key);
     if (pid || pkey) {
       let project = null;
       if (pid) {
@@ -80,6 +86,30 @@ router.get('/', authenticateToken, async (req, res) => {
       } else {
         filtered = [];
       }
+    }
+
+    const sid = normalizeId(sprint_id);
+    if (sid) {
+      filtered = filtered.filter(f => {
+        const url = String(f.url || '');
+        const tags = f.tags || [];
+        const arr = Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(s=>s.trim()) : []);
+        const kv = `sprint:${sid}`.toLowerCase();
+        if (arr.some(tag => String(tag || '').toLowerCase() === kv)) return true;
+        return url.includes(`/sprints/${sid}/`) || url.includes(`/${sid}/`) || url.endsWith(`/${sid}`);
+      });
+    }
+
+    const did = normalizeId(deliverable_id);
+    if (did) {
+      filtered = filtered.filter(f => {
+        const url = String(f.url || '');
+        const tags = f.tags || [];
+        const arr = Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(s=>s.trim()) : []);
+        const kv = `deliverable:${did}`.toLowerCase();
+        if (arr.some(tag => String(tag || '').toLowerCase() === kv)) return true;
+        return url.includes(`/deliverables/${did}/`) || url.includes(`/${did}/`) || url.endsWith(`/${did}`);
+      });
     }
 
     let data = filtered.map(toRepositoryFile);

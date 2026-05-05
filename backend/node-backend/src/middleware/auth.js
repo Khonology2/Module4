@@ -29,6 +29,7 @@ const authenticateToken = async (req, res, next) => {
     
     const payload = verifyToken(token);
     if (!payload || payload.type !== 'access') {
+      console.log('Auth failed - payload:', payload);
       return res.status(401).json({
         error: 'Invalid token',
         message: 'The provided token is invalid or expired'
@@ -37,7 +38,7 @@ const authenticateToken = async (req, res, next) => {
     
     // Attach user information to request
     req.user = {
-      id: payload.sub, // UUID should not be parsed as integer
+      id: payload.sub, // Keep as string to preserve UUID format
       email: payload.email,
       role: payload.role
     };
@@ -49,6 +50,37 @@ const authenticateToken = async (req, res, next) => {
       error: 'Authentication failed',
       message: 'Invalid or missing token'
     });
+  }
+};
+
+const optionalAuthenticateToken = async (req, res, next) => {
+  try {
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+    const authHeader = req.headers.authorization;
+    let token = authHeader && authHeader.split(' ')[1];
+    if (!token && req.headers['x-access-token']) {
+      token = String(req.headers['x-access-token']);
+    }
+    if (!token && req.query && (req.query.access_token || req.query.token)) {
+      token = String(req.query.access_token || req.query.token);
+    }
+    if (!token) {
+      return next();
+    }
+    const payload = verifyToken(token);
+    if (!payload || payload.type !== 'access') {
+      return next();
+    }
+    req.user = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role
+    };
+    return next();
+  } catch (_) {
+    return next();
   }
 };
 
@@ -121,6 +153,7 @@ const requireRole = (allowedRoles) => {
 
 module.exports = {
   authenticateToken,
+  optionalAuthenticateToken,
   requireActiveUser,
   requireRole
 };

@@ -48,6 +48,7 @@ const usersRoutes = require('./routes/users');
 const approvalsRoutes = require('./routes/approvals');
 const documentsRoutes = require('./routes/documents');
 const epicFeaturesRoutes = require('./routes/epicFeatures');
+const timelineRoutes = require('./routes/timeline');
 
 // Import services
 const { presenceService } = require('./services/presenceService');
@@ -111,12 +112,13 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/deliverables', deliverablesRoutes);
 app.use('/api/v1/sprints', sprintsRoutes);
 app.use('/api/v1/projects', projectsRoutes);
+const { optionalAuthenticateToken } = require('./middleware/auth');
 app.use('/api/v1/signoff', authenticateToken, signoffRoutes);
-app.use('/api/v1/sign-off-reports', authenticateToken, signoffRoutes);
+app.use('/api/v1/sign-off-reports', optionalAuthenticateToken, signoffRoutes);
 const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
-app.use('/api/v1/ai', aiLimiter, aiRoutes);
-app.use('/api/ai', aiLimiter, aiRoutes);
-app.use('/ai', aiLimiter, aiRoutes);
+app.use('/api/v1/ai', authenticateToken, aiLimiter, aiRoutes);
+app.use('/api/ai', authenticateToken, aiLimiter, aiRoutes);
+app.use('/ai', authenticateToken, aiLimiter, aiRoutes);
 app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/profile', profileRoutes);
@@ -131,6 +133,7 @@ app.use('/api/v1/approvals', authenticateToken, approvalsRoutes);
 app.use('/api/v1/audit-logs', auditRoutes);
 app.use('/api/v1/documents', documentsRoutes);
 app.use('/api/v1/epic-features', epicFeaturesRoutes);
+app.use('/api/v1/timeline', timelineRoutes);
 app.post('/api/v1/iot/ingest', (req, res) => {
   try {
     const { topic, payload, roles, targetRoles, event } = req.body || {};
@@ -299,18 +302,53 @@ app.use('*', (req, res) => {
 // Database connection and server startup
 const PORT = process.env.PORT || 8000;
 
+function isTruthy(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
 async function startServer() {
   try {
     // Test database connection
     await sequelize.authenticate();
-    const syncOk = await syncDatabase({ alter: true });
+    const shouldSync =
+      process.env.NODE_ENV === 'development' || isTruthy(process.env.DB_AUTO_SYNC, false);
+    const shouldAlter = isTruthy(process.env.DB_AUTO_ALTER, false);
+    const syncOk = shouldSync ? await syncDatabase({ alter: shouldAlter }) : true;
     console.log('✅ Database connection established successfully');
     if (!syncOk) {
       console.warn('⚠️ Database sync failed; continuing without alter sync');
+    } else if (!shouldSync) {
+      console.log('ℹ️ Database auto-sync disabled by environment settings');
+    }
+
+    try {
+      if (sequelize.getDialect() === 'postgres') {
+        await sequelize.query("ALTER TABLE sprints ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)");
+        await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id UUID");
+        await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by UUID");
+        // Ensure legacy audit_logs schema is compatible with current model.
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_email VARCHAR(255)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_role VARCHAR(100)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS session_id VARCHAR(500)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(50)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_agent VARCHAR(500)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action_category VARCHAR(100)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_name VARCHAR(255)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS old_values JSONB");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS new_values JSONB");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS changed_fields JSONB");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS request_id VARCHAR(500)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS endpoint VARCHAR(500)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10)");
+        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS status_code INTEGER");
+      }
+    } catch (e) {
+      console.warn('⚠️ Unable to ensure compatibility columns; continuing', e?.message || e);
     }
     
-    // Sync database (use with caution in production)
-    if (process.env.NODE_ENV === 'development') {
+    // Development-only safe sync (never run when DB_AUTO_SYNC is explicitly false)
+    if (process.env.NODE_ENV === 'development' && shouldSync) {
       // Use safe sync instead of alter to prevent infinite loops
       try {
         await sequelize.sync({ force: false });
@@ -337,12 +375,14 @@ async function startServer() {
       const dbConnectionString = process.env.DATABASE_URL;
       if (dbConnectionString) {
         databaseNotificationService.initialize(dbConnectionString)
-          .then(() => {
-            console.log('✅ Database notification service initialized');
-            
-            // Integrate socket service with database notification service
-            databaseNotificationService.setSocketService(socketService);
-            console.log('✅ Real-time services integrated successfully');
+          .then((ok) => {
+            if (ok) {
+              console.log('✅ Database notification service initialized');
+              databaseNotificationService.setSocketService(socketService);
+              console.log('✅ Real-time services integrated successfully');
+            } else {
+              console.warn('⚠️ Database notification service unavailable; continuing without LISTEN/NOTIFY');
+            }
           })
           .catch(error => {
             console.error('❌ Failed to initialize database notification service:', error);
@@ -363,12 +403,12 @@ async function startServer() {
   console.log(`🔗 API v1 endpoints: http://localhost:${PORT}/api/v1/`);
       console.log(`🔌 WebSocket endpoint: ws://localhost:${PORT}`);
       console.log(`🔧 IoT enabled: ${String(process.env.IOT_ENABLED || '').toLowerCase() === 'true'}`);
-      const hasOpenAI = !!process.env.OPENAI_API_KEY;
-      console.log(hasOpenAI ? '✅ OpenAI API key detected' : '⚠️ OpenAI API key missing');
-      if (hasOpenAI) {
+      const hasOpenRouter = !!(process.env.OPENROUTER_API_KEY || process.env.OpenRouter_API_KEY);
+      console.log(hasOpenRouter ? '✅ OpenRouter API key detected' : '⚠️ OpenRouter API key missing');
+      if (hasOpenRouter) {
         console.log(`🤖 AI chat endpoint ready: http://localhost:${PORT}/api/v1/ai/chat`);
       } else {
-        console.warn('AI features disabled until OPENAI_API_KEY is set');
+        console.warn('AI features disabled until OPENROUTER_API_KEY is set');
       }
 
       const schedulerService = require('./services/schedulerService');

@@ -239,7 +239,7 @@ node server.js
 Expected output:
 ```
 ✅ PostgreSQL connected!
-Flow-Space API server running on port 3001
+Flow-Space API server running on port 8000
 ```
 
 ### Flutter App is Running

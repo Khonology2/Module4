@@ -175,7 +175,7 @@ CREATE TABLE report_exports (
 
 ## ✨ System Status
 
-**Backend:** ✅ Running on port 3001  
+**Backend:** ✅ Running on port 8000  
 **Frontend:** ✅ Running and connected  
 **Database:** ✅ Connected  
 **Notifications:** ✅ Active  
