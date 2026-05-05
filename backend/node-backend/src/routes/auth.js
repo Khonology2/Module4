@@ -3,10 +3,76 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const router = express.Router();
-const { User, UserProfile } = require('../models');
+const { User, UserProfile, RefreshToken } = require('../models');
 const EmailService = require('../services/emailService');
 const emailService = new EmailService();
 const { authenticateToken } = require('../middleware/auth');
+const {
+  parseAndVerifyUpstreamToken,
+  issueAppTokens,
+  dashboardForRole
+} = require('../services/ssoService');
+
+function authError(res, status, error, code) {
+  return res.status(status).json({ error, code });
+}
+
+async function upsertSsoUser(identity) {
+  const nameParts = String(identity.name || '').trim().split(/\s+/).filter(Boolean);
+  const firstName = nameParts[0] || identity.email.split('@')[0];
+  const lastName = nameParts.slice(1).join(' ') || 'User';
+
+  const existing = await User.findOne({ where: { email: identity.email } });
+  if (!existing) {
+    const placeholderPassword = await bcrypt.hash(`${identity.email}:${Date.now()}`, 10);
+    return User.create({
+      email: identity.email,
+      hashed_password: placeholderPassword,
+      first_name: firstName,
+      last_name: lastName,
+      role: identity.role,
+      is_active: true,
+      is_verified: true
+    });
+  }
+
+  const updates = {};
+  if (existing.role !== identity.role) updates.role = identity.role;
+  if (!existing.first_name && firstName) updates.first_name = firstName;
+  if (!existing.last_name && lastName) updates.last_name = lastName;
+  if (!existing.is_active) updates.is_active = true;
+  if (Object.keys(updates).length > 0) {
+    await existing.update(updates);
+  }
+  return existing;
+}
+
+async function processSsoLoginFromToken(token) {
+  const identity = parseAndVerifyUpstreamToken(token);
+  const user = await upsertSsoUser(identity);
+  await user.update({ last_login: new Date() });
+
+  const { access_token, refresh_token } = issueAppTokens(user);
+  const refreshExpiry = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000));
+  await RefreshToken.create({
+    user_id: user.id,
+    token: refresh_token,
+    expires_at: refreshExpiry,
+    is_revoked: false
+  });
+
+  return {
+    access_token,
+    refresh_token,
+    role: user.role,
+    dashboard: dashboardForRole(user.role),
+    user: {
+      id: user.id,
+      email: user.email,
+      name: [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.email
+    }
+  };
+}
 
 /**
  * @route POST /api/auth/register
@@ -224,6 +290,48 @@ router.post('/login', async (req, res) => {
   }
 });
 
+router.post('/sso-login', async (req, res) => {
+  try {
+    const token = req.body?.token || req.headers['x-sso-token'] || req.query?.token;
+    if (!token) {
+      return authError(res, 400, 'Token is required', 'TOKEN_MISSING');
+    }
+    return res.json(await processSsoLoginFromToken(token));
+  } catch (error) {
+    if (error.code === 'TOKEN_MISSING') return authError(res, 400, error.message, error.code);
+    if (error.code === 'TOKEN_CLAIMS_INVALID') return authError(res, 401, error.message, error.code);
+    if (error.code === 'TOKEN_INVALID') return authError(res, 401, error.message, error.code);
+    if (error.code === 'SSO_CONFIG_INVALID') return authError(res, 500, error.message, error.code);
+    console.error('SSO login error:', error);
+    return authError(res, 500, 'Internal server error', 'INTERNAL_ERROR');
+  }
+});
+
+router.get('/sso-login', async (req, res) => {
+  try {
+    const token = req.query?.token;
+    if (!token) return authError(res, 400, 'Token is required', 'TOKEN_MISSING');
+    const ssoResult = await processSsoLoginFromToken(token);
+    const frontendUrl = (process.env.FRONTEND_URL || '').trim();
+    if (!frontendUrl) {
+      return res.json(ssoResult);
+    }
+    const redirectUrl = new URL(frontendUrl);
+    redirectUrl.searchParams.set('access_token', ssoResult.access_token);
+    redirectUrl.searchParams.set('refresh_token', ssoResult.refresh_token);
+    redirectUrl.searchParams.set('role', ssoResult.role);
+    redirectUrl.searchParams.set('dashboard', ssoResult.dashboard);
+    return res.redirect(302, redirectUrl.toString());
+  } catch (error) {
+    if (error.code === 'TOKEN_MISSING') return authError(res, 400, error.message, error.code);
+    if (error.code === 'TOKEN_CLAIMS_INVALID') return authError(res, 401, error.message, error.code);
+    if (error.code === 'TOKEN_INVALID') return authError(res, 401, error.message, error.code);
+    if (error.code === 'SSO_CONFIG_INVALID') return authError(res, 500, error.message, error.code);
+    console.error('SSO redirect login error:', error);
+    return authError(res, 500, 'Internal server error', 'INTERNAL_ERROR');
+  }
+});
+
 /**
  * @route GET /api/auth/me
  * @desc Get current user profile
@@ -265,7 +373,9 @@ router.get('/me', authenticateToken, async (req, res) => {
         is_active: isActive,
         last_login: lastLogin,
         created_at: createdAt
-      }
+      },
+      role: user.role,
+      dashboard: dashboardForRole(user.role)
     });
 
   } catch (error) {
@@ -282,44 +392,49 @@ router.get('/me', authenticateToken, async (req, res) => {
  * @desc Refresh JWT token
  * @access Private
  */
-router.post('/refresh', authenticateToken, async (req, res) => {
+router.post('/refresh', async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, {
-      attributes: { exclude: ['password'] }
+    const providedToken = req.body?.refresh_token
+      || (req.headers.authorization ? req.headers.authorization.split(' ')[1] : null);
+    if (!providedToken) {
+      return authError(res, 401, 'Refresh token is required', 'TOKEN_MISSING');
+    }
+
+    const refreshSecret = process.env.APP_REFRESH_JWT_SECRET || process.env.JWT_SECRET;
+    let payload;
+    try {
+      payload = jwt.verify(providedToken, refreshSecret);
+    } catch (_) {
+      return authError(res, 401, 'Invalid or expired refresh token', 'TOKEN_INVALID');
+    }
+
+    if (!payload || payload.type !== 'refresh') {
+      return authError(res, 401, 'Invalid token type', 'TOKEN_INVALID');
+    }
+
+    const tokenRow = await RefreshToken.findOne({
+      where: { token: providedToken, is_revoked: false }
+    });
+    if (!tokenRow) {
+      return authError(res, 401, 'Refresh token revoked', 'TOKEN_INVALID');
+    }
+
+    const user = await User.findByPk(payload.sub, {
+      attributes: { exclude: ['hashed_password'] }
     });
 
     if (!user) {
-      return res.status(404).json({
-        error: 'User not found',
-        message: 'User not found'
-      });
+      return authError(res, 401, 'User not found', 'TOKEN_INVALID');
     }
 
-    // Generate new JWT token
-    const token = jwt.sign(
-      { sub: user.id, username: user.username, role: user.role, type: 'access' },
-      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production',
-      { expiresIn: '24h' }
-    );
+    const { access_token } = issueAppTokens(user);
 
     res.json({
-      message: 'Token refreshed successfully',
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        status: user.status
-      },
-      token
+      access_token
     });
-
   } catch (error) {
     console.error('Token refresh error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to refresh token'
-    });
+    return authError(res, 500, 'Failed to refresh token', 'INTERNAL_ERROR');
   }
 });
 

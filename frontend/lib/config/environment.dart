@@ -10,7 +10,7 @@ class Environment {
     // Check for build-time API base URL first
     const baseUrlFromEnv = String.fromEnvironment(
       'API_BASE_URL',
-      defaultValue: 'https://flow-space.onrender.com/api/v1',
+      defaultValue: '',
     );
     
     // Check for production flag
@@ -19,6 +19,11 @@ class Environment {
     // Use build-time URL if provided
     if (baseUrlFromEnv.trim().isNotEmpty) {
       return baseUrlFromEnv;
+    }
+
+    // Explicit localhost/browser-local should always use local backend.
+    if (isLocalDevelopment) {
+      return 'http://localhost:3001/api/v1';
     }
 
     // Fallback to production or localhost

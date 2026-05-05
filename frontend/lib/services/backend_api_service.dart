@@ -29,6 +29,18 @@ class BackendApiService {
     return await _apiClient.login(email, password);
   }
 
+  Future<ApiResponse> ssoLogin(String token) async {
+    return await _apiClient.ssoLogin(token);
+  }
+
+  Future<ApiResponse> refreshAccessToken(String refreshToken) async {
+    return await _apiClient.post(
+      '/auth/refresh',
+      body: {'refresh_token': refreshToken},
+      requireAuth: false,
+    );
+  }
+
   Future<ApiResponse> signUp(String email, String password, String name, UserRole role) async {
     // Parse the full name into firstName and lastName for the backend
     final nameParts = name.trim().split(' ');
