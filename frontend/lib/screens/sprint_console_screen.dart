@@ -470,7 +470,7 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return AppScaffold(
-        useBackgroundImage: false,
+        useBackgroundImage: true,
         centered: false,
         body: Center(
           child: CircularProgressIndicator(
@@ -482,7 +482,7 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     }
 
     return AppScaffold(
-      useBackgroundImage: false,
+      useBackgroundImage: true,
       centered: false,
       body: _buildBody(),
     );

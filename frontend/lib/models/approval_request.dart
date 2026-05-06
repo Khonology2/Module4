@@ -1,5 +1,3 @@
-import '../utils/user_label_utils.dart';
-
 class ApprovalRequest {
   final String id;
   final String title;
@@ -25,11 +23,11 @@ class ApprovalRequest {
     required this.title,
     required this.description,
     required this.requestedBy,
-    required String requestedByName,
+    required this.requestedByName,
     required this.requestedAt,
     required this.status,
     this.reviewedBy,
-    String? reviewedByName,
+    this.reviewedByName,
     this.reviewedAt,
     this.reviewReason,
     required this.priority,
@@ -39,14 +37,7 @@ class ApprovalRequest {
     this.definitionOfDone,
     this.deliverableTitle,
     this.deliverableDescription,
-  })  : requestedByName = UserLabelUtils.sanitizeUserLabel(
-          requestedByName,
-          emptyIsUnknown: true,
-        ),
-        reviewedByName = UserLabelUtils.sanitizeUserLabel(
-          reviewedByName,
-          emptyIsUnknown: true,
-        );
+  });
 
   factory ApprovalRequest.fromJson(Map<String, dynamic> json) {
     return ApprovalRequest(

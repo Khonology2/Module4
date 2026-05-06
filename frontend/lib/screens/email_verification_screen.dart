@@ -376,7 +376,7 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                     final router = GoRouter.of(context);
                     await ref.read(authStateProvider.notifier).signOut();
                     if (mounted) {
-                      router.go(AuthService.postLogoutRoute);
+                      router.go('/');
                     }
                   },
                   child: const Text(

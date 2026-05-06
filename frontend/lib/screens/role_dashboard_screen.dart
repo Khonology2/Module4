@@ -61,26 +61,56 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   // Cache for user names to avoid repeated API calls
   final Map<String, String> _userNamesCache = {};
 
-  // Method to get user name by ID with caching
-  Future<String> _getUserNameById(String userId) async {
-    if (userId.trim().isEmpty) {
-      return UserLabelUtils.unknownUserLabel;
+  String _extractAuditUserId(Map<String, dynamic> log) {
+    final id = (log['user_id'] ?? log['userId'] ?? log['actor_id'] ?? log['actorId'])?.toString();
+    if (id != null && id.trim().isNotEmpty) return id.trim();
+    final userObj = log['user'];
+    if (userObj is Map) {
+      final uid = userObj['id']?.toString();
+      if (uid != null && uid.trim().isNotEmpty) return uid.trim();
+    }
+    return '';
+  }
+
+  String _extractAuditActorLabel(Map<String, dynamic> log) {
+    final direct = (log['actor_name'] ??
+            log['actorName'] ??
+            log['user_name'] ??
+            log['userName'] ??
+            log['user_email'] ??
+            log['userEmail'] ??
+            log['actor'] ??
+            log['user'])
+        ?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+    final id = _extractAuditUserId(log);
+    final cached = id.isNotEmpty ? _userNamesCache[id] : null;
+    if (cached != null && cached.trim().isNotEmpty) return cached.trim();
+    return 'System';
+  }
+
+  Future<void> _hydrateAuditActors(List<Map<String, dynamic>> logs) async {
+    final ids = logs
+        .map(_extractAuditUserId)
+        .where((id) => id.isNotEmpty && !_userNamesCache.containsKey(id))
+        .toSet()
+        .toList();
+    if (ids.isNotEmpty) {
+      final futures = ids.map((userId) => _getUserNameById(userId));
+      await Future.wait(futures);
     }
 
+    for (final log in logs) {
+      log['actor_id'] = _extractAuditUserId(log);
+      log['actor'] = _extractAuditActorLabel(log);
+    }
+  }
+
+  // Method to get user name by ID with caching
+  Future<String> _getUserNameById(String userId) async {
     // Check cache first
     if (_userNamesCache.containsKey(userId)) {
       return _userNamesCache[userId]!;
-    }
-
-    // Current user is already loaded; prefer that over a network round trip.
-    if (_currentUser != null && _currentUser!.id == userId) {
-      final currentUserName = _currentUser!.name.trim().isNotEmpty
-          ? _currentUser!.name.trim()
-          : _currentUser!.email.trim();
-      if (currentUserName.isNotEmpty) {
-        _userNamesCache[userId] = currentUserName;
-        return currentUserName;
-      }
     }
 
     try {
@@ -95,8 +125,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     }
 
     // Fallback to showing the ID
-    _userNamesCache[userId] = UserLabelUtils.unknownUserLabel;
-    return UserLabelUtils.unknownUserLabel;
+    _userNamesCache[userId] = 'User $userId';
+    return 'User $userId';
   }
 
   // Missing variables
@@ -151,6 +181,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     realtimeService.offAll('approval_updated');
     realtimeService.offAll('project_created');
     realtimeService.offAll('project_updated');
+    realtimeService.offAll('audit_log_created');
     // Do not call offAll for notification_received as it affects other widgets
     super.dispose();
   }
@@ -182,15 +213,13 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   // Preload user names for all deliverables to avoid multiple API calls
-  Future<void> _preloadUserNames(
-      List<Map<String, dynamic>> deliverables) async {
+  Future<void> _preloadUserNames(List<Map<String, dynamic>> deliverables) async {
     final Set<String> userIds = {};
-
+    
     for (final deliverable in deliverables) {
       final ownerId = _getOwnerId(deliverable);
-      final assignedToId = deliverable['assigned_to']?.toString() ??
-          deliverable['assignedTo']?.toString();
-
+      final assignedToId = deliverable['assigned_to']?.toString() ?? deliverable['assignedTo']?.toString();
+      
       if (ownerId != null && ownerId.isNotEmpty) {
         userIds.add(ownerId);
       }
@@ -248,6 +277,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             .whereType<Map>()
             .map((e) => e.cast<String, dynamic>())
             .toList();
+        await _hydrateAuditActors(list);
         setState(() {
           _auditLogs = list;
           _filteredAuditLogs = _auditLogs;
@@ -306,7 +336,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                 backgroundColor: Colors.red,
               ),
             );
-            router.go(AuthService.postLogoutRoute);
+            router.go('/');
           }
         }
       }
@@ -314,7 +344,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       debugPrint('❌ Error loading current user: $e');
       // If there's an error, redirect to login
       if (mounted) {
-        context.go(AuthService.postLogoutRoute);
+        context.go('/');
       }
     }
   }
@@ -379,6 +409,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           }).toList();
         }
 
+        await _hydrateAuditActors(filteredLogs);
         setState(() {
           if (loadMore) {
             _auditLogs.addAll(filteredLogs);
@@ -490,76 +521,26 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   String? _getOwnerName(Map<String, dynamic> data) {
-    // Prefer explicit assignment/user-facing name fields first.
-    final directNameFields = [
-      data['assignedToName'],
-      data['assigned_to_name'],
-      data['ownerName'],
-      data['owner_name'],
-      data['createdByName'],
-      data['created_by_name'],
-      data['submittedByName'],
-      data['submitted_by_name'],
-    ];
-    for (final value in directNameFields) {
-      if (value != null) {
-        final safe = UserLabelUtils.sanitizeUserLabel(
-          value.toString(),
-          emptyIsUnknown: false,
-        );
-        if (safe.isNotEmpty) return safe;
-      }
-    }
-
-    if (data['ownerName'] != null) {
-      final safe = UserLabelUtils.sanitizeUserLabel(
-        data['ownerName'].toString(),
-        emptyIsUnknown: false,
-      );
-      return safe.isNotEmpty ? safe : null;
-    }
-    if (data['owner_name'] != null) {
-      final safe = UserLabelUtils.sanitizeUserLabel(
-        data['owner_name'].toString(),
-        emptyIsUnknown: false,
-      );
-      return safe.isNotEmpty ? safe : null;
-    }
-
+    if (data['ownerName'] != null) return data['ownerName'].toString();
+    if (data['owner_name'] != null) return data['owner_name'].toString();
+    
     // Map backend field names to frontend expectations
-    if (data['created_by_name'] != null) {
-      final safe = UserLabelUtils.sanitizeUserLabel(
-        data['created_by_name'].toString(),
-        emptyIsUnknown: false,
-      );
-      return safe.isNotEmpty ? safe : null;
-    }
+    if (data['created_by_name'] != null) return data['created_by_name'].toString();
 
     if (data['owner'] != null && data['owner'] is Map) {
       final owner = data['owner'];
       final first = owner['first_name'] ?? owner['firstName'] ?? '';
       final last = owner['last_name'] ?? owner['lastName'] ?? '';
       if (first.toString().isNotEmpty || last.toString().isNotEmpty) {
-        final candidate = '$first $last'.trim();
-        final safe = UserLabelUtils.sanitizeUserLabel(
-          candidate,
-          emptyIsUnknown: false,
-        );
-        return safe.isNotEmpty ? safe : null;
+        return '$first $last'.trim();
       }
-      final safe = UserLabelUtils.sanitizeUserLabel(
-        owner['email']?.toString(),
-        emptyIsUnknown: false,
-      );
-      return safe.isNotEmpty ? safe : null;
+      return owner['email']?.toString();
     }
     return null;
   }
 
   String? _getOwnerId(Map<String, dynamic> data) {
-    return data['assignedTo']?.toString() ??
-        data['assigned_to']?.toString() ??
-        data['ownerId']?.toString() ??
+    return data['ownerId']?.toString() ??
         data['owner_id']?.toString() ??
         // Map backend field names to frontend expectations
         data['created_by']?.toString() ??
@@ -2539,6 +2520,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     final auth = AuthService();
     final canCreateDeliverable = auth.canCreateDeliverable();
     final canManageUsers = auth.canManageUsers();
+    return canCreateDeliverable || canManageUsers;
+  }
 
     if ((_currentUser!.role == UserRole.teamMember ||
             _currentUser!.role == UserRole.deliveryLead) &&
@@ -2650,33 +2633,26 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  void _showCreateDeliverableModal() {
-    showAppDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create New Deliverable'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Choose the type of deliverable setup:'),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.speed),
-              title: const Text('Quick Setup'),
-              subtitle: const Text('Basic deliverable creation'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.go('/deliverable-setup');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.engineering),
-              title: const Text('Enhanced Setup'),
-              subtitle: const Text('Full DoD, evidence, and readiness check'),
-              onTap: () {
-                Navigator.of(context).pop();
-                context.go('/enhanced-deliverable-setup');
-              },
+  Widget _buildFabCircleButton({
+    IconData? icon,
+    Widget? child,
+    required VoidCallback onTap,
+    required Color backgroundColor,
+    required Color foregroundColor,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: backgroundColor,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
             ),
           ],
         ),
@@ -2784,11 +2760,9 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                 icon: Icons.description_outlined,
                 label: 'Build Report',
                 onTap: () {
-                  final first = _dashboardDeliverables.isNotEmpty
-                      ? _dashboardDeliverables.first
-                      : null;
-                  final sprintId =
-                      first != null ? _extractFirstSprintId(first) : null;
+                  final first =
+                      _dashboardDeliverables.isNotEmpty ? _dashboardDeliverables.first : null;
+                  final sprintId = first != null ? _extractFirstSprintId(first) : null;
                   if (sprintId != null && sprintId.isNotEmpty) {
                     context.go('/sprint-report/$sprintId');
                     return;
@@ -3101,10 +3075,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                 a['type'] ??
                                 'Activity';
                             final actor = a['actor'] ?? a['user'] ?? '';
-                            final safeActor = UserLabelUtils.sanitizeUserLabel(
-                              actor.toString(),
-                              emptyIsUnknown: false,
-                            );
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 4),
                               child: InkWell(
@@ -3117,7 +3087,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                         child: Text(actor.toString().isNotEmpty
-                                            ? '$action • $safeActor'
+                                            ? '$action • $actor'
                                             : action)),
                                   ],
                                 ),
@@ -3463,82 +3433,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                 r['title'] ??
                                 'Sign-Off Report')
                             .toString();
-                        // Extract user information from content object if available
-                        String createdBy = '';
-                        String projectName = '';
-
-                        // Check if content is a Map and extract user info
-                        final content = r['content'];
-                        if (content is Map<String, dynamic>) {
-                          createdBy = (content['createdBy'] ??
-                                  content['created_by_name'] ??
-                                  content['created_by'] ??
-                                  content['author'] ??
-                                  content['author_name'] ??
-                                  content['submitted_by'] ??
-                                  content['submitter_name'] ??
-                                  content['owner_name'] ??
-                                  content['user_name'] ??
-                                  content['name'] ??
-                                  '')
-                              .toString();
-
-                          projectName = (content['projectName'] ??
-                                  content['project_name'] ??
-                                  content['project'] ??
-                                  content['sprint_name'] ??
-                                  content['sprintName'] ??
-                                  '')
-                              .toString();
-                        }
-
-                        // Fallback to root level fields if not found in content
-                        if (createdBy.isEmpty) {
-                          createdBy = (r['createdBy'] ??
-                                  r['created_by_name'] ??
-                                  r['created_by'] ??
-                                  r['author'] ??
-                                  r['author_name'] ??
-                                  r['submitted_by'] ??
-                                  r['submitter_name'] ??
-                                  r['owner_name'] ??
-                                  r['user_name'] ??
-                                  r['name'] ??
-                                  '')
-                              .toString();
-                        }
-
-                        // Prevent UUIDs from leaking into UI.
-                        createdBy = UserLabelUtils.sanitizeUserLabel(
-                          createdBy,
-                          emptyIsUnknown: false,
-                        );
-
-                        if (projectName.isEmpty) {
-                          projectName = (r['projectName'] ??
-                                  r['project_name'] ??
-                                  r['project'] ??
-                                  r['sprint_name'] ??
-                                  r['sprintName'] ??
-                                  '')
-                              .toString();
-                        }
-
+                        final createdBy = (r['createdBy'] ??
+                                r['created_by_name'] ??
+                                r['created_by'] ??
+                                '')
+                            .toString();
                         final id = (r['id'] ?? r['report_id'] ?? '').toString();
-
-                        // Create user-friendly display text
-                        String displayText = title;
-                        if (createdBy.isNotEmpty && projectName.isNotEmpty) {
-                          displayText = '$title by $createdBy ($projectName)';
-                        } else if (createdBy.isNotEmpty) {
-                          displayText = '$title by $createdBy';
-                        } else if (projectName.isNotEmpty) {
-                          displayText = '$title ($projectName)';
-                        } else {
-                          // Only show ID as last resort with minimal format
-                          displayText = title;
-                        }
-
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
@@ -3556,7 +3456,10 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                           Icons.assignment_turned_in_outlined,
                                           size: 18),
                                       const SizedBox(width: 8),
-                                      Expanded(child: Text(displayText)),
+                                      Expanded(
+                                          child: Text(createdBy.isNotEmpty
+                                              ? '$title • $createdBy'
+                                              : title)),
                                     ],
                                   ),
                                 ),
@@ -3657,10 +3560,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                         final action =
                             a['action'] ?? a['event'] ?? a['type'] ?? 'Review';
                         final actor = a['actor'] ?? a['user'] ?? '';
-                        final safeActor = UserLabelUtils.sanitizeUserLabel(
-                          actor.toString(),
-                          emptyIsUnknown: false,
-                        );
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: InkWell(
@@ -3674,7 +3573,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                     child: Text(actor.toString().isNotEmpty
-                                        ? '$action • $safeActor'
+                                        ? '$action • $actor'
                                         : action)),
                               ],
                             ),
@@ -3746,8 +3645,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     String label = '';
     if (dueRaw != null) {
       final s = dueRaw.toString();
-      label = app_date_utils.DateUtils.formatTimestamp(s);
-      if (label == 'N/A') label = '';
+      final dt = DateTime.tryParse(s);
+      if (dt != null) {
+        label = dt.toLocal().toString();
+      } else {
+        label = s;
+      }
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -3793,8 +3696,10 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       return FutureBuilder<String>(
         future: _getUserNameById(ownerId),
         builder: (context, snapshot) {
-          final label = snapshot.hasData ? snapshot.data! : 'Loading...';
-
+          final label = snapshot.hasData 
+              ? snapshot.data! 
+              : 'Loading...';
+          
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -4082,7 +3987,22 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           setState(() {
             _pendingReports = pending;
           });
-        }
+          _pendingReports = parsed.where((m) {
+            final content = m['content'];
+            final statusRaw = (m['status'] ??
+                    m['review_status'] ??
+                    (content is Map ? content['status'] : null) ??
+                    '')
+                .toString()
+                .toLowerCase();
+            if (statusRaw.isEmpty) {
+              return true; // Default to include when unknown
+            }
+            return statusRaw == 'submitted' ||
+                statusRaw == 'under_review' ||
+                statusRaw == 'underreview';
+          }).toList();
+        });
         _computeTeamMetrics();
       } else {
         setState(() {
@@ -4506,6 +4426,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     realtimeService.offAll('report_change_requested');
     realtimeService.offAll('project_created');
     realtimeService.offAll('project_updated');
+    realtimeService.offAll('audit_log_created');
     // Note: notifications listeners are handled by NotificationCenterWidget, do not offAll here
 
     realtimeService.on('user_role_changed', _handleRoleChanged);
@@ -4542,6 +4463,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     });
     realtimeService.on('project_created', (_) => _loadDashboardProjects());
     realtimeService.on('project_updated', (_) => _loadDashboardProjects());
+    realtimeService.on('audit_log_created', _handleAuditLogCreated);
     realtimeService.on('notification_received', (data) {
       try {
         final type = (data['type'] ?? '').toString();
@@ -4558,6 +4480,24 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         }
       } catch (_) {}
     });
+  }
+
+  void _handleAuditLogCreated(dynamic data) {
+    try {
+      if (data is! Map) return;
+      final log = Map<String, dynamic>.from(data as Map);
+      final id = log['id']?.toString() ?? '';
+      if (id.isNotEmpty && _auditLogs.any((e) => (e['id']?.toString() ?? '') == id)) {
+        return;
+      }
+      _hydrateAuditActors([log]).then((_) {
+        if (!mounted) return;
+        setState(() {
+          _auditLogs = [log, ..._auditLogs];
+        });
+        _applySearchAndSort();
+      });
+    } catch (_) {}
   }
 
   void _handleRoleChanged(dynamic _) {
@@ -4620,12 +4560,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     try {
       await _authService.signOut();
       if (mounted) {
-        context.go(AuthService.postLogoutRoute);
+        context.go('/');
       }
     } catch (e) {
       debugPrint('Logout error: $e');
       if (mounted) {
-        context.go(AuthService.postLogoutRoute);
+        context.go('/');
       }
     }
   }

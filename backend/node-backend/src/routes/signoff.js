@@ -58,6 +58,31 @@ async function validateCompletedSprintIds(sprintIds) {
   return null;
 }
 
+async function buildSprintReportDataBySprintIds(sprintIds) {
+  const raw = Array.isArray(sprintIds) ? sprintIds : (sprintIds == null ? [] : [sprintIds]);
+  const ids = raw
+    .map((v) => String(v || '').trim())
+    .filter((v) => v.length > 0);
+  if (ids.length === 0) return null;
+  const first = ids[0];
+  const n = parseInt(first, 10);
+  if (!Number.isFinite(n)) return null;
+  try {
+    const sprintController = require('../controllers/sprintController');
+    const report = await sprintController.buildSprintReportFromDb({ id: n, query: {} });
+    if (!report || typeof report !== 'object') return null;
+    return {
+      project: (report.sprint && report.sprint.project) ? report.sprint.project : null,
+      sprint: report.sprint || null,
+      summary: report.summary || null,
+      team: report.team || null,
+      deliverables: Array.isArray(report.deliverables) ? report.deliverables : [],
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 function normalizeRoleValue(r) {
   return String(r || '').toLowerCase().replace(/[\s_-]+/g, '');
 }
@@ -455,6 +480,7 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
       reportContent: (c.reportContent || c.report_content || ''),
       sprintIds: c.sprintIds || c.sprint_ids || [],
       sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+      sprintReportData: c.sprintReportData || c.sprint_report_data || null,
       status: row.status || 'draft',
       preparedBy: c.preparedBy || c.prepared_by,
       preparedByName: c.preparedByName || c.prepared_by_name,
@@ -759,6 +785,10 @@ router.get('/:id', async (req, res) => {
       const reviewedBy = c.reviewedBy || c.reviewed_by;
       const approvedBy = c.approvedBy || c.approved_by;
       const preparedBy = c.preparedBy || c.prepared_by || (row.created_by || '').toString();
+      const sprintIds = c.sprintIds || c.sprint_ids || [];
+      const sprintReportDataFromContent = c.sprintReportData || c.sprint_report_data || null;
+      const sprintReportData =
+        sprintReportDataFromContent != null ? sprintReportDataFromContent : await buildSprintReportDataBySprintIds(sprintIds);
       const extraIds = [];
       if (looksLikeUserId(submittedBy)) extraIds.push(String(submittedBy));
       if (looksLikeUserId(reviewedBy)) extraIds.push(String(reviewedBy));
@@ -788,8 +818,9 @@ router.get('/:id', async (req, res) => {
         deliverableId: (row.deliverable_id || '').toString(),
         reportTitle: (c.reportTitle || c.report_title || 'Untitled Report'),
         reportContent: (c.reportContent || c.report_content || ''),
-        sprintIds: c.sprintIds || c.sprint_ids || [],
+        sprintIds,
         sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+        sprintReportData,
         knownLimitations: c.knownLimitations || c.known_limitations,
         nextSteps: c.nextSteps || c.next_steps,
         preparedBy: preparedBy,
@@ -911,11 +942,13 @@ router.post('/', async (req, res) => {
       const actor = await resolveActorIdentity({ userId: String(req.user.id), email: req.user.email });
       const actorRole = actor.role ? String(actor.role) : (req.user && req.user.role ? String(req.user.role) : null);
       const normalizedStatus = (typeof status === 'string' && status.trim().length > 0) ? status.trim() : 'draft';
+      const sprintReportData = await buildSprintReportDataBySprintIds(sprintIds);
       const content = {
         reportTitle: reportTitle.trim(),
         reportContent: reportContent.trim(),
         sprintIds: sprintIds || [],
         sprintPerformanceData,
+        sprintReportData,
         knownLimitations,
         nextSteps,
         status: normalizedStatus,
@@ -938,6 +971,7 @@ router.post('/', async (req, res) => {
         reportContent: (c.reportContent || c.report_content || ''),
         sprintIds: c.sprintIds || c.sprint_ids || [],
         sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+        sprintReportData: c.sprintReportData || c.sprint_report_data || null,
         knownLimitations: c.knownLimitations || c.known_limitations,
         nextSteps: c.nextSteps || c.next_steps,
         status: row.status || normalizedStatus,
@@ -1009,6 +1043,10 @@ router.put('/:id', async (req, res) => {
           return res.status(400).json(sprintValidation);
         }
       }
+      if (nextSprintIds != null) {
+        const sprintReportData = await buildSprintReportDataBySprintIds(nextSprintIds);
+        updates.sprintReportData = sprintReportData;
+      }
 
       const [results] = await sequelize.query(
         `UPDATE sign_off_reports SET status = COALESCE($2, status), content = COALESCE(content, '{}'::jsonb) || $3::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
@@ -1026,6 +1064,7 @@ router.put('/:id', async (req, res) => {
         reportContent: (c.reportContent || c.report_content || ''),
         sprintIds: c.sprintIds || c.sprint_ids || [],
         sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+        sprintReportData: c.sprintReportData || c.sprint_report_data || null,
         knownLimitations: c.knownLimitations || c.known_limitations,
         nextSteps: c.nextSteps || c.next_steps,
         status: row.status || 'draft',

@@ -59,8 +59,6 @@ class UserDataService {
   // Get user by ID
   Future<User?> getUserById(String userId) async {
     try {
-      if (userId.trim().isEmpty) return null;
-
       // Check cache first
       final cachedUser = _cachedUsers.firstWhere(
           (user) => user.id == userId,
@@ -96,26 +94,9 @@ class UserDataService {
           userData = response.data;
         }
         
-        final parsedUser = _parseUserFromApi(userData);
-        if (parsedUser.id.isNotEmpty) {
-          if (!_cachedUsers.any((user) => user.id == parsedUser.id)) {
-            _cachedUsers.add(parsedUser);
-          }
-          return parsedUser;
-        }
+        return _parseUserFromApi(userData);
       }
-
-      // Fallback: some backends return richer data from list endpoints than
-      // the single-user endpoint. Refresh the full user list and search there.
-      try {
-        final users = await getUsers(forceRefresh: true, limit: 1000);
-        for (final user in users) {
-          if (user.id == userId) {
-            return user;
-          }
-        }
-      } catch (_) {}
-
+      
       return null;
     } catch (e) {
       debugPrint('Error fetching user by ID: $e');
@@ -463,7 +444,7 @@ class UserDataService {
         return User(
           id: '',
           email: '',
-          name: '',
+          name: 'Unknown User',
           role: UserRole.teamMember,
           createdAt: DateTime.now(),
           isActive: false,
@@ -482,6 +463,17 @@ class UserDataService {
     final name = username.isNotEmpty 
         ? username 
         : '$firstName $lastName'.trim();
+
+    bool parseBool(dynamic v, {required bool fallback}) {
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      if (v is String) {
+        final s = v.trim().toLowerCase();
+        if (s == 'true' || s == '1' || s == 'yes') return true;
+        if (s == 'false' || s == '0' || s == 'no') return false;
+      }
+      return fallback;
+    }
     
     return User(
       id: userMap['id']?.toString() ?? '',
@@ -491,10 +483,15 @@ class UserDataService {
       avatarUrl: userMap['avatar_url'] ?? userMap['avatarUrl']?.toString(),
       createdAt: _parseDateTime(userMap['created_at'] ?? userMap['createdAt']),
       lastLoginAt: _parseDateTime(userMap['last_login'] ?? userMap['lastLoginAt']),
-      isActive: userMap['is_active'] ?? userMap['isActive'] ?? true,
-      projectIds: List<String>.from(userMap['project_ids'] ?? userMap['projectIds'] ?? []),
+      isActive: parseBool(userMap['is_active'] ?? userMap['isActive'] ?? userMap['isactive'], fallback: true),
+      projectIds: ((userMap['project_ids'] ?? userMap['projectIds']) is List
+          ? List<dynamic>.from((userMap['project_ids'] ?? userMap['projectIds']) as List)
+              .map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList()
+          : const <String>[]),
       preferences: Map<String, dynamic>.from(userMap['preferences'] ?? {}),
-      emailVerified: userMap['email_verified'] ?? userMap['emailVerified'] ?? false,
+      emailVerified: parseBool(userMap['email_verified'] ?? userMap['emailVerified'], fallback: false),
       emailVerifiedAt: _parseDateTime(userMap['email_verified_at'] ?? userMap['emailVerifiedAt']),
     );
   }
@@ -580,6 +577,24 @@ extension UserSerialization on User {
   }
 
   static User fromJson(Map<String, dynamic> json) {
+    List<String> _stringList(dynamic v) {
+      if (v is List) {
+        return v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+      }
+      return const <String>[];
+    }
+
+    bool parseBool(dynamic v, {required bool fallback}) {
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      if (v is String) {
+        final s = v.trim().toLowerCase();
+        if (s == 'true' || s == '1' || s == 'yes') return true;
+        if (s == 'false' || s == '0' || s == 'no') return false;
+      }
+      return fallback;
+    }
+
     return User(
       id: json['id']?.toString() ?? '',
       email: json['email']?.toString() ?? '',
@@ -591,10 +606,10 @@ extension UserSerialization on User {
       avatarUrl: json['avatarUrl']?.toString(),
       createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
       lastLoginAt: json['lastLoginAt'] != null ? DateTime.parse(json['lastLoginAt']) : null,
-      isActive: json['isActive'] ?? true,
-      projectIds: List<String>.from(json['projectIds'] ?? []),
+      isActive: parseBool(json['isActive'] ?? json['is_active'] ?? json['isactive'], fallback: true),
+      projectIds: _stringList(json['projectIds'] ?? json['project_ids']),
       preferences: Map<String, dynamic>.from(json['preferences'] ?? {}),
-      emailVerified: json['emailVerified'] ?? false,
+      emailVerified: parseBool(json['emailVerified'] ?? json['email_verified'], fallback: false),
       emailVerifiedAt: json['emailVerifiedAt'] != null ? DateTime.parse(json['emailVerifiedAt']) : null,
     );
   }

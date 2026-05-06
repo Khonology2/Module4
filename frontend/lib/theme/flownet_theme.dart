@@ -39,8 +39,6 @@ class FlownetColors {
   static const Color amberOrange = Color(0xFFFF9500);
   static const Color crimsonRed = Color(0xFFC10D00);
   static const Color purple = Color(0xFF9C27B0);
-  static const Color sidebarDark = Color(0xFF3D3F40);
-  static const Color sidebarLight = Color(0xFFFFFFFF);
   
   // Gradients
   static const LinearGradient primaryGradient = LinearGradient(
@@ -73,9 +71,9 @@ class FlownetTheme {
         onSecondaryContainer: FlownetColors.accent,
         error: FlownetColors.error,
         onError: FlownetColors.onError,
-        surface: FlownetColors.sidebarDark,
+        surface: FlownetColors.surface,
         onSurface: FlownetColors.onSurface,
-        surfaceContainerHighest: FlownetColors.sidebarDark,
+        surfaceContainerHighest: FlownetColors.surfaceLight,
         onSurfaceVariant: FlownetColors.textSecondary,
         outline: FlownetColors.textTertiary,
         
@@ -96,8 +94,7 @@ class FlownetTheme {
       ),
       // Translucent cards
       cardTheme: CardThemeData(
-        // Dark mode widgets follow sidebar color at 40% opacity
-        color: FlownetColors.sidebarDark.withValues(alpha: 0.4),
+        color: Colors.white.withAlpha((0.08 * 255).round()),
         surfaceTintColor: Colors.transparent,
         elevation: 8,
         shape: RoundedRectangleBorder(
@@ -155,7 +152,7 @@ class FlownetTheme {
       ),
       // List tiles subtle background when needed
       listTileTheme: ListTileThemeData(
-        tileColor: FlownetColors.sidebarDark.withValues(alpha: 0.4),
+        tileColor: Colors.white.withAlpha((0.05 * 255).round()),
         iconColor: FlownetColors.pureWhite,
         textColor: FlownetColors.pureWhite,
       ),
@@ -500,8 +497,7 @@ class FlownetTheme {
 
       // Card Theme
       cardTheme: ThemeData.light().cardTheme.copyWith(
-        // Light mode widgets at 60% opacity
-        color: FlownetColors.sidebarLight.withValues(alpha: 0.6),
+        color: FlownetColors.pureWhite,
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),

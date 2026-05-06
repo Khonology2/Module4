@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../utils/date_utils.dart' as app_date_utils;
 import '../models/epic.dart';
 import '../services/epic_service.dart';
 import '../services/sprint_database_service.dart';
@@ -189,7 +188,7 @@ class _EpicDetailScreenState extends State<EpicDetailScreen> {
 
   String _formatDate(DateTime? date) {
     if (date == null) return 'Not set';
-    return app_date_utils.DateUtils.formatDate(date);
+    return '${date.day}/${date.month}/${date.year}';
   }
 
   Color _getStatusColor(String status) {

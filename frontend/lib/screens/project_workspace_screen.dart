@@ -15,32 +15,30 @@ import '../providers/service_providers.dart';
 
 class ProjectWorkspaceScreen extends ConsumerStatefulWidget {
   final String? projectId;
-
+  
   const ProjectWorkspaceScreen({
     super.key,
     this.projectId,
   });
 
   @override
-  ConsumerState<ProjectWorkspaceScreen> createState() =>
-      _ProjectWorkspaceScreenState();
+  ConsumerState<ProjectWorkspaceScreen> createState() => _ProjectWorkspaceScreenState();
 }
 
-class _ProjectWorkspaceScreenState
-    extends ConsumerState<ProjectWorkspaceScreen> {
+class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _descriptionController = TextEditingController();
+    final _descriptionController = TextEditingController();
   final _clientNameController = TextEditingController();
   final _clientProjectOwnerController = TextEditingController();
   final _tagsController = TextEditingController();
-
+  
   ProjectStatus _selectedStatus = ProjectStatus.planning;
   ProjectPriority _selectedPriority = ProjectPriority.medium;
   String _selectedProjectType = 'software';
   DateTime? _startDate;
   DateTime? _endDate;
-
+  
   List<ProjectMember> _members = [];
   List<String> _deliverableIds = [];
   List<String> _sprintIds = [];
@@ -48,7 +46,7 @@ class _ProjectWorkspaceScreenState
   List<Sprint> _availableSprints = [];
   List<User> _availableUsers = [];
   User? _selectedOwner;
-
+  
   bool _isLoading = false;
   bool _isEditing = false;
   Project? _currentProject;
@@ -80,7 +78,7 @@ class _ProjectWorkspaceScreenState
 
   Future<void> _loadProject() async {
     if (widget.projectId == null || widget.projectId == 'new') return;
-
+    
     setState(() => _isLoading = true);
     try {
       final project = await ApiService.getProject(widget.projectId!);
@@ -94,16 +92,8 @@ class _ProjectWorkspaceScreenState
           _clientProjectOwnerController.text = project.clientOwnerName ?? '';
           _selectedStatus = project.status;
           _selectedPriority = project.priority;
-          const validProjectTypes = [
-            'software',
-            'hardware',
-            'research',
-            'consulting',
-            'other'
-          ];
-          _selectedProjectType = validProjectTypes.contains(project.projectType)
-              ? project.projectType
-              : 'other';
+          const validProjectTypes = ['software', 'hardware', 'research', 'consulting', 'other'];
+          _selectedProjectType = validProjectTypes.contains(project.projectType) ? project.projectType : 'other';
           _startDate = project.startDate;
           _endDate = project.endDate;
           _tagsController.text = project.tags.join(', ');
@@ -114,8 +104,7 @@ class _ProjectWorkspaceScreenState
           debugPrint('Project: ${project.name}');
           debugPrint('Members count: ${project.members.length}');
           for (var member in project.members) {
-            debugPrint(
-                '  - ${member.userName} (${member.userEmail}) - ${member.role}');
+            debugPrint('  - ${member.userName} (${member.userEmail}) - ${member.role}');
           }
           debugPrint('=============================');
 
@@ -126,13 +115,10 @@ class _ProjectWorkspaceScreenState
           // Set selected owner
           try {
             if (project.ownerId != null) {
-              _selectedOwner =
-                  _availableUsers.firstWhere((u) => u.id == project.ownerId);
+              _selectedOwner = _availableUsers.firstWhere((u) => u.id == project.ownerId);
             } else {
-              final ownerMember =
-                  _members.firstWhere((m) => m.role == ProjectRole.owner);
-              _selectedOwner =
-                  _availableUsers.firstWhere((u) => u.id == ownerMember.userId);
+              final ownerMember = _members.firstWhere((m) => m.role == ProjectRole.owner);
+              _selectedOwner = _availableUsers.firstWhere((u) => u.id == ownerMember.userId);
             }
           } catch (_) {}
         });
@@ -153,8 +139,7 @@ class _ProjectWorkspaceScreenState
         // If backend did not send sprintIds, fetch sprints linked to this project
         if (_sprintIds.isEmpty) {
           try {
-            final sprintMaps =
-                await ApiService.getSprints(projectId: project.id);
+            final sprintMaps = await ApiService.getSprints(projectId: project.id);
             final ids = sprintMaps
                 .map((s) => s['id']?.toString())
                 .where((id) => id != null && id.isNotEmpty)
@@ -180,146 +165,48 @@ class _ProjectWorkspaceScreenState
     try {
       final deliverables = await ApiService.getDeliverables();
       final sprints = await ApiService.getSprints();
-
-      // Try direct API call first - more reliable
+      
       List<User> users = [];
       try {
-        debugPrint('🔍 Trying direct API call for users...');
-        final backend = BackendApiService();
-        final response = await backend.getUsers(limit: 1000);
-
-        if (response.isSuccess && response.data != null) {
-          debugPrint(
-              '✅ Direct API call successful - response type: ${response.data.runtimeType}');
-
-          final responseData = response.data;
-          List<dynamic> usersDataList = [];
-
-          if (responseData is Map && responseData['users'] is List) {
-            usersDataList = responseData['users'];
-            debugPrint(
-                '📦 Extracted ${usersDataList.length} users from users array');
-          } else if (responseData is Map && responseData['data'] is List) {
-            usersDataList = responseData['data'];
-            debugPrint(
-                '📦 Extracted ${usersDataList.length} users from data array');
-          } else if (responseData is List) {
-            usersDataList = responseData;
-            debugPrint(
-                '📦 Extracted ${usersDataList.length} users from direct list');
-          }
-
-          users = usersDataList.map((userData) {
-            String displayName;
-            if (userData['name'] != null &&
-                userData['name'].toString().isNotEmpty) {
-              displayName = userData['name'];
-            } else if ((userData['first_name']?.toString().isNotEmpty ?? false) ||
-                (userData['last_name']?.toString().isNotEmpty ?? false)) {
-              displayName =
-                  '${userData['first_name'] ?? ''} ${userData['last_name'] ?? ''}'
-                      .trim();
-            } else {
-              displayName = (userData['email'] ?? '').toString().trim();
-            }
-
-            // Parse role string to UserRole enum
-            UserRole userRole = UserRole.teamMember; // default
-            final roleString = userData['role']?.toString().toLowerCase();
-            if (roleString != null) {
-              switch (roleString) {
-                case 'systemadmin':
-                  userRole = UserRole.systemAdmin;
-                  break;
-                case 'projectmanager':
-                  userRole = UserRole.projectManager;
-                  break;
-                case 'deliverylead':
-                  userRole = UserRole.deliveryLead;
-                  break;
-                case 'developer':
-                  userRole = UserRole.developer;
-                  break;
-                case 'qaengineer':
-                  userRole = UserRole.qaEngineer;
-                  break;
-                case 'client':
-                  userRole = UserRole.client;
-                  break;
-                case 'clientreviewer':
-                  userRole = UserRole.clientReviewer;
-                  break;
-                case 'scrummaster':
-                  userRole = UserRole.scrumMaster;
-                  break;
-                case 'stakeholder':
-                  userRole = UserRole.stakeholder;
-                  break;
-                default:
-                  userRole = UserRole.teamMember;
-              }
-            }
-
-            debugPrint(
-                '👤 Processing user: $displayName (${userData['id']}) - Role: ${userRole.name}');
-
-            return User(
-              id: userData['id'],
-              email: userData['email'] ?? '',
-              name: displayName,
-              role: userRole,
-              isActive: userData['is_active'] ?? userData['isActive'] ?? true,
-              emailVerified: userData['emailVerified'] ?? true,
-              createdAt: DateTime.tryParse(
-                      userData['created_at'] ?? userData['createdAt'] ?? '') ??
-                  DateTime.now(),
-            );
-          }).toList();
-
-          debugPrint(
-              '✅ Successfully processed ${users.length} users from direct API');
-        } else {
-          debugPrint('❌ Direct API call failed: ${response.error}');
-          throw Exception('Direct API call failed');
-        }
+        final rawUsers = await ApiService.getUsers();
+        users = rawUsers
+            .map((u) => User.fromJson(Map<String, dynamic>.from(u)))
+            .where((u) => u.id.isNotEmpty)
+            .toList();
+        debugPrint('✅ Loaded ${users.length} users via ApiService.getUsers()');
       } catch (e) {
-        debugPrint('❌ Direct API call failed, trying UserDataService: $e');
-
-        // Fallback to UserDataService
+        debugPrint('❌ Loading users via ApiService failed, trying UserDataService: $e');
+        
         try {
           users = await UserDataService().getUsers(limit: 1000);
-          debugPrint(
-              '✅ Successfully loaded ${users.length} users from UserDataService');
+          debugPrint('✅ Successfully loaded ${users.length} users from UserDataService');
         } catch (e2) {
           debugPrint('❌ UserDataService also failed: $e2');
           users = [];
         }
       }
-
+      
       setState(() {
-        _availableDeliverables =
-            deliverables.map((d) => Deliverable.fromJson(d)).toList();
+        _availableDeliverables = deliverables.map((d) => Deliverable.fromJson(d)).toList();
         _availableSprints = sprints.map((s) => Sprint.fromJson(s)).toList();
-        _availableUsers = users;
+        _availableUsers = users.where((u) => u.isActive).toList();
 
         debugPrint('📊 Final state: ${_availableUsers.length} users available');
 
         // Set default owner if creating new project
         if (!_isEditing && _selectedOwner == null) {
-          final currentUserId = AuthService().currentUser?.id;
-          if (currentUserId != null) {
-            try {
-              _selectedOwner =
-                  _availableUsers.firstWhere((u) => u.id == currentUserId);
-              debugPrint('✅ Set default owner: ${_selectedOwner?.name}');
-            } catch (_) {
-              debugPrint('⚠️ Current user not found in available users');
-            }
-          }
+           final currentUserId = AuthService().currentUser?.id;
+           if (currentUserId != null) {
+             try {
+               _selectedOwner = _availableUsers.firstWhere((u) => u.id == currentUserId);
+               debugPrint('✅ Set default owner: ${_selectedOwner?.name}');
+             } catch (_) {
+               debugPrint('⚠️ Current user not found in available users');
+             }
+           }
         }
-
-        debugPrint(
-            '✅ Loaded ${_availableUsers.length} available users for project owner selection');
+        
+        debugPrint('✅ Loaded ${_availableUsers.length} available users for project owner selection');
         for (final user in _availableUsers) {
           debugPrint('  - ${user.name} (${user.id}) - ${user.role.name}');
         }
@@ -354,30 +241,27 @@ class _ProjectWorkspaceScreenState
         .replaceAll(RegExp(r'[^a-zA-Z0-9\s]'), '')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-
+    
     // Take first 3-4 letters of each word
     final List<String> words = cleanName.split(' ');
     String key = '';
-
+    
     for (String word in words) {
       if (word.isNotEmpty) {
-        key += word.length >= 3
-            ? word.substring(0, 3).toUpperCase()
-            : word.toUpperCase();
+        key += word.length >= 3 ? word.substring(0, 3).toUpperCase() : word.toUpperCase();
       }
     }
-
+    
     // Limit to 10 characters and ensure it starts with a letter
     if (key.length > 10) {
       key = key.substring(0, 10);
     }
-
+    
     // If key is empty or doesn't start with a letter, use a default
     if (key.isEmpty || !RegExp(r'^[A-Z]').hasMatch(key)) {
-      key =
-          'PRJ${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+      key = 'PRJ${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
     }
-
+    
     return key;
   }
 
@@ -392,19 +276,13 @@ class _ProjectWorkspaceScreenState
       debugPrint('💾 Saving project with dates:');
       debugPrint('  Start Date: $_startDate');
       debugPrint('  End Date: $_endDate');
-
+      
       final project = Project(
-        id: _isEditing
-            ? _currentProject!.id
-            : DateTime.now().millisecondsSinceEpoch.toString(),
+        id: _isEditing ? _currentProject!.id : DateTime.now().millisecondsSinceEpoch.toString(),
         name: _nameController.text.trim(),
-        key: _isEditing
-            ? _currentProject!.key
-            : _generateProjectKey(_nameController.text.trim()),
+        key: _isEditing ? _currentProject!.key : _generateProjectKey(_nameController.text.trim()),
         description: _descriptionController.text.trim(),
-        clientName: _clientNameController.text.trim().isEmpty
-            ? null
-            : _clientNameController.text.trim(),
+        clientName: _clientNameController.text.trim().isEmpty ? null : _clientNameController.text.trim(),
         clientOwnerName: _clientProjectOwnerController.text.trim().isEmpty
             ? null
             : _clientProjectOwnerController.text.trim(),
@@ -413,11 +291,7 @@ class _ProjectWorkspaceScreenState
         projectType: _selectedProjectType,
         startDate: _startDate ?? DateTime.now(),
         endDate: _endDate,
-        tags: _tagsController.text
-            .split(',')
-            .map((t) => t.trim())
-            .where((t) => t.isNotEmpty)
-            .toList(),
+        tags: _tagsController.text.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList(),
         members: _members,
         deliverableIds: _deliverableIds,
         sprintIds: _sprintIds,
@@ -430,23 +304,21 @@ class _ProjectWorkspaceScreenState
 
       if (_isEditing) {
         final updateSuccess = await ApiService.updateProject(project);
-
+        
         if (updateSuccess) {
           // Update the current project data with the new values
           setState(() {
             _currentProject = project;
           });
-
+          
           try {
             // Link selected deliverables to this project by updating their project_id
             for (final deliverableId in _deliverableIds) {
-              await ApiService.linkDeliverableToProject(
-                  project.id, deliverableId);
+              await ApiService.linkDeliverableToProject(project.id, deliverableId);
             }
 
             if (_sprintIds.isNotEmpty) {
-              await ApiService.associateSprintWithProject(
-                  project.id, _sprintIds);
+              await ApiService.associateSprintWithProject(project.id, _sprintIds);
             }
           } catch (_) {}
 
@@ -460,13 +332,11 @@ class _ProjectWorkspaceScreenState
         if (createdProject != null) {
           try {
             for (final deliverableId in _deliverableIds) {
-              await ApiService.linkDeliverableToProject(
-                  createdProject.id, deliverableId);
+              await ApiService.linkDeliverableToProject(createdProject.id, deliverableId);
             }
 
             if (_sprintIds.isNotEmpty) {
-              await ApiService.associateSprintWithProject(
-                  createdProject.id, _sprintIds);
+              await ApiService.associateSprintWithProject(createdProject.id, _sprintIds);
             }
           } catch (_) {}
         }
@@ -510,10 +380,8 @@ class _ProjectWorkspaceScreenState
         onSelect: (selectedUsers) {
           setState(() {
             // Keep existing members who are still selected
-            final existingMembers = _members
-                .where((m) => selectedUsers.any((u) => u.id == m.userId))
-                .toList();
-
+            final existingMembers = _members.where((m) => selectedUsers.any((u) => u.id == m.userId)).toList();
+            
             // Add new members
             for (var user in selectedUsers) {
               if (!existingMembers.any((m) => m.userId == user.id)) {
@@ -583,12 +451,10 @@ class _ProjectWorkspaceScreenState
     }
     final now = DateTime.now();
     if (_endDate!.isAfter(now)) {
-      _showErrorSnackBar(
-          'Reminder is only available when the project has reached or passed its end date.');
+      _showErrorSnackBar('Reminder is only available when the project has reached or passed its end date.');
       return;
     }
-    if (_selectedStatus == ProjectStatus.completed ||
-        _selectedStatus == ProjectStatus.cancelled) {
+    if (_selectedStatus == ProjectStatus.completed || _selectedStatus == ProjectStatus.cancelled) {
       _showErrorSnackBar('Project is already completed or cancelled.');
       return;
     }
@@ -710,13 +576,11 @@ class _ProjectWorkspaceScreenState
               prefixIcon: Icon(Icons.work_outline, color: colorScheme.primary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -743,17 +607,14 @@ class _ProjectWorkspaceScreenState
             decoration: InputDecoration(
               labelText: 'Description *',
               hintText: 'Describe the project goals and objectives',
-              prefixIcon:
-                  Icon(Icons.description_outlined, color: colorScheme.primary),
+              prefixIcon: Icon(Icons.description_outlined, color: colorScheme.primary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -779,17 +640,14 @@ class _ProjectWorkspaceScreenState
             decoration: InputDecoration(
               labelText: 'Client Name',
               hintText: 'Enter client or customer name',
-              prefixIcon:
-                  Icon(Icons.business_outlined, color: colorScheme.primary),
+              prefixIcon: Icon(Icons.business_outlined, color: colorScheme.primary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -809,17 +667,14 @@ class _ProjectWorkspaceScreenState
             decoration: InputDecoration(
               labelText: 'Project Owner (Client Side)',
               hintText: 'Enter client-side project owner',
-              prefixIcon:
-                  Icon(Icons.badge_outlined, color: colorScheme.primary),
+              prefixIcon: Icon(Icons.badge_outlined, color: colorScheme.primary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -845,27 +700,21 @@ class _ProjectWorkspaceScreenState
             },
             decoration: InputDecoration(
               labelText: 'Project Manager *',
-              prefixIcon:
-                  Icon(Icons.person_outline, color: colorScheme.primary),
+              prefixIcon: Icon(Icons.person_outline, color: colorScheme.primary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: colorScheme.primary, width: 2),
               ),
               filled: true,
-              fillColor: _isEditing
-                  ? colorScheme.surface.withAlpha(100)
-                  : colorScheme.surface
-                      .withAlpha(50), // Visual cue for disabled state
+              fillColor: _isEditing ? colorScheme.surface.withAlpha(100) : colorScheme.surface.withAlpha(50), // Visual cue for disabled state
             ),
             style: const TextStyle(
               fontSize: 16,
@@ -935,17 +784,14 @@ class _ProjectWorkspaceScreenState
             initialValue: _selectedStatus,
             decoration: InputDecoration(
               labelText: 'Status',
-              prefixIcon:
-                  Icon(Icons.flag_outlined, color: colorScheme.secondary),
+              prefixIcon: Icon(Icons.flag_outlined, color: colorScheme.secondary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -975,17 +821,14 @@ class _ProjectWorkspaceScreenState
             initialValue: _selectedPriority,
             decoration: InputDecoration(
               labelText: 'Priority',
-              prefixIcon: Icon(Icons.priority_high_outlined,
-                  color: colorScheme.secondary),
+              prefixIcon: Icon(Icons.priority_high_outlined, color: colorScheme.secondary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1013,28 +856,19 @@ class _ProjectWorkspaceScreenState
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             // ignore: deprecated_member_use
-            value: const [
-              'software',
-              'hardware',
-              'research',
-              'consulting',
-              'other'
-            ].contains(_selectedProjectType)
+            value: const ['software', 'hardware', 'research', 'consulting', 'other'].contains(_selectedProjectType)
                 ? _selectedProjectType
                 : null,
             decoration: InputDecoration(
               labelText: 'Project Type',
-              prefixIcon:
-                  Icon(Icons.category_outlined, color: colorScheme.secondary),
+              prefixIcon: Icon(Icons.category_outlined, color: colorScheme.secondary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1066,17 +900,14 @@ class _ProjectWorkspaceScreenState
             decoration: InputDecoration(
               labelText: 'Tags (comma-separated)',
               hintText: 'e.g. mobile, frontend, urgent',
-              prefixIcon:
-                  Icon(Icons.tag_outlined, color: colorScheme.secondary),
+              prefixIcon: Icon(Icons.tag_outlined, color: colorScheme.secondary),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(100)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: colorScheme.outline.withAlpha(50)),
+                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1155,8 +986,7 @@ class _ProjectWorkspaceScreenState
                   color: colorScheme.onSurface.withAlpha(180),
                 ),
               ),
-              trailing:
-                  Icon(Icons.arrow_drop_down, color: colorScheme.tertiary),
+              trailing: Icon(Icons.arrow_drop_down, color: colorScheme.tertiary),
               onTap: () async {
                 debugPrint('🗓️ Start date picker opened');
                 final date = await showDatePicker(
@@ -1201,14 +1031,12 @@ class _ProjectWorkspaceScreenState
                   color: colorScheme.onSurface.withAlpha(180),
                 ),
               ),
-              trailing:
-                  Icon(Icons.arrow_drop_down, color: colorScheme.tertiary),
+              trailing: Icon(Icons.arrow_drop_down, color: colorScheme.tertiary),
               onTap: () async {
                 debugPrint('🗓️ End date picker opened');
                 final date = await showDatePicker(
                   context: context,
-                  initialDate:
-                      _endDate ?? DateTime.now().add(const Duration(days: 30)),
+                  initialDate: _endDate ?? DateTime.now().add(const Duration(days: 30)),
                   firstDate: DateTime(2020),
                   lastDate: DateTime(2030),
                 );
@@ -1225,10 +1053,7 @@ class _ProjectWorkspaceScreenState
             ),
           ),
           const SizedBox(height: 8),
-          if (_isEditing &&
-              _currentProject != null &&
-              _selectedOwner != null &&
-              _endDate != null)
+          if (_isEditing && _currentProject != null && _selectedOwner != null && _endDate != null)
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -1239,8 +1064,7 @@ class _ProjectWorkspaceScreenState
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                              colorScheme.primary),
+                          valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
                         ),
                       )
                     : Icon(
@@ -1263,8 +1087,7 @@ class _ProjectWorkspaceScreenState
 
   Widget _buildMembersSection(ColorScheme colorScheme) {
     final currentUserId = AuthService().currentUser?.id;
-    final isOwner =
-        _selectedOwner?.id != null && _selectedOwner!.id == currentUserId;
+    final isOwner = _selectedOwner?.id != null && _selectedOwner!.id == currentUserId;
     // Allow member assignment if it's a new project or if the current user is the owner
     // User requirement: "only the project owner can assign users to projects."
     final canAssignMembers = !_isEditing || isOwner;
@@ -1293,8 +1116,7 @@ class _ProjectWorkspaceScreenState
               padding: const EdgeInsets.only(bottom: 8.0),
               child: Text(
                 'Only the project owner can assign members.',
-                style: TextStyle(
-                    color: colorScheme.error, fontStyle: FontStyle.italic),
+                style: TextStyle(color: colorScheme.error, fontStyle: FontStyle.italic),
               ),
             ),
           InkWell(
@@ -1302,37 +1124,22 @@ class _ProjectWorkspaceScreenState
             child: InputDecorator(
               decoration: InputDecoration(
                 labelText: 'Assign Members',
-                prefixIcon: Icon(Icons.group_add_outlined,
-                    color: canAssignMembers
-                        ? colorScheme.primary
-                        : colorScheme.outline),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                prefixIcon: Icon(Icons.group_add_outlined, color: canAssignMembers ? colorScheme.primary : colorScheme.outline),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 enabled: canAssignMembers,
                 filled: true,
-                fillColor: canAssignMembers
-                    ? colorScheme.surface.withAlpha(100)
-                    : colorScheme.surface.withAlpha(50),
-                suffixIcon: Icon(Icons.arrow_drop_down,
-                    color: canAssignMembers
-                        ? colorScheme.primary
-                        : colorScheme.outline),
+                fillColor: canAssignMembers ? colorScheme.surface.withAlpha(100) : colorScheme.surface.withAlpha(50),
+                suffixIcon: Icon(Icons.arrow_drop_down, color: canAssignMembers ? colorScheme.primary : colorScheme.outline),
               ),
               child: _members.isEmpty
-                  ? Text('Select members...',
-                      style: TextStyle(
-                          color: colorScheme.onSurface.withAlpha(100)))
+                  ? Text('Select members...', style: TextStyle(color: colorScheme.onSurface.withAlpha(100)))
                   : Wrap(
                       spacing: 8.0,
                       runSpacing: 4.0,
-                      children: _members
-                          .map((member) => Chip(
-                                label: Text(member.userName),
-                                onDeleted: canAssignMembers
-                                    ? () => _removeMember(member.userId)
-                                    : null,
-                              ))
-                          .toList(),
+                      children: _members.map((member) => Chip(
+                        label: Text(member.userName),
+                        onDeleted: canAssignMembers ? () => _removeMember(member.userId) : null,
+                      )).toList(),
                     ),
             ),
           ),
@@ -1383,8 +1190,7 @@ class _ProjectWorkspaceScreenState
               );
               return ListTile(
                 onTap: () {
-                  GoRouter.of(context)
-                      .push('/deliverable-detail', extra: deliverable);
+                  GoRouter.of(context).push('/deliverable-detail', extra: deliverable);
                 },
                 title: Text(deliverable.title),
                 subtitle: Text(deliverable.statusDisplayName),
@@ -1448,18 +1254,15 @@ class _ProjectWorkspaceScreenState
                 onTap: () {
                   final projectId = widget.projectId;
                   final sprintId = sprint.id;
-
+                  
                   if (sprintId.isNotEmpty) {
                     final queryParams = <String, String>{
                       'sprintId': sprintId,
                     };
-                    if (projectId != null &&
-                        projectId.isNotEmpty &&
-                        projectId != 'new') {
+                    if (projectId != null && projectId.isNotEmpty && projectId != 'new') {
                       queryParams['projectId'] = projectId;
                     }
-                    final uri = Uri(
-                        path: '/sprint-console', queryParameters: queryParams);
+                    final uri = Uri(path: '/sprint-console', queryParameters: queryParams);
                     context.go(uri.toString());
                   } else {
                     context.go('/sprint-console');
@@ -1516,25 +1319,24 @@ class _ProjectWorkspaceScreenState
                       width: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                            colorScheme.onPrimary),
+                        valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
                       ),
                     )
-                  : _isEditing
-                      ? const Text(
-                          'Update Project',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        )
-                      : const Text(
-                          'Create Project',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                  : _isEditing 
+                  ? const Text(
+                      'Update Project',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  : const Text(
+                      'Create Project',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
             ),
           ),
           const SizedBox(width: 16),
@@ -1606,7 +1408,7 @@ class _SelectMembersDialogState extends State<_SelectMembersDialog> {
           itemBuilder: (context, index) {
             final user = widget.availableUsers[index];
             final isSelected = _selectedIds.contains(user.id);
-
+            
             return CheckboxListTile(
               title: Text(user.name),
               subtitle: Text(user.email),
@@ -1656,8 +1458,7 @@ class _SelectDeliverablesDialog extends StatefulWidget {
   });
 
   @override
-  State<_SelectDeliverablesDialog> createState() =>
-      _SelectDeliverablesDialogState();
+  State<_SelectDeliverablesDialog> createState() => _SelectDeliverablesDialogState();
 }
 
 class _SelectDeliverablesDialogState extends State<_SelectDeliverablesDialog> {
@@ -1681,7 +1482,7 @@ class _SelectDeliverablesDialogState extends State<_SelectDeliverablesDialog> {
           itemBuilder: (context, index) {
             final deliverable = widget.availableDeliverables[index];
             final isSelected = _selectedIds.contains(deliverable.id);
-
+            
             return CheckboxListTile(
               title: Text(deliverable.title),
               subtitle: Text(deliverable.statusDisplayName),

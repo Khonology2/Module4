@@ -1696,6 +1696,73 @@ app.get('/api/v1/users', authenticateToken, async (req, res) => {
   }
 });
 
+// Get single user by ID endpoint
+app.get('/api/v1/users/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+
+    // Primary query uses first_name/last_name; fallback uses name
+    let result;
+    try {
+      result = await pool.query(`
+        SELECT id, email, first_name, last_name, role, created_at, is_active 
+        FROM users 
+        WHERE id = $1
+      `, [id]);
+    } catch (colErr) {
+      if (colErr?.code === '42703' || (colErr?.message && /column.*does not exist/i.test(colErr.message))) {
+        // Fallback to single name column
+        result = await pool.query(`
+          SELECT id, email, name, role, created_at, is_active 
+          FROM users 
+          WHERE id = $1
+        `, [id]);
+      } else {
+        throw colErr;
+      }
+    }
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const row = result.rows[0];
+    const user = {
+      id: row.id,
+      email: row.email,
+      name: row.first_name && row.last_name 
+        ? `${row.first_name} ${row.last_name}` 
+        : (row.first_name || row.last_name || row.email),
+      firstName: row.first_name,
+      lastName: row.last_name,
+      role: row.role,
+      createdAt: row.created_at,
+      isActive: row.is_active,
+    };
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user'
+    });
+  }
+});
+
 // Resend verification email endpoint
 app.post('/api/v1/auth/resend-verification', async (req, res) => {
   try {
@@ -4360,6 +4427,15 @@ app.get('/api/v1/deliverables/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
     const userRole = req.user.role;
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!id || !uuidRegex.test(id)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid deliverable ID format' 
+      });
+    }
 
     let query = `
       SELECT d.*,

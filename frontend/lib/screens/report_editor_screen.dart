@@ -164,35 +164,12 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
           final createdBy = data['createdBy']?.toString() ?? '';
 
           // Set _existingReport with proper status
-          _existingReport = SignOffReport(
-            id: reportId.isNotEmpty ? reportId : 'unknown',
-            deliverableId: deliverableId.isNotEmpty ? deliverableId : 'unknown',
-            reportTitle: data['reportTitle']?.toString() ?? '',
-            reportContent: data['reportContent']?.toString() ?? '',
-            sprintIds: (data['sprintIds'] as List?)
-                    ?.map((e) => e.toString())
-                    .toList() ??
-                [],
-            status: status == 'submitted'
-                ? ReportStatus.submitted
-                : ReportStatus.draft,
-            preparedBy: data['preparedBy']?.toString(),
-            preparedByName: data['preparedByName']?.toString(),
-            submittedBy: data['submittedBy']?.toString(),
-            submittedByName: data['submittedByName']?.toString(),
-            reviewedBy: data['reviewedBy']?.toString(),
-            reviewedByName: data['reviewedByName']?.toString(),
-            approvedBy: data['approvedBy']?.toString(),
-            approvedByName: data['approvedByName']?.toString(),
-            digitalSignature: data['digitalSignature']?.toString(),
-            createdAt: DateTime.tryParse(data['createdAt']?.toString() ?? '') ??
-                DateTime.now(),
-            createdBy: createdBy.isNotEmpty ? createdBy : 'unknown',
-            submittedAt: data['submittedAt'] != null
-                ? DateTime.tryParse(data['submittedAt']!.toString())
-                : null,
-            changeRequestDetails: data['changeRequestDetails']?.toString(),
-            sprintPerformanceData: data['sprintPerformanceData']?.toString(),
+          final parsed = SignOffReport.fromJson(data);
+          _existingReport = parsed.copyWith(
+            id: reportId.isNotEmpty ? reportId : parsed.id,
+            deliverableId: deliverableId.isNotEmpty ? deliverableId : parsed.deliverableId,
+            status: status == 'submitted' ? ReportStatus.submitted : ReportStatus.draft,
+            createdBy: createdBy.isNotEmpty ? createdBy : parsed.createdBy,
           );
 
           debugPrint('📋 Report loaded successfully');
@@ -202,13 +179,8 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
             _selectedDeliverableId = data['deliverableId']?.toString() ??
                 data['deliverable_id']?.toString();
 
-            // Try to load content from nested 'content' field first, then from direct fields
-            final reportTitle = content['reportTitle']?.toString() ??
-                data['reportTitle']?.toString() ??
-                '';
-            final reportContent = content['reportContent']?.toString() ??
-                data['reportContent']?.toString() ??
-                '';
+            final reportTitle = _existingReport?.displayTitle ?? '';
+            final reportContent = _existingReport?.reportContent ?? '';
             final knownLimitations = content['knownLimitations']?.toString() ??
                 data['knownLimitations']?.toString() ??
                 '';

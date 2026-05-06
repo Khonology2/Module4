@@ -132,5 +132,14 @@ module.exports = (sequelize, DataTypes) => {
     });
   };
 
+  AuditLog.afterCreate(async (auditLog) => {
+    try {
+      if (!global.realtimeEvents) return;
+      global.realtimeEvents.emit('audit_log_created', auditLog.toJSON());
+    } catch (error) {
+      console.error('Error in audit log afterCreate hook:', error);
+    }
+  });
+
   return AuditLog;
 };

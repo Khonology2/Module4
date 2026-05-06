@@ -164,7 +164,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
       floatingActionButton: canCreate
           ? FloatingActionButton.extended(
-              heroTag: 'dashboard_new_deliverable_fab',
               onPressed: () {
                 _showCreateDeliverableDialog();
               },
@@ -512,7 +511,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 // Use WidgetsBinding to safely navigate after async operation
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted) {
-                    GoRouter.of(context).go(AuthService.postLogoutRoute);
+                    GoRouter.of(context).go('/');
                   }
                 });
               }

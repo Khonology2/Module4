@@ -1,5 +1,3 @@
-// ignore_for_file: prefer_const_constructors
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -64,7 +62,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
           label: 'Sprints',
           icon: Icons.timer_outlined,
           iconName: 'sprints',
-          route: '/sprints',
+          route: '/sprint-console',
         ),
         _NavItem(
           label: 'Deliverables',
@@ -118,13 +116,6 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
         icon: Icons.dashboard_outlined,
         iconName: 'dashboard',
         route: '/dashboard',
-        requiredPermission: null,
-      ),
-      const _NavItem(
-        label: 'FlowPilot',
-        icon: Icons.smart_toy_outlined,
-        iconName: 'ai_assistant',
-        route: '/ai-assistant',
         requiredPermission: null,
       ),
       const _NavItem(
@@ -227,11 +218,11 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
       }
 
       // Client users should not see Projects and Deliverables
-      if (userRole.contains('client') &&
+      if (userRole.contains('client') && 
           (item.label == 'Projects' || item.label == 'Deliverables')) {
         return false;
       }
-
+      
       if (item.requiredPermission == null) return true;
       return authService.hasPermission(item.requiredPermission!);
     }).toList();
@@ -268,8 +259,6 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: BackgroundImage(
-          imagePath: backgroundImagePath,
-          withGradient: backgroundWithGradient,
           child: Row(
             children: [
               _buildDesktopSidebar(routeLocation),
@@ -297,8 +286,6 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: BackgroundImage(
-          imagePath: backgroundImagePath,
-          withGradient: backgroundWithGradient,
           child: widget.child,
         ),
         drawer: Drawer(
@@ -319,16 +306,9 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                 child: Row(
                   children: [
                     Image.asset(
-                      'assets/Icons/Brand/khonodemy-sidebar-logo-red.png',
+                      'assets/images/flownet_logo.png',
                       height: 32,
                       width: 32,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const SizedBox(
-                          height: 32,
-                          width: 32,
-                          child: Icon(Icons.grid_view_rounded),
-                        );
-                      },
                     ),
                     const SizedBox(width: 12),
                     Expanded(

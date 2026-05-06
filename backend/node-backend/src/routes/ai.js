@@ -2402,7 +2402,12 @@ router.post('/chat', async (req, res) => {
           pendingActions.delete(userId);
           return sendResponse(res, true, {
             content: cleanAiText(`${reportContent}\n\nSaved as a draft sign-off report (id=${row ? row.id : 'unknown'}).`),
-            actions: [{ type: 'export_pdf', title: reportTitle, content: cleanAiText(reportContent) }],
+            actions: [{
+              type: 'export_pdf',
+              reportId: row ? String(row.id) : null,
+              title: reportTitle,
+              content: cleanAiText(reportContent),
+            }],
             usage: {},
             model: 'server',
           });

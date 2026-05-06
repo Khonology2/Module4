@@ -34,9 +34,7 @@ class _ClientReviewWorkflowScreenState
   final _commentController = TextEditingController();
   final _changeRequestController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  final GlobalKey<SignatureCaptureWidgetState> _approveSignatureKey =
-      GlobalKey<SignatureCaptureWidgetState>();
-  final GlobalKey<SignatureCaptureWidgetState> _requestChangesSignatureKey =
+  final GlobalKey<SignatureCaptureWidgetState> _signatureKey =
       GlobalKey<SignatureCaptureWidgetState>();
 
   final SignOffReportService _reportService =
@@ -218,7 +216,7 @@ class _ClientReviewWorkflowScreenState
             reportId: widget.reportId,
             signerEmail: _signerEmail.trim(),
             signerName: AuthService().currentUser?.name ?? 'Signer',
-            reportTitle: _report?.reportTitle ?? 'Sign-Off Report',
+            reportTitle: _report?.displayTitle ?? 'Sign-Off Report',
             reportContent: _report?.reportContent ?? '',
           );
           if (envelopeId != null) {
@@ -236,8 +234,8 @@ class _ClientReviewWorkflowScreenState
           }
         } else {
           String? signature;
-          if (_approveSignatureKey.currentState != null) {
-            signature = await _approveSignatureKey.currentState!.getSignature();
+          if (_signatureKey.currentState != null) {
+            signature = await _signatureKey.currentState!.getSignature();
           }
           if (signature == null || signature.isEmpty) {
             if (mounted) {
@@ -261,32 +259,15 @@ class _ClientReviewWorkflowScreenState
           );
         }
       } else {
-        String? signature;
-        if (_requestChangesSignatureKey.currentState != null) {
-          signature = await _requestChangesSignatureKey.currentState!.getSignature();
-        }
-        if (signature == null || signature.isEmpty) {
-          if (mounted) {
-            setState(() => _isSubmitting = false);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Digital signature is required to request changes for this report.'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          return;
-        }
         response = await _reportService.requestChanges(
           widget.reportId,
           _changeRequestController.text.trim(),
-          digitalSignature: signature,
         );
       }
 
       if (response.isSuccess) {
         // Reload signatures after approval to show the new signature
-        if (_selectedAction == 'approve' || _selectedAction == 'request_changes') {
+        if (_selectedAction == 'approve') {
           await _loadSignatures();
         }
         try {
@@ -298,8 +279,8 @@ class _ClientReviewWorkflowScreenState
               ? 'Report Approved'
               : 'Report Changes Requested';
           final message = _selectedAction == 'approve'
-              ? '$actor approved "${_report?.reportTitle ?? 'Report'}"'
-              : '$actor requested changes for "${_report?.reportTitle ?? 'Report'}"';
+              ? '$actor approved "${_report?.displayTitle ?? 'Report'}"'
+              : '$actor requested changes for "${_report?.displayTitle ?? 'Report'}"';
           final type = _selectedAction == 'approve'
               ? NotificationType.reportApproved
               : NotificationType.reportChangesRequested;
@@ -314,7 +295,7 @@ class _ClientReviewWorkflowScreenState
               : 'report_change_requested';
           rt.emit(event, {
             'reportId': widget.reportId,
-            'title': _report?.reportTitle ?? 'Report',
+            'title': _report?.displayTitle ?? 'Report',
           });
           rt.emit('approval_updated', {
             'reportId': widget.reportId,
@@ -371,7 +352,7 @@ class _ClientReviewWorkflowScreenState
         {
           'role': 'user',
           'content':
-              '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nKnown limitations: ${_report!.knownLimitations ?? '-'}\nNext steps: ${_report!.nextSteps ?? '-'}'
+              '${_report!.displayTitle}\n\n${_report!.reportContent}\n\nKnown limitations: ${_report!.knownLimitations ?? '-'}\nNext steps: ${_report!.nextSteps ?? '-'}'
         }
       ];
       final resp =
@@ -403,7 +384,7 @@ class _ClientReviewWorkflowScreenState
         {
           'role': 'user',
           'content':
-              '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nFocus on gaps, risks, and necessary updates.'
+              '${_report!.displayTitle}\n\n${_report!.reportContent}\n\nFocus on gaps, risks, and necessary updates.'
         }
       ];
       final resp =
@@ -498,7 +479,7 @@ class _ClientReviewWorkflowScreenState
 
         // Report Title
         Text(
-          _report!.reportTitle,
+          _report!.displayTitle,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 color: FlownetColors.pureWhite,
                 fontWeight: FontWeight.bold,
@@ -838,7 +819,7 @@ class _ClientReviewWorkflowScreenState
                                 ),
                               ] else ...[
                                 SignatureCaptureWidget(
-                                  key: _approveSignatureKey,
+                                  key: _signatureKey,
                                   existingSignature: _report?.digitalSignature,
                                   allowSignatureReuse: true,
                                   showAuditInfo: true,
@@ -847,7 +828,7 @@ class _ClientReviewWorkflowScreenState
                               ],
                             ] else ...[
                               SignatureCaptureWidget(
-                                key: _approveSignatureKey,
+                                key: _signatureKey,
                                 existingSignature: _report?.digitalSignature,
                                 allowSignatureReuse: true,
                                 showAuditInfo: true,
@@ -887,14 +868,6 @@ class _ClientReviewWorkflowScreenState
                                 icon: const Icon(Icons.auto_awesome),
                                 label: const Text('Suggest with AI'),
                               ),
-                            ),
-                            const SizedBox(height: 16),
-                            SignatureCaptureWidget(
-                              key: _requestChangesSignatureKey,
-                              existingSignature: null,
-                              allowSignatureReuse: true,
-                              showAuditInfo: true,
-                              reportId: _report?.id,
                             ),
                           ],
 

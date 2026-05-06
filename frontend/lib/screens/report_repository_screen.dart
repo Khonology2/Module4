@@ -178,27 +178,26 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                     json['createdByName'] ??
                     json['created_by_name'])
                 ?.toString();
-            return SignOffReport(
-              id: json['id']?.toString() ?? '',
-              deliverableId: json['deliverableId']?.toString() ?? json['deliverable_id']?.toString() ?? '',
-              reportTitle: (content['reportTitle']?.toString() ?? 'Untitled Report'),
-              reportContent: (content['reportContent']?.toString() ?? ''),
-              sprintIds: (content['sprintIds'] as List?)?.map((e) => e.toString()).toList() ?? [],
-              sprintPerformanceData: content['sprintPerformanceData']?.toString(),
-              knownLimitations: content['knownLimitations']?.toString(),
-              nextSteps: content['nextSteps']?.toString(),
-              preparedBy: (json['preparedBy'] ?? json['prepared_by'] ?? content['preparedBy'] ?? content['prepared_by'])?.toString(),
+            final merged = Map<String, dynamic>.from(json as Map);
+            merged['content'] = content;
+            final parsed = SignOffReport.fromJson(merged);
+            return parsed.copyWith(
               preparedByName: preparedByName,
-              status: _parseStatus(json['status']?.toString() ?? 'draft'),
-              createdAt: _parseDateTime(json['createdAt'] ?? json['created_at']) ?? DateTime.now(),
-              createdBy: json['createdByName']?.toString() ?? json['created_by_name']?.toString() ?? json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
-              submittedAt: null,
-              submittedBy: null,
-              reviewedAt: latestReview != null && latestReview['approved_at'] != null ? _parseDateTime(latestReview['approved_at']) : null,
-              reviewedBy: latestReview?['reviewerName']?.toString(),
-              approvedAt: latestReview != null && latestReview['approved_at'] != null && latestReview['reviewStatus'] == 'approved' ? _parseDateTime(latestReview['approved_at']) : null,
-              approvedBy: latestReview != null && latestReview['reviewStatus'] == 'approved' ? latestReview['reviewerName']?.toString() : null,
-              changeRequestDetails: latestReview != null && latestReview['reviewStatus'] == 'change_requested' ? latestReview['feedback']?.toString() : null,
+              reviewedAt: latestReview != null && latestReview['approved_at'] != null
+                  ? _parseDateTime(latestReview['approved_at'])
+                  : parsed.reviewedAt,
+              reviewedBy: latestReview?['reviewerName']?.toString() ?? parsed.reviewedBy,
+              approvedAt: latestReview != null &&
+                      latestReview['approved_at'] != null &&
+                      latestReview['reviewStatus'] == 'approved'
+                  ? _parseDateTime(latestReview['approved_at'])
+                  : parsed.approvedAt,
+              approvedBy: latestReview != null && latestReview['reviewStatus'] == 'approved'
+                  ? latestReview['reviewerName']?.toString()
+                  : parsed.approvedBy,
+              changeRequestDetails: latestReview != null && latestReview['reviewStatus'] == 'change_requested'
+                  ? latestReview['feedback']?.toString()
+                  : parsed.changeRequestDetails,
             );
           }).toList();
         });
@@ -244,27 +243,26 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                       json['createdByName'] ??
                       json['created_by_name'])
                   ?.toString();
-              return SignOffReport(
-                id: json['id']?.toString() ?? '',
-                deliverableId: json['deliverableId']?.toString() ?? json['deliverable_id']?.toString() ?? '',
-                reportTitle: (content['reportTitle']?.toString() ?? 'Untitled Report'),
-                reportContent: (content['reportContent']?.toString() ?? ''),
-                sprintIds: (content['sprintIds'] as List?)?.map((e) => e.toString()).toList() ?? [],
-                sprintPerformanceData: content['sprintPerformanceData']?.toString(),
-                knownLimitations: content['knownLimitations']?.toString(),
-                nextSteps: content['nextSteps']?.toString(),
-                preparedBy: (json['preparedBy'] ?? json['prepared_by'] ?? content['preparedBy'] ?? content['prepared_by'])?.toString(),
+              final merged = Map<String, dynamic>.from(json as Map);
+              merged['content'] = content;
+              final parsed = SignOffReport.fromJson(merged);
+              return parsed.copyWith(
                 preparedByName: preparedByName,
-                status: _parseStatus(json['status']?.toString() ?? 'draft'),
-                createdAt: _parseDateTime(json['createdAt'] ?? json['created_at']) ?? DateTime.now(),
-                createdBy: json['createdByName']?.toString() ?? json['created_by_name']?.toString() ?? json['createdBy']?.toString() ?? json['created_by']?.toString() ?? '',
-                submittedAt: null,
-                submittedBy: null,
-                reviewedAt: latestReview != null && latestReview['approved_at'] != null ? _parseDateTime(latestReview['approved_at']) : null,
-                reviewedBy: latestReview?['reviewerName']?.toString(),
-                approvedAt: latestReview != null && latestReview['approved_at'] != null && latestReview['reviewStatus'] == 'approved' ? _parseDateTime(latestReview['approved_at']) : null,
-                approvedBy: latestReview != null && latestReview['reviewStatus'] == 'approved' ? latestReview['reviewerName']?.toString() : null,
-                changeRequestDetails: latestReview != null && latestReview['reviewStatus'] == 'change_requested' ? latestReview['feedback']?.toString() : null,
+                reviewedAt: latestReview != null && latestReview['approved_at'] != null
+                    ? _parseDateTime(latestReview['approved_at'])
+                    : parsed.reviewedAt,
+                reviewedBy: latestReview?['reviewerName']?.toString() ?? parsed.reviewedBy,
+                approvedAt: latestReview != null &&
+                        latestReview['approved_at'] != null &&
+                        latestReview['reviewStatus'] == 'approved'
+                    ? _parseDateTime(latestReview['approved_at'])
+                    : parsed.approvedAt,
+                approvedBy: latestReview != null && latestReview['reviewStatus'] == 'approved'
+                    ? latestReview['reviewerName']?.toString()
+                    : parsed.approvedBy,
+                changeRequestDetails: latestReview != null && latestReview['reviewStatus'] == 'change_requested'
+                    ? latestReview['feedback']?.toString()
+                    : parsed.changeRequestDetails,
               );
             }).toList();
           });
@@ -384,7 +382,7 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
     // Apply search filter
     if (_searchQuery.isNotEmpty) {
       filtered = filtered.where((report) =>
-          report.reportTitle.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          report.displayTitle.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           report.createdBy.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           report.deliverableId.toLowerCase().contains(_searchQuery.toLowerCase()),
       ).toList();
@@ -423,7 +421,7 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Report: ${report.reportTitle}',
+                  'Report: ${report.displayTitle}',
                   style: const TextStyle(
                     color: FlownetColors.coolGray,
                     fontSize: 14,
@@ -820,8 +818,11 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: FlownetColors.charcoalBlack,
+      return const AppScaffold(
+        useBackgroundImage: true,
+        useGlassContainer: false,
+        centered: false,
+        scrollable: false,
         body: Center(child: CircularProgressIndicator()),
       );
     }
@@ -1019,7 +1020,7 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
     if (reportId != null) {
       try {
         final report = _reports.firstWhere((r) => r.id == reportId);
-        return '${report.reportTitle}.pdf';
+        return '${report.displayTitle}.pdf';
       } catch (_) {
         // Report not found
       }
@@ -1196,7 +1197,7 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                       children: [
                         Flexible(
                           child: Text(
-                            report.reportTitle,
+                            report.displayTitle,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -1406,7 +1407,7 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
         backgroundColor: FlownetColors.graphiteGray,
         title: const Text('Delete Report', style: TextStyle(color: FlownetColors.pureWhite)),
         content: Text(
-          'Are you sure you want to delete "${report.reportTitle}"?',
+          'Are you sure you want to delete "${report.displayTitle}"?',
           style: const TextStyle(color: FlownetColors.coolGray),
         ),
         actions: [
