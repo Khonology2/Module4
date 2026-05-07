@@ -94,3 +94,4 @@ flutter:
   assets:
     - assets/
     - assets/dashboard_team_member/
+    - assets/Icons/Account_User_Profile/red_user_profile.png
