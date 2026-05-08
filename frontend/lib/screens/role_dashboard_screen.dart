@@ -99,6 +99,36 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return UserLabelUtils.unknownUserLabel;
   }
 
+  String _extractAuditUserId(Map<String, dynamic> log) {
+    final id = (log['user_id'] ?? log['userId'] ?? log['actor_id'] ?? log['actorId'])?.toString();
+    if (id != null && id.trim().isNotEmpty) return id.trim();
+    
+    final userObj = log['user'] ?? log['actor'];
+    if (userObj is Map) {
+      final uid = userObj['id']?.toString();
+      if (uid != null && uid.trim().isNotEmpty) return uid.trim();
+    }
+    return '';
+  }
+
+  String _extractAuditActorLabel(Map<String, dynamic> log) {
+    final direct = (log['actor_name'] ?? 
+            log['actorName'] ?? 
+            log['user_name'] ?? 
+            log['userName'] ?? 
+            log['user_email'] ?? 
+            log['userEmail'])?.toString();
+    
+    if (direct != null && direct.trim().isNotEmpty) {
+      return direct.trim();
+    }
+    
+    final id = _extractAuditUserId(log);
+    final cached = id.isNotEmpty ? _userNamesCache[id] : null;
+    if (cached != null && cached.trim().isNotEmpty) return cached.trim();
+    return 'System';
+  }
+
   // Missing variables
   String _selectedChartType = 'velocity';
   bool _isLoadingClientMetrics = false;
@@ -415,6 +445,24 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           _isLoadingMoreAuditLogs = false;
         });
       }
+    }
+  }
+
+  Future<void> _hydrateAuditActors(List<Map<String, dynamic>> logs) async {
+    final ids = logs
+        .map(_extractAuditUserId)
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (ids.isNotEmpty) {
+      final futures = ids.map((userId) => _getUserNameById(userId));
+      await Future.wait(futures);
+    }
+
+    for (final log in logs) {
+      log['actor_id'] = _extractAuditUserId(log);
+      log['actor'] = _extractAuditActorLabel(log);
     }
   }
 
@@ -4101,7 +4149,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   Future<void> _loadClientReviewMetrics() async {
-    setState(() {});
+    if (!mounted) return;
+    setState(() => _isLoadingClientMetrics = true);
     try {
       final resp = await _reportService.getSignOffReports();
       final m = {
@@ -4178,8 +4227,9 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           m['avg_review_time'] = '${avg.toStringAsFixed(1)}h';
         }
       }
+      if (!mounted) return;
       setState(() {
-        _clientReviewMetrics = {};
+        _clientReviewMetrics = m;
       });
     } finally {
       if (mounted) setState(() => _isLoadingClientMetrics = false);
@@ -4506,6 +4556,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     realtimeService.offAll('report_change_requested');
     realtimeService.offAll('project_created');
     realtimeService.offAll('project_updated');
+    realtimeService.offAll('audit_log_created');
     // Note: notifications listeners are handled by NotificationCenterWidget, do not offAll here
 
     realtimeService.on('user_role_changed', _handleRoleChanged);
@@ -4542,6 +4593,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     });
     realtimeService.on('project_created', (_) => _loadDashboardProjects());
     realtimeService.on('project_updated', (_) => _loadDashboardProjects());
+    realtimeService.on('audit_log_created', _handleAuditLogCreated);
     realtimeService.on('notification_received', (data) {
       try {
         final type = (data['type'] ?? '').toString();
@@ -4558,6 +4610,24 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         }
       } catch (_) {}
     });
+  }
+
+  void _handleAuditLogCreated(dynamic data) {
+    try {
+      if (data is! Map) return;
+      final log = Map<String, dynamic>.from(data as Map);
+      final id = log['id']?.toString() ?? '';
+      if (id.isNotEmpty && _auditLogs.any((e) => (e['id']?.toString() ?? '') == id)) {
+        return;
+      }
+      _hydrateAuditActors([log]).then((_) {
+        if (!mounted) return;
+        setState(() {
+          _auditLogs = [log, ..._auditLogs];
+        });
+        _applySearchAndSort();
+      });
+    } catch (_) {}
   }
 
   void _handleRoleChanged(dynamic _) {
@@ -4620,12 +4690,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     try {
       await _authService.signOut();
       if (mounted) {
-        context.go(AuthService.postLogoutRoute);
+        context.go('/');
       }
     } catch (e) {
       debugPrint('Logout error: $e');
       if (mounted) {
-        context.go(AuthService.postLogoutRoute);
+        context.go('/');
       }
     }
   }
