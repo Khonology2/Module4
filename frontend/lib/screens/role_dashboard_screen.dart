@@ -51,14 +51,14 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   List<Map<String, dynamic>> _pendingReports = [];
   bool _isLoadingPendingReports = false;
   String? _pendingReportsError;
-  Map<String, dynamic> _teamMetrics = {};
-  bool _isLoadingTeamMetrics = false;
+    bool _isBottomFabExpanded = false;
   String? _selectedTeamFilter;
   String? _hoveredTeamFilter;
   String? _selectedAdminFilter;
   String? _hoveredAdminFilter;
-  bool _isBottomFabExpanded = false;
-  // Cache for user names to avoid repeated API calls
+    Map<String, dynamic> _teamMetrics = {};
+    bool _isLoadingTeamMetrics = false;
+    // Cache for user names to avoid repeated API calls
   final Map<String, String> _userNamesCache = {};
 
   // Method to get user name by ID with caching
@@ -129,8 +129,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     return 'System';
   }
 
-  // Missing variables
-  String _selectedChartType = 'velocity';
+  final String _selectedChartType = 'velocity';
   bool _isLoadingClientMetrics = false;
   Map<String, dynamic> _clientReviewMetrics = {};
 
@@ -140,13 +139,11 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   int _auditLogsPage = 1;
   final int _auditLogsPerPage = 20;
   bool _hasMoreAuditLogs = true;
-  String? _selectedActionFilter;
-  String? _selectedUserFilter;
-  DateTime? _selectedStartDate;
-  DateTime? _selectedEndDate;
   final String _searchQuery = '';
   final String _sortField = 'created_at';
   final bool _sortAscending = false;
+  DateTime? _selectedStartDate;
+  DateTime? _selectedEndDate;
 
   @override
   void initState() {
@@ -370,8 +367,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       final response = await _backendService.getAuditLogs(
         skip: skip,
         limit: _auditLogsPerPage,
-        action: _selectedActionFilter,
-        userId: _selectedUserFilter,
+        action: 'all',
+        userId: '',
       );
 
       if (response.isSuccess) {
@@ -418,7 +415,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             _auditLogs = filteredLogs;
             _auditLogsPage = 1;
             _hasMoreAuditLogs = _auditLogs.length < totalCount &&
-                filteredLogs.length == _auditLogsPerPage;
+                filteredLogs.length >= _auditLogsPerPage;
           }
         });
 
@@ -1576,76 +1573,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildDeliveryLeadMetricCard(
-      String title, String value, IconData icon) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _dashboardSurfaceColor(),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title,
-              style: _dashboardTextStyle(size: 18, weight: FontWeight.w700)),
-          Text('Additional detail if required.',
-              style: _dashboardTextStyle(size: 11)),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Text(value,
-                  style:
-                      _dashboardTextStyle(size: 18, weight: FontWeight.w700)),
-              const Spacer(),
-              _buildTeamRoundIcon(icon, size: 16),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTeamRoundAssetIcon(
-    String assetPath, {
-    double size = 20,
-    double diameter = 40,
-    double padding = 7,
-  }) {
-    return ClipOval(
-      child: Container(
-        width: diameter,
-        height: diameter,
-        color: Colors.white.withValues(alpha: 0.85),
-        padding: EdgeInsets.all(padding),
-        child: Image.asset(
-          assetPath,
-          width: size,
-          height: size,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            final altPath = assetPath.startsWith('frontend/')
-                ? assetPath.replaceFirst('frontend/', '')
-                : 'frontend/$assetPath';
-            return Image.asset(
-              altPath,
-              width: size,
-              height: size,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) {
-                return Icon(
-                  Icons.image_not_supported_outlined,
-                  size: size,
-                  color: FlownetColors.crimsonRed,
-                );
-              },
-            );
-          },
-        ),
-      ),
-    );
-  }
-
+  
   Map<String, int> _computeDeliverableStatusCounts() {
     final now = DateTime.now();
     int completed = 0;
@@ -2494,51 +2422,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildReminderQuickActions() {
-    final canShow = _currentUser != null &&
-        (_currentUser!.isDeliveryLead || _currentUser!.isSystemAdmin);
-    if (!canShow) return const SizedBox.shrink();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildCardHeader(Icons.notifications_active, 'Approval Reminders',
-                route: '/approval-requests'),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: [
-                _buildActionButton(
-                  icon: Icons.assignment,
-                  label: 'Send Reminder',
-                  onTap: () => context.push('/send-reminder'),
-                ),
-                _buildActionButton(
-                  icon: Icons.trending_up,
-                  label: 'Trigger Escalation',
-                  onTap: _triggerEscalation,
-                ),
-                _buildActionButton(
-                  icon: Icons.analytics_outlined,
-                  label: 'Deliverables Overview',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) =>
-                            const DeliverablesMetricsScreen()),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
+  
   Future<void> _triggerEscalation() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -3015,107 +2899,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildDeliverablesOverview() {
-    // Filter out completed deliverables for the overview
-    final overviewDeliverables = _dashboardDeliverables.where((d) {
-      final status =
-          (d['status'] ?? d['reviewStatus'] ?? '').toString().toLowerCase();
-      return status != 'completed';
-    }).toList();
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _isLoadingDashboardDeliverables
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildCardHeader(Icons.assignment_outlined,
-                      'Deliverables Overview (${overviewDeliverables.length})',
-                      route: '/deliverables'),
-                  const SizedBox(height: 8),
-                  if (overviewDeliverables.isEmpty)
-                    const Text('No active deliverables'),
-                  ...overviewDeliverables.take(6).map((d) {
-                    final title = d['title'] ??
-                        d['name'] ??
-                        d['deliverableName'] ??
-                        'Untitled Deliverable';
-                    final status =
-                        (d['status'] ?? d['reviewStatus'] ?? '').toString();
-                    final id =
-                        (d['id']?.toString() ?? d['uuid']?.toString() ?? '');
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.assignment_outlined, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: Text(status.isNotEmpty
-                                      ? '$title • $status'
-                                      : title)),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: [
-                              _priorityChip((d['priority'] ?? '').toString()),
-                              _dueDateChip(d['due_date'] ??
-                                  d['dueDate'] ??
-                                  d['deadline']),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              TextButton.icon(
-                                onPressed: id.isEmpty
-                                    ? null
-                                    : () => _editDeliverable(d),
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                                label: const Text('Edit'),
-                              ),
-                              const SizedBox(width: 4),
-                              TextButton.icon(
-                                onPressed: id.isEmpty
-                                    ? null
-                                    : () => _updateDeliverableStatus(
-                                        id, 'completed'),
-                                icon: const Icon(Icons.check_circle_outline,
-                                    size: 18),
-                                label: const Text('Complete'),
-                              ),
-                              const Spacer(),
-                              IconButton(
-                                onPressed: () {
-                                  if (id.isNotEmpty) {
-                                    _openSprintReportForDeliverable(d);
-                                    return;
-                                  }
-                                  context.go('/deliverables');
-                                },
-                                icon: const Icon(Icons.open_in_new),
-                                tooltip: 'Open',
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-              ),
-      ),
-    );
-  }
-
+  
   // ignore: unused_element
   Widget _buildRecentActivity() {
     return Card(
@@ -3180,60 +2964,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildTeamMetrics() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildCardHeader(Icons.group_outlined, 'Team Metrics', route: null),
-            const SizedBox(height: 12),
-            if (_isLoadingTeamMetrics)
-              const Center(child: CircularProgressIndicator())
-            else if (_teamMetrics.isEmpty)
-              const Text('No team data available')
-            else
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _metricTile('Deliverables', _teamMetrics['deliverables'] ?? 0,
-                      Icons.assignment_outlined, Colors.blue),
-                  _metricTile('In Progress', _teamMetrics['in_progress'] ?? 0,
-                      Icons.play_circle_outline, Colors.orange),
-                  _metricTile('Completed', _teamMetrics['completed'] ?? 0,
-                      Icons.check_circle_outline, Colors.green),
-                  _metricTile('Overdue', _teamMetrics['overdue'] ?? 0,
-                      Icons.warning_amber_outlined, Colors.red),
-                  _metricTile(
-                      'Active Sprints',
-                      _teamMetrics['active_sprints'] ?? 0,
-                      Icons.flag_outlined,
-                      Colors.purple),
-                  _metricTile(
-                      'Active Projects',
-                      _teamMetrics['active_projects'] ?? 0,
-                      Icons.folder_open_outlined,
-                      Colors.indigo),
-                  _metricTile(
-                      'Pending Reviews',
-                      _teamMetrics['pending_reviews'] ?? 0,
-                      Icons.rule_folder_outlined,
-                      Colors.blueGrey),
-                  _metricTile(
-                      'Completion Rate',
-                      _teamMetrics['completion_rate'] ?? '-',
-                      Icons.pie_chart_outline,
-                      Colors.teal),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
+  
   Widget _buildSprintOverview() {
     return Card(
       child: Padding(
@@ -3307,71 +3038,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildTeamPerformance() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                    child: Row(
-                  children: [
-                    _buildStandaloneAssetIcon(
-                      'assets/Icons/team_performance_icon.png',
-                      size: 24,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Team Performance',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                )),
-                const SizedBox(width: 12),
-                _buildStandaloneAssetIcon(
-                  'assets/Icons/notification_icon.png',
-                  size: 18,
-                ),
-                const SizedBox(width: 12),
-                DropdownButton<String>(
-                  value: _selectedChartType,
-                  items: const [
-                    DropdownMenuItem(
-                        value: 'velocity', child: Text('Velocity')),
-                    DropdownMenuItem(
-                        value: 'burndown', child: Text('Burndown')),
-                    DropdownMenuItem(value: 'burnup', child: Text('Burnup')),
-                    DropdownMenuItem(value: 'defects', child: Text('Defects')),
-                    DropdownMenuItem(
-                        value: 'test_pass_rate', child: Text('Test Pass Rate')),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) {
-                      setState(() {
-                        _selectedChartType = v;
-                      });
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        SprintPerformanceChart(
-            sprints: _dashboardSprints, chartType: _selectedChartType),
-        const SizedBox(height: 12),
-        _teamPerformanceSummary(),
-      ],
-    );
-  }
-
+  
   Widget _buildReviewMetrics() {
     return Card(
       child: Padding(
@@ -3416,76 +3083,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildProjectsOverview() {
-    if (_isLoadingDashboardProjects) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final now = DateTime.now();
-    final overdueProjects = _dashboardProjects.where((p) {
-      try {
-        final status = (p['status'] ?? '').toString().toLowerCase();
-        if (status == 'completed' || status == 'cancelled') {
-          return false;
-        }
-        final endStr =
-            p['end_date']?.toString() ?? p['endDate']?.toString() ?? '';
-        if (endStr.isEmpty) return false;
-        final end = DateTime.parse(endStr);
-        return now.isAfter(end);
-      } catch (_) {
-        return false;
-      }
-    }).toList();
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildCardHeader(Icons.folder_outlined,
-                'Projects Overview (${_dashboardProjects.length})',
-                route: null),
-            const SizedBox(height: 8),
-            if (_dashboardProjects.isEmpty) const Text('No active projects'),
-            ..._dashboardProjects.take(3).map((p) {
-              final title = p['name'] ?? 'Untitled Project';
-              final status = (p['status'] ?? '').toString();
-              final id = p['id']?.toString() ?? '';
-              final isOverdue =
-                  overdueProjects.any((op) => op['id'] == p['id']);
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: InkWell(
-                  onTap: id.isNotEmpty
-                      ? () => context.go('/project-workspace/$id')
-                      : null,
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.folder_open,
-                        size: 18,
-                        color: isOverdue ? Colors.redAccent : null,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: Text(
-                              status.isNotEmpty ? '$title • $status' : title)),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPendingReviews() {
-    return _buildPendingApprovals();
-  }
-
+  
+  
   Widget _buildPendingApprovals() {
     return Card(
       child: Padding(
@@ -4236,44 +3835,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     }
   }
 
-  Widget _teamPerformanceSummary() {
-    double planned = 0;
-    double completed = 0;
-    double defects = 0;
-    for (final s in _dashboardSprints) {
-      final p = s['planned_points'] ?? s['planned'] ?? 0;
-      final c = s['completed_points'] ?? s['completed'] ?? 0;
-      final d = s['defects_opened'] ?? s['defect_count'] ?? 0;
-      planned += (p is num) ? p.toDouble() : double.tryParse(p.toString()) ?? 0;
-      completed +=
-          (c is num) ? c.toDouble() : double.tryParse(c.toString()) ?? 0;
-      defects += (d is num) ? d.toDouble() : double.tryParse(d.toString()) ?? 0;
-    }
-    final avgVelocity = _dashboardSprints.isNotEmpty
-        ? (completed / _dashboardSprints.length)
-        : 0;
-    final carryover = planned - completed;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: [
-          _metricTile('Avg Velocity', avgVelocity.toStringAsFixed(1),
-              Icons.speed, Colors.blue),
-          _metricTile('Planned', planned.toStringAsFixed(1), Icons.trending_up,
-              Colors.orange),
-          _metricTile('Completed', completed.toStringAsFixed(1),
-              Icons.check_circle_outline, Colors.green),
-          _metricTile('Carryover', carryover.toStringAsFixed(1),
-              Icons.sync_problem, Colors.red),
-          _metricTile('Defects', defects.toStringAsFixed(0), Icons.bug_report,
-              Colors.purple),
-        ],
-      ),
-    );
-  }
-
+  
   Future<void> _approveReport(String reportId) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -4615,7 +4177,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   void _handleAuditLogCreated(dynamic data) {
     try {
       if (data is! Map) return;
-      final log = Map<String, dynamic>.from(data as Map);
+      final log = Map<String, dynamic>.from(data);
       final id = log['id']?.toString() ?? '';
       if (id.isNotEmpty && _auditLogs.any((e) => (e['id']?.toString() ?? '') == id)) {
         return;
@@ -4634,58 +4196,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     _loadCurrentUser();
   }
 
-  Widget _buildKanbanLinkCard() {
-    return InkWell(
-      onTap: () => context.push('/deliverables-overview'),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-          border: Border.all(
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.view_kanban,
-                  color: Theme.of(context).primaryColor),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Deliverables Board',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).primaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Track progress and manage status',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.arrow_forward_ios,
-                size: 16, color: Theme.of(context).primaryColor),
-          ],
-        ),
-      ),
-    );
-  }
-
+  
   void _handleLogout() async {
     try {
       await _authService.signOut();
