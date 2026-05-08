@@ -813,8 +813,8 @@ class ReportExportService {
   }
 
   Future<_PdfFontAssets> _loadFontAssets() async {
-    final regular = await rootBundle.load('assets/fonts/poppins/Poppins-Regular.ttf');
-    final bold = await rootBundle.load('assets/fonts/poppins/Poppins-Bold.ttf');
+    final regular = await rootBundle.load('assets/fonts/fonts/poppins/Poppins-Regular.ttf');
+    final bold = await rootBundle.load('assets/fonts/fonts/poppins/Poppins-Bold.ttf');
     return _PdfFontAssets(
       base: pw.Font.ttf(regular),
       bold: pw.Font.ttf(bold),
