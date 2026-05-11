@@ -21,8 +21,10 @@ class VersionService {
       // after pull/hot-reload cycles.
       final String rawJson;
       if (kIsWeb) {
+        // Use absolute URL to prevent double assets prefix
+        final baseUrl = Uri.base.origin;
         final uri = Uri.parse(
-          'assets/data/version.json?v=${DateTime.now().millisecondsSinceEpoch}',
+          '$baseUrl/assets/data/version.json?v=${DateTime.now().millisecondsSinceEpoch}',
         );
         final response = await http.get(uri);
         if (response.statusCode >= 200 && response.statusCode < 300) {
