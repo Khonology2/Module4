@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../models/user.dart';
 import '../models/user_role.dart';
 import '../services/auth_service.dart';
 import '../widgets/fixed_footer_version_display.dart';
@@ -338,7 +337,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                               const SizedBox(height: 16),
                               // Role selection
                               DropdownButtonFormField<String>(
-                                value: _selectedRole,
+                                initialValue: _selectedRole,
                                 decoration: InputDecoration(
                                   labelText: 'Select Your Role',
                                   labelStyle: TextStyle(

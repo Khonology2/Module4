@@ -283,7 +283,6 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
             ],
           ),
         ),
-      ),
     } else {
       // Mobile layout with drawer
       return Scaffold(

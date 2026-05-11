@@ -56,8 +56,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   String? _hoveredTeamFilter;
   String? _selectedAdminFilter;
   String? _hoveredAdminFilter;
-    Map<String, dynamic> _teamMetrics = {};
-    bool _isLoadingTeamMetrics = false;
+  Map<String, dynamic> _teamMetrics = {};
+  bool _isLoadingTeamMetrics = false;
     // Cache for user names to avoid repeated API calls
   final Map<String, String> _userNamesCache = {};
 
