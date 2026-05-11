@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 // JWT configuration
-const SECRET_KEY = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
+const SECRET_KEY = process.env.APP_JWT_SECRET || process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
 const ALGORITHM = process.env.ALGORITHM || 'HS256';
 const ACCESS_TOKEN_EXPIRE_MINUTES = parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES) || 30;
 const REFRESH_TOKEN_EXPIRE_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRE_DAYS) || 7;

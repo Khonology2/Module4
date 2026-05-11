@@ -157,6 +157,9 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       // The token will be in query params, so we'll make a special request
       return await _makeTokenBasedRequest('POST', endpoint, body: body, queryParams: queryParams);
     }
+    if (!requireAuth) {
+      return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams, includeAuth: false);
+    }
     return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams);
   }
 
@@ -251,6 +254,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     String endpoint, {
     Map<String, dynamic>? body,
     Map<String, String>? queryParams,
+    bool includeAuth = true,
   }) async {
     try {
       // Check if token needs refresh
@@ -275,7 +279,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         'Accept': 'application/json',
       };
 
-      if (_accessToken != null) {
+      if (includeAuth && _accessToken != null) {
         headers['Authorization'] = 'Bearer $_accessToken';
       }
 
@@ -304,6 +308,19 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
           break;
         default:
           throw Exception('Unsupported HTTP method: $method');
+      }
+
+      if (response.statusCode == 401 && includeAuth && _refreshToken != null) {
+        final refreshed = await _refreshAccessToken();
+        if (refreshed) {
+          return await _makeRequest(
+            method,
+            endpoint,
+            body: body,
+            queryParams: queryParams,
+            includeAuth: includeAuth,
+          );
+        }
       }
 
       return _handleResponse(response);
@@ -570,6 +587,24 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       await saveTokens(accessToken, refreshToken, expiry);
     }
 
+    return response;
+  }
+
+  Future<ApiResponse> ssoLogin(String token) async {
+    final response = await post(
+      '/auth/sso-login',
+      body: {'token': token},
+      requireAuth: false,
+    );
+    if (response.isSuccess && response.data != null) {
+      final data = response.data!;
+      final accessToken = data['access_token'];
+      final refreshToken = data['refresh_token'] ?? '';
+      if (accessToken != null) {
+        final expiry = DateTime.now().add(const Duration(minutes: 15));
+        await saveTokens(accessToken, refreshToken, expiry);
+      }
+    }
     return response;
   }
 

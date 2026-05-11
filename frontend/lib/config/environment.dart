@@ -22,6 +22,12 @@ class Environment {
       return baseUrlFromEnv;
     }
 
+// Explicit localhost/browser-local should always use local backend.
+    if (isLocalDevelopment) {
+      return 'http://localhost:3001/api/v1';
+    }
+
+    // Fallback to production or localhost
     if (isProduction || isRenderDeployed) {
       return 'https://flow-space.onrender.com/api/v1';
     }

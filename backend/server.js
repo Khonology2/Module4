@@ -17,6 +17,7 @@ const __dirname = path.dirname(__filename);
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import fernet from 'fernet';
 import { v4 as uuidv4 } from 'uuid';
 import pool from './dbPool.js'; // your Postgres pool connection
 
@@ -47,6 +48,85 @@ async function initializeOpenAI() {
 // JWT Configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+const REFRESH_JWT_SECRET = process.env.APP_REFRESH_JWT_SECRET || process.env.JWT_SECRET || JWT_SECRET;
+const REFRESH_JWT_EXPIRES_IN = process.env.REFRESH_TOKEN_TTL || '7d';
+
+const normalizeSsoRole = (value) => {
+  const role = String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!role) return 'teamMember';
+  if (role.includes('systemadmin') || role.includes('administrator') || role === 'admin') return 'systemAdmin';
+  if (role.includes('clientreviewer') || role.includes('client')) return 'clientReviewer';
+  if (role.includes('deliverymanager') || role.includes('deliverylead') || role.includes('manager') || role === 'lead') return 'deliveryLead';
+  if (role.includes('teammember') || role === 'member' || role === 'team') return 'teamMember';
+  return 'teamMember';
+};
+
+const dashboardForRole = (role) => {
+  const map = {
+    systemAdmin: '/dashboard',
+    deliveryLead: '/dashboard',
+    clientReviewer: '/dashboard',
+    teamMember: '/dashboard',
+  };
+  return map[role] || '/dashboard';
+};
+
+const decodeUpstreamToken = (token) => {
+  const upstreamJwtSecret = process.env.SSO_JWT_SECRET;
+  const upstreamDecryptKey = process.env.SSO_DECRYPTION_KEY;
+  if (!upstreamJwtSecret || !upstreamDecryptKey) {
+    const error = new Error('SSO keys are missing');
+    error.code = 'SSO_CONFIG_INVALID';
+    throw error;
+  }
+
+  try {
+    return jwt.verify(token, upstreamJwtSecret);
+  } catch (_) {
+    try {
+      const secret = new fernet.Secret(upstreamDecryptKey);
+      const encrypted = new fernet.Token({
+        secret,
+        token,
+        ttl: 0,
+      });
+      const decryptedJwt = encrypted.decode();
+      return jwt.verify(decryptedJwt, upstreamJwtSecret);
+    } catch (decryptError) {
+      const error = new Error('Invalid upstream token');
+      error.code = 'TOKEN_INVALID';
+      error.cause = decryptError;
+      throw error;
+    }
+  }
+};
+
+const issueLocalAuthTokens = (user) => {
+  const accessToken = jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      type: 'access',
+    },
+    JWT_SECRET,
+    { expiresIn: process.env.ACCESS_TOKEN_TTL || JWT_EXPIRES_IN }
+  );
+
+  const refreshToken = jwt.sign(
+    {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      type: 'refresh',
+      jti: crypto.randomUUID(),
+    },
+    REFRESH_JWT_SECRET,
+    { expiresIn: REFRESH_JWT_EXPIRES_IN }
+  );
+
+  return { accessToken, refreshToken };
+};
 
 // Authentication middleware
 export const authenticateToken = (req, res, next) => {
@@ -1493,6 +1573,111 @@ app.post('/api/v1/auth/login', async (req, res) => {
   }
 });
 
+// SSO login endpoint for token exchange (encrypted or signed upstream tokens)
+app.post('/api/v1/auth/sso-login', async (req, res) => {
+  try {
+    const token = req.body?.token || req.headers['x-sso-token'] || req.query?.token;
+    if (!token) {
+      return res.status(400).json({ error: 'Token is required', code: 'TOKEN_MISSING' });
+    }
+
+    const claims = decodeUpstreamToken(String(token).trim());
+    const email = String(claims.email || claims.user_email || claims.preferred_username || '').toLowerCase().trim();
+    if (!email) {
+      return res.status(401).json({ error: 'Upstream token missing email', code: 'TOKEN_CLAIMS_INVALID' });
+    }
+
+    const roleClaim = claims.persona || claims.role || (Array.isArray(claims.roles) ? claims.roles[0] : claims.roles);
+    const mappedRole = normalizeSsoRole(roleClaim);
+    const name = String(claims.name || claims.full_name || claims.display_name || '').trim();
+    const nameParts = name.split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] || email.split('@')[0];
+    const lastName = nameParts.slice(1).join(' ') || 'User';
+
+    let userRow;
+    const userLookup = await pool.query(
+      'SELECT id, email, first_name, last_name, role, is_active, created_at FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (userLookup.rows.length === 0) {
+      const userId = uuidv4();
+      const placeholderPassword = await bcrypt.hash(`${email}:${Date.now()}`, 10);
+      try {
+        const created = await pool.query(
+          'INSERT INTO users (id, email, password_hash, first_name, last_name, role, created_at, updated_at, is_active, email_verified) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), true, true) RETURNING id, email, first_name, last_name, role, is_active, created_at',
+          [userId, email, placeholderPassword, firstName, lastName, mappedRole]
+        );
+        userRow = created.rows[0];
+      } catch (_) {
+        const createdFallback = await pool.query(
+          'INSERT INTO users (id, email, password_hash, name, role, created_at, updated_at, is_active, email_verified) VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), true, true) RETURNING id, email, name, role, is_active, created_at',
+          [userId, email, placeholderPassword, `${firstName} ${lastName}`.trim(), mappedRole]
+        );
+        userRow = createdFallback.rows[0];
+      }
+    } else {
+      userRow = userLookup.rows[0];
+      const updates = [];
+      const values = [];
+      let param = 1;
+
+      if (userRow.role !== mappedRole) {
+        updates.push(`role = $${param++}`);
+        values.push(mappedRole);
+      }
+      if (!userRow.first_name) {
+        updates.push(`first_name = $${param++}`);
+        values.push(firstName);
+      }
+      if (!userRow.last_name) {
+        updates.push(`last_name = $${param++}`);
+        values.push(lastName);
+      }
+      updates.push(`is_active = true`);
+      updates.push(`updated_at = NOW()`);
+      updates.push(`last_login_at = NOW()`);
+
+      values.push(userRow.id);
+      await pool.query(
+        `UPDATE users SET ${updates.join(', ')} WHERE id = $${param}`,
+        values
+      );
+
+      const refreshed = await pool.query(
+        'SELECT id, email, first_name, last_name, role, is_active, created_at FROM users WHERE id = $1',
+        [userRow.id]
+      );
+      userRow = refreshed.rows[0];
+    }
+
+    const { accessToken, refreshToken } = issueLocalAuthTokens(userRow);
+    const displayName = resolveUserDisplayName(userRow, email);
+
+    return res.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      role: userRow.role,
+      dashboard: dashboardForRole(userRow.role),
+      user: {
+        id: userRow.id,
+        email: userRow.email,
+        name: displayName,
+        role: userRow.role,
+      },
+    });
+  } catch (error) {
+    console.error('SSO login error:', error);
+    if (error.code === 'TOKEN_INVALID') {
+      return res.status(401).json({ error: 'Invalid/expired upstream token', code: 'TOKEN_INVALID' });
+    }
+    if (error.code === 'SSO_CONFIG_INVALID') {
+      return res.status(500).json({ error: 'SSO config invalid', code: 'SSO_CONFIG_INVALID' });
+    }
+    return res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
 // Logout endpoint
 app.post('/api/v1/auth/logout', authenticateToken, async (req, res) => {
   try {
@@ -1511,13 +1696,29 @@ app.post('/api/v1/auth/logout', authenticateToken, async (req, res) => {
 });
 
 // Refresh token endpoint - properly implemented
-app.post('/api/v1/auth/refresh', authenticateToken, async (req, res) => {
+app.post('/api/v1/auth/refresh', async (req, res) => {
   try {
-    const userId = req.user.id;
+    const rawToken = req.body?.refresh_token
+      || (req.headers.authorization ? req.headers.authorization.split(' ')[1] : null);
+    if (!rawToken) {
+      return res.status(401).json({ success: false, error: 'Refresh token required' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(rawToken, REFRESH_JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, error: 'Invalid or expired refresh token' });
+    }
+
+    const userId = decoded.sub || decoded.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Invalid refresh token payload' });
+    }
     
     // Find user in database
     const result = await pool.query(
-      'SELECT id, email, name, role, is_active FROM users WHERE id = $1',
+      'SELECT id, email, name, first_name, last_name, role, is_active FROM users WHERE id = $1',
       [userId]
     );
     
@@ -1543,9 +1744,10 @@ app.post('/api/v1/auth/refresh', authenticateToken, async (req, res) => {
         id: user.id,
         email: user.email,
         role: user.role,
+        type: 'access',
       },
       JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      { expiresIn: process.env.ACCESS_TOKEN_TTL || JWT_EXPIRES_IN }
     );
     
     res.json({
@@ -1555,7 +1757,7 @@ app.post('/api/v1/auth/refresh', authenticateToken, async (req, res) => {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name,
+          name: resolveUserDisplayName(user, user.email),
           role: user.role,
           isActive: user.is_active
         },

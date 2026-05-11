@@ -120,6 +120,34 @@ class AuthService {
     }
   }
 
+  Future<Map<String, dynamic>> loginWithSsoToken(String token) async {
+    try {
+      final response = await _apiService.ssoLogin(token);
+      if (!response.isSuccess || response.data == null) {
+        return {
+          'success': false,
+          'error': response.error ?? 'SSO login failed',
+        };
+      }
+
+      _currentUser = _apiService.parseUserFromResponse(response);
+      if (_currentUser == null) {
+        return {'success': false, 'error': 'Unable to parse user profile'};
+      }
+      _isAuthenticated = true;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('role', _currentUser!.role.name);
+        await prefs.setString('user', _currentUser!.toJson().toString());
+      } catch (_) {}
+
+      final dashboard = response.data['dashboard']?.toString() ?? '/dashboard';
+      return {'success': true, 'dashboard': dashboard, 'role': _currentUser!.role.name};
+    } catch (e) {
+      return {'success': false, 'error': 'SSO login failed: $e'};
+    }
+  }
+
   Future<Map<String, dynamic>> signUp(
       String email, String password, String fullName, UserRole role) async {
     try {

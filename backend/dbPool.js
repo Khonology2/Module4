@@ -2,6 +2,19 @@
 import pkg from 'pg';
 const { Pool } = pkg;
 
+function resolveSslFromDatabaseUrl(databaseUrl) {
+  try {
+    const parsed = new URL(databaseUrl);
+    const host = String(parsed.hostname || '').toLowerCase();
+    const sslMode = String(parsed.searchParams.get('sslmode') || '').toLowerCase();
+    const isRenderHost = host.includes('render.com');
+    const requiresSslMode = ['require', 'verify-ca', 'verify-full', 'prefer'].includes(sslMode);
+    return isRenderHost || requiresSslMode;
+  } catch (_) {
+    return false;
+  }
+}
+
 // Safest approach: Use ONLY DATABASE_URL to avoid credential mismatches
 function createPool() {
   console.log('🛜 Using DATABASE_URL (safest approach)');
@@ -22,12 +35,14 @@ function createPool() {
 
   // SSL CONFIGURATION - Enable SSL in production, respect DB_SSL setting
   const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
-  const sslEnabled = process.env.DB_SSL === 'true' || isProduction;
+  const forcedSsl = process.env.DB_SSL === 'true';
+  const inferredSslFromUrl = resolveSslFromDatabaseUrl(process.env.DATABASE_URL);
+  const sslEnabled = forcedSsl || isProduction || inferredSslFromUrl;
   console.log('🔒 SSL Enabled:', sslEnabled);
   console.log('🌍 Production Environment:', isProduction);
   
   return new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: String(process.env.DATABASE_URL || '').trim(),
     ssl: sslEnabled ? {
       rejectUnauthorized: false,
     } : false,
@@ -65,7 +80,11 @@ const testConnection = async () => {
       hasDatabaseUrl: !!process.env.DATABASE_URL,
       nodeEnv: process.env.NODE_ENV,
       isRender: process.env.RENDER === 'true',
-      sslEnabled: process.env.DB_SSL === 'true' || process.env.NODE_ENV === 'production' || process.env.RENDER === 'true'
+      sslEnabled:
+        process.env.DB_SSL === 'true'
+        || process.env.NODE_ENV === 'production'
+        || process.env.RENDER === 'true'
+        || resolveSslFromDatabaseUrl(process.env.DATABASE_URL || '')
     });
   }
 };
