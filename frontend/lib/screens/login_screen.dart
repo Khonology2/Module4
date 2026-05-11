@@ -154,19 +154,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
-<<<<<<< HEAD
-          // Background image
-          Positioned.fill(
-            child: Image.network(
-              'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/Icons/khono_bg.png',
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(color: const Color(0xFF0D0F14));
-              },
-            ),
-          ),
-=======
->>>>>>> d298aafc654f6952b2ec2426386821c30aaddb83
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
