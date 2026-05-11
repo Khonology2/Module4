@@ -328,7 +328,7 @@ final GoRouter _router = GoRouter(
           route: '/report-builder',
           child: SidebarScaffold(
             child: ReportViewScreen(
-                reportId: reportId, showPostSubmitBanner: true),
+                reportId: reportId),
           ),
         );
       },

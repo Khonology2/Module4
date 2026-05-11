@@ -36,7 +36,6 @@ class VersionedHomePage extends StatelessWidget {
       ),
       body: Column(
         children: [
-          const VersionBanner(),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16.0),

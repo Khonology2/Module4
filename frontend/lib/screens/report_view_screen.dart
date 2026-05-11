@@ -18,12 +18,10 @@ import '../utils/user_label_utils.dart';
 
 class ReportViewScreen extends ConsumerStatefulWidget {
   final String reportId;
-  final bool showPostSubmitBanner;
   
   const ReportViewScreen({
     super.key,
     required this.reportId,
-    this.showPostSubmitBanner = false,
   });
 
   @override
@@ -465,11 +463,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.showPostSubmitBanner)
-              Card(
-                color: FlownetColors.graphiteGray,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
                       const Icon(Icons.mark_email_read, color: FlownetColors.electricBlue),
@@ -489,8 +483,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
                   ),
                 ),
               ),
-            if (widget.showPostSubmitBanner) const SizedBox(height: 16),
-            // Header
+                        // Header
             Text(
               'Report View',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
