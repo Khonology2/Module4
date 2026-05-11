@@ -6,7 +6,6 @@ import '../theme/flownet_theme.dart';
 import '../services/auth_service.dart';
 import '../utils/app_icons.dart';
 import 'background_image.dart';
-import 'sidebar_version_display.dart';
 
 class _NavItem {
   final String label;
@@ -277,9 +276,13 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                   child: Stack(
                     children: [
                       Positioned.fill(child: widget.child),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-      );
+        );
     } else {
       // Mobile layout with drawer
       return Scaffold(

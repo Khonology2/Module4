@@ -281,7 +281,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           // Password Field
                           TextFormField(
                             controller: _passwordController,
-                            obscureText: !_isPasswordVisible,
+                            obscureText: _obscurePassword,
                             textInputAction: TextInputAction.done,
                             onFieldSubmitted: (value) {
                               // This will be called when user presses "Done" on keyboard
@@ -296,14 +296,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   color: Colors.white.withValues(alpha: 0.7)),
                               suffixIcon: IconButton(
                                 icon: Icon(
-                                  _isPasswordVisible
+                                  _obscurePassword
                                       ? Icons.visibility_off
                                       : Icons.visibility,
                                   color: Colors.white.withValues(alpha: 0.7),
                                 ),
                                 onPressed: () {
                                   setState(() {
-                                    _isPasswordVisible = !_isPasswordVisible;
+                                    _obscurePassword = !_obscurePassword;
                                   });
                                 },
                               ),

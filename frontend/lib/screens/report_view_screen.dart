@@ -463,27 +463,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-                              padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.mark_email_read, color: FlownetColors.electricBlue),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'This is the submitted version of the report.',
-                          style: TextStyle(color: FlownetColors.pureWhite, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      if (canEdit)
-                        TextButton(
-                          onPressed: _navigateToEdit,
-                          child: const Text('Edit'),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-                        // Header
+            // Header
             Text(
               'Report View',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(

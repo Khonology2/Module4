@@ -607,9 +607,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     ); // Scaffold
   }
 
-  final ErrorHandler _errorHandler = ErrorHandler();
-  bool _isLoading = false;
-
+  
   Widget _buildRoleSelection() {
     return DropdownButtonFormField<String>(
       // ignore: deprecated_member_use
@@ -640,9 +638,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       items: _roles.map((role) {
         return DropdownMenuItem<String>(
-          value: role['name'],
+          value: role['name'].toString(),
           child: Text(
-            role['name'],
+            role['name'].toString(),
             style: const TextStyle(color: Colors.white),
           ),
         );
@@ -661,7 +659,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return null;
       },
     );
-=======
+  }
+
   String _friendlyRegisterMessage(String? raw) {
     final msg = (raw ?? '').toLowerCase();
     if (msg.contains('email') && (msg.contains('exist') || msg.contains('taken'))) {
