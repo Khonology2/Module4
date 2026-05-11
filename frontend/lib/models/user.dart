@@ -110,14 +110,14 @@ class User {
          }
        } catch (_) {}
       
-      List<String> _stringList(dynamic v) {
+      List<String> stringList(dynamic v) {
         if (v is List) {
           return v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
         }
         return const <String>[];
       }
 
-      bool _bool(dynamic v, {required bool fallback}) {
+      bool parseBool(dynamic v, {required bool fallback}) {
         if (v is bool) return v;
         if (v is num) return v != 0;
         if (v is String) {
@@ -148,10 +148,10 @@ class User {
             : (json['last_login'] != null 
                 ? DateTime.parse(json['last_login'].toString()) 
                 : null),
-        isActive: _bool(isActiveRaw, fallback: true),
-        projectIds: _stringList(projectIdsRaw),
+        isActive: parseBool(isActiveRaw, fallback: true),
+        projectIds: stringList(projectIdsRaw),
         preferences: Map<String, dynamic>.from(json['preferences'] ?? {}),
-        emailVerified: _bool(emailVerifiedRaw, fallback: false),
+        emailVerified: parseBool(emailVerifiedRaw, fallback: false),
         emailVerifiedAt: json['emailVerifiedAt'] != null ? DateTime.parse(json['emailVerifiedAt']?.toString() ?? '') : null,
       );
     } catch (e) {

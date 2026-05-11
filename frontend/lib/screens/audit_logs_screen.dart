@@ -92,7 +92,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
   void _handleAuditLogCreated(dynamic data) {
     try {
       if (data is! Map) return;
-      final log = Map<String, dynamic>.from(data as Map);
+      final log = Map<String, dynamic>.from(data);
       final id = log['id']?.toString() ?? '';
       if (id.isNotEmpty && _logs.any((e) => (e['id']?.toString() ?? '') == id)) {
         return;

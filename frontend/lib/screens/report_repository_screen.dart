@@ -15,6 +15,7 @@ import '../services/realtime_service.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/document_preview_widget.dart';
+import '../widgets/signature_capture_widget.dart';
 import 'report_editor_screen.dart';
 import 'client_review_workflow_screen.dart';
 
@@ -50,6 +51,142 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
   final List<Map<String, dynamic>> _projects = [];
   final List<Map<String, dynamic>> _sprints = [];
   final List<Map<String, dynamic>> _deliverables = [];
+
+  Future<void> _startSprintBasedReportCreation() async {
+    final backend = BackendApiService();
+    List<Map<String, dynamic>> sprints = const <Map<String, dynamic>>[];
+    String? selectedSprintId;
+    String? selectedSprintName;
+    bool loading = true;
+    String? loadError;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        Future<void> load() async {
+          try {
+            final resp = await backend.getSprints(limit: 200);
+            if (!resp.isSuccess || resp.data == null) {
+              throw Exception(resp.error ?? 'Failed to load sprints');
+            }
+            final raw = resp.data;
+            final list = raw is List ? raw : (raw is Map ? (raw['data'] ?? raw['sprints'] ?? raw['items'] ?? []) : const <dynamic>[]);
+            final parsed = (list as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+
+            bool isCompletedStatus(String v) {
+              final n = v.toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
+              return n == 'completed' || n == 'done' || n == 'closed';
+            }
+
+            parsed.sort((a, b) {
+              final aId = int.tryParse((a['id'] ?? '').toString()) ?? 0;
+              final bId = int.tryParse((b['id'] ?? '').toString()) ?? 0;
+              return bId.compareTo(aId);
+            });
+
+            sprints = parsed.where((s) => isCompletedStatus((s['status'] ?? '').toString())).toList();
+            if (sprints.isNotEmpty) {
+              selectedSprintId = sprints.first['id']?.toString();
+              selectedSprintName = sprints.first['name']?.toString();
+            }
+            loadError = null;
+          } catch (e) {
+            loadError = e.toString();
+          } finally {
+            loading = false;
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            if (loading) {
+              Future<void>(() async {
+                await load();
+                if (!context.mounted) return;
+                setLocalState(() {});
+              });
+            }
+
+            return AlertDialog(
+              title: const Text('Create Sprint Sign-Off Report'),
+              content: SizedBox(
+                width: 480,
+                child: loading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : (loadError != null
+                        ? Text('Failed to load sprints: $loadError')
+                        : (sprints.isEmpty
+                            ? const Text('No completed sprints found. Complete a sprint first to generate a sign-off report.')
+                            : DropdownButtonFormField<String>(
+                                initialValue: selectedSprintId,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Completed Sprint',
+                                  border: OutlineInputBorder(),
+                                ),
+                                selectedItemBuilder: (context) {
+                                  return sprints.map((s) {
+                                    final name = (s['name'] ?? 'Sprint').toString();
+                                    final project = s['project'] is Map ? (s['project']['name'] ?? '').toString() : '';
+                                    final label = project.trim().isNotEmpty ? '$project — $name' : name;
+                                    return Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(label, overflow: TextOverflow.ellipsis, maxLines: 1),
+                                    );
+                                  }).toList();
+                                },
+                                items: sprints.map((s) {
+                                  final id = (s['id'] ?? '').toString();
+                                  final name = (s['name'] ?? 'Sprint').toString();
+                                  final project = s['project'] is Map ? (s['project']['name'] ?? '').toString() : '';
+                                  final label = project.trim().isNotEmpty ? '$project — $name' : name;
+                                  return DropdownMenuItem<String>(
+                                    value: id,
+                                    child: Text(label, overflow: TextOverflow.ellipsis, maxLines: 1),
+                                  );
+                                }).toList(),
+                                onChanged: (v) {
+                                  setLocalState(() {
+                                    selectedSprintId = v;
+                                    final pick = sprints.firstWhere(
+                                      (s) => (s['id'] ?? '').toString() == (v ?? ''),
+                                      orElse: () => const <String, dynamic>{},
+                                    );
+                                    selectedSprintName = pick.isNotEmpty ? pick['name']?.toString() : null;
+                                  });
+                                },
+                              ))),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: (loading || loadError != null || (selectedSprintId ?? '').trim().isEmpty)
+                      ? null
+                      : () {
+                          final sid = (selectedSprintId ?? '').trim();
+                          final name = (selectedSprintName ?? '').trim();
+                          Navigator.of(context).pop();
+                          final q = name.isNotEmpty ? '?name=${Uri.encodeComponent(name)}' : '';
+                          context.go('/sprint-report/$sid$q');
+                        },
+                  child: const Text('Continue'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -348,25 +485,6 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
     return null;
   }
 
-  ReportStatus _parseStatus(String status) {
-    switch (status.toLowerCase()) {
-      case 'submitted':
-        return ReportStatus.submitted;
-      case 'under_review':
-      case 'underreview':
-        return ReportStatus.underReview;
-      case 'approved':
-        return ReportStatus.approved;
-      case 'change_requested':
-      case 'changerequested':
-        return ReportStatus.changeRequested;
-      case 'rejected':
-        return ReportStatus.rejected;
-      default:
-        return ReportStatus.draft;
-    }
-  }
-
   List<SignOffReport> get _filteredReports {
     var filtered = _reports;
 
@@ -397,6 +515,7 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
 
   void _showClientFeedbackDialog(SignOffReport report) {
     final feedbackController = TextEditingController();
+    final signatureKey = GlobalKey<SignatureCaptureWidgetState>();
     bool requestChanges = false;
 
     showDialog(
@@ -446,11 +565,14 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                   maxLines: 8,
                   style: const TextStyle(color: FlownetColors.pureWhite),
                   decoration: InputDecoration(
-                    labelText: requestChanges ? 'Change Request Details *' : 'Feedback/Comments',
+                    labelText: requestChanges ? 'Change Request Details' : 'Feedback/Comments (Optional)',
                     labelStyle: const TextStyle(color: FlownetColors.coolGray),
                     hintText: requestChanges 
                         ? 'Describe what changes are needed...'
                         : 'Share your feedback or suggestions...',
+                    helperText: requestChanges
+                        ? 'Required when requesting changes'
+                        : null,
                     hintStyle: const TextStyle(color: FlownetColors.coolGray),
                     border: const OutlineInputBorder(
                       borderSide: BorderSide(color: FlownetColors.slate),
@@ -463,6 +585,13 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                SignatureCaptureWidget(
+                  key: signatureKey,
+                  allowSignatureReuse: true,
+                  showAuditInfo: true,
+                  reportId: report.id,
+                ),
               ],
             ),
           ),
@@ -473,21 +602,36 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
             ),
             ElevatedButton.icon(
               onPressed: () async {
-                if (feedbackController.text.trim().isEmpty) {
+                final nav = Navigator.of(context);
+                if (requestChanges && feedbackController.text.trim().isEmpty) {
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Please enter your feedback'),
+                      content: Text('Change request details are required'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                final sig = await signatureKey.currentState?.getSignature();
+                if (sig == null || sig.trim().isEmpty) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Digital signature is required'),
                       backgroundColor: Colors.orange,
                     ),
                   );
                   return;
                 }
 
-                Navigator.pop(context);
+                if (!context.mounted) return;
+                nav.pop();
                 await _submitClientFeedback(
                   report.id,
-                  feedbackController.text.trim(),
+                  feedbackController.text.trim().isNotEmpty ? feedbackController.text.trim() : null,
                   requestChanges,
+                  sig,
                 );
               },
               icon: Icon(requestChanges ? Icons.change_circle : Icons.send),
@@ -505,7 +649,7 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
     );
   }
 
-  Future<void> _submitClientFeedback(String reportId, String feedback, bool requestChanges) async {
+  Future<void> _submitClientFeedback(String reportId, String? feedback, bool requestChanges, String digitalSignature) async {
     try {
       // Show loading indicator
       if (mounted) {
@@ -528,8 +672,8 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
       }
 
       final response = requestChanges
-          ? await _reportService.requestChanges(reportId, feedback)
-          : await _reportService.approveReport(reportId, comment: feedback);
+          ? await _reportService.requestChanges(reportId, changeRequestDetails: feedback, digitalSignature: digitalSignature)
+          : await _reportService.approveReport(reportId, comment: feedback, digitalSignature: digitalSignature);
 
       // Hide loading indicator
       if (mounted) {
@@ -648,10 +792,11 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
               runSpacing: 16,
               children: [
                 // Project Filter
-                SizedBox(
-                  width: 200,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 200),
                   child: DropdownButtonFormField<String>(
                     initialValue: _selectedProjectId,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Project',
                       labelStyle: TextStyle(color: FlownetColors.coolGray),
@@ -660,11 +805,26 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                     ),
                     dropdownColor: FlownetColors.surfaceLight,
                     style: const TextStyle(color: FlownetColors.pureWhite),
+                    selectedItemBuilder: (context) {
+                      return [
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('All Projects', overflow: TextOverflow.ellipsis, maxLines: 1),
+                        ),
+                        ..._projects.map((p) {
+                          final label = p['name']?.toString() ?? 'Unknown';
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(label, overflow: TextOverflow.ellipsis, maxLines: 1),
+                          );
+                        }),
+                      ];
+                    },
                     items: [
                       const DropdownMenuItem(value: null, child: Text('All Projects')),
                       ..._projects.map((p) => DropdownMenuItem(
                         value: p['id']?.toString(),
-                        child: Text(p['name']?.toString() ?? 'Unknown'),
+                        child: Text(p['name']?.toString() ?? 'Unknown', overflow: TextOverflow.ellipsis, maxLines: 1),
                       )),
                     ],
                     onChanged: (value) {
@@ -674,10 +834,11 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                   ),
                 ),
                 // Sprint Filter
-                SizedBox(
-                  width: 200,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 200),
                   child: DropdownButtonFormField<String>(
                     initialValue: _selectedSprintId,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Sprint',
                       labelStyle: TextStyle(color: FlownetColors.coolGray),
@@ -686,11 +847,26 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                     ),
                     dropdownColor: FlownetColors.surfaceLight,
                     style: const TextStyle(color: FlownetColors.pureWhite),
+                    selectedItemBuilder: (context) {
+                      return [
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('All Sprints', overflow: TextOverflow.ellipsis, maxLines: 1),
+                        ),
+                        ..._sprints.map((s) {
+                          final label = s['name']?.toString() ?? 'Unknown';
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(label, overflow: TextOverflow.ellipsis, maxLines: 1),
+                          );
+                        }),
+                      ];
+                    },
                     items: [
                       const DropdownMenuItem(value: null, child: Text('All Sprints')),
                       ..._sprints.map((s) => DropdownMenuItem(
                         value: s['id']?.toString(),
-                        child: Text(s['name']?.toString() ?? 'Unknown'),
+                        child: Text(s['name']?.toString() ?? 'Unknown', overflow: TextOverflow.ellipsis, maxLines: 1),
                       )),
                     ],
                     onChanged: (value) {
@@ -700,10 +876,11 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                   ),
                 ),
                 // Deliverable Filter
-                SizedBox(
-                  width: 200,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 200),
                   child: DropdownButtonFormField<String>(
                     initialValue: _selectedDeliverableId,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Deliverable',
                       labelStyle: TextStyle(color: FlownetColors.coolGray),
@@ -712,11 +889,30 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                     ),
                     dropdownColor: FlownetColors.surfaceLight,
                     style: const TextStyle(color: FlownetColors.pureWhite),
+                    selectedItemBuilder: (context) {
+                      return [
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('All Deliverables', overflow: TextOverflow.ellipsis, maxLines: 1),
+                        ),
+                        ..._deliverables.map((d) {
+                          final label = d['title']?.toString() ?? d['name']?.toString() ?? 'Unknown';
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(label, overflow: TextOverflow.ellipsis, maxLines: 1),
+                          );
+                        }),
+                      ];
+                    },
                     items: [
                       const DropdownMenuItem(value: null, child: Text('All Deliverables')),
                       ..._deliverables.map((d) => DropdownMenuItem(
                         value: d['id']?.toString(),
-                        child: Text(d['title']?.toString() ?? d['name']?.toString() ?? 'Unknown'),
+                        child: Text(
+                          d['title']?.toString() ?? d['name']?.toString() ?? 'Unknown',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                       )),
                     ],
                     onChanged: (value) {
@@ -838,21 +1034,15 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
         centerTitle: false,
         elevation: 0,
         actions: [
-          TextButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ReportEditorScreen(),
-                ),
-              ).then((_) => _loadReports());
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Create Report'),
-            style: TextButton.styleFrom(
-              foregroundColor: FlownetColors.crimsonRed,
+          if (AuthService().currentUser?.isDeliveryLead ?? false)
+            TextButton.icon(
+              onPressed: _startSprintBasedReportCreation,
+              icon: const Icon(Icons.add),
+              label: const Text('Create Report'),
+              style: TextButton.styleFrom(
+                foregroundColor: FlownetColors.crimsonRed,
+              ),
             ),
-          ),
         ],
       ),
       body: Column(
@@ -910,6 +1100,8 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                             _buildFilterChip('approved', 'Approved'),
                             const SizedBox(width: 8),
                             _buildFilterChip('changeRequested', 'Change Requested'),
+                            const SizedBox(width: 8),
+                            _buildFilterChip('rejected', 'Rejected'),
                           ],
                         ),
                       ),
@@ -1177,6 +1369,57 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
     );
   }
 
+  Future<void> _runReportAction({
+    required String successMessage,
+    required Future<dynamic> Function() action,
+  }) async {
+    try {
+      final response = await action();
+      if (!mounted) return;
+      if (response.isSuccess) {
+        _showSuccessSnackBar(successMessage);
+        await _loadReports();
+      } else {
+        _showErrorSnackBar(response.error ?? 'Action failed');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar('Action failed: $e');
+    }
+  }
+
+  Future<void> _handleReportMenuAction(SignOffReport report, String value) async {
+    switch (value) {
+      case 'seal':
+        await _runReportAction(
+          successMessage: 'Report sealed successfully',
+          action: () => _reportService.sealReport(report.id),
+        );
+        return;
+      case 'archive':
+        await _runReportAction(
+          successMessage: 'Report archived successfully',
+          action: () => _reportService.archiveReport(report.id),
+        );
+        return;
+      case 'remind':
+        await _runReportAction(
+          successMessage: 'Review reminder sent',
+          action: () => _reportService.sendReminder(report.id),
+        );
+        return;
+      case 'escalate':
+        await _runReportAction(
+          successMessage: 'Report escalated successfully',
+          action: () => _reportService.escalateReport(report.id),
+        );
+        return;
+      case 'delete':
+        await _confirmDeleteReport(report);
+        return;
+    }
+  }
+
   Widget _buildReportCard(SignOffReport report) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1213,6 +1456,13 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                             child: Icon(Icons.lock, color: FlownetColors.emeraldGreen, size: 16),
                           ),
                         ],
+                        if (report.isArchived) ...[
+                          const SizedBox(width: 8),
+                          const Tooltip(
+                            message: 'Archived',
+                            child: Icon(Icons.archive, color: FlownetColors.coolGray, size: 16),
+                          ),
+                        ],
                         if (report.status == ReportStatus.submitted) ...[
                           const SizedBox(width: 8),
                           const Tooltip(
@@ -1240,17 +1490,63 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                     ),
                   ),
                   const SizedBox(width: 8),
+                  if (report.currentVersion > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: FlownetColors.electricBlue.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: FlownetColors.electricBlue),
+                      ),
+                      child: Text(
+                        'v${report.currentVersion}',
+                        style: const TextStyle(
+                          color: FlownetColors.electricBlue,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   PopupMenuButton<String>(
                     itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Delete'),
-                      ),
+                      if ((report.status == ReportStatus.submitted ||
+                              report.status == ReportStatus.underReview) &&
+                          !report.isArchived)
+                        const PopupMenuItem(
+                          value: 'remind',
+                          child: Text('Send Reminder'),
+                        ),
+                      if ((report.status == ReportStatus.submitted ||
+                              report.status == ReportStatus.underReview) &&
+                          !report.isArchived)
+                        const PopupMenuItem(
+                          value: 'escalate',
+                          child: Text('Escalate'),
+                        ),
+                      if (report.status == ReportStatus.approved &&
+                          report.sealedAt == null &&
+                          !report.isArchived)
+                        const PopupMenuItem(
+                          value: 'seal',
+                          child: Text('Seal'),
+                        ),
+                      if ((report.status == ReportStatus.approved ||
+                              report.status == ReportStatus.rejected) &&
+                          !report.isArchived)
+                        const PopupMenuItem(
+                          value: 'archive',
+                          child: Text('Archive'),
+                        ),
+                      if (!report.isArchived)
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete'),
+                        ),
                     ],
                     onSelected: (value) async {
-                      if (value == 'delete') {
-                        await _confirmDeleteReport(report);
-                      }
+                      await _handleReportMenuAction(report, value);
                     },
                   ),
                 ],
@@ -1284,6 +1580,25 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                   Icons.timeline,
                   'Sprints: ${report.sprintIds.join(', ')}',
                 ),
+              if (report.isArchived || report.sealedAt != null) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (report.sealedAt != null)
+                      _buildMetadataChip(
+                        label: 'Sealed ${_formatDate(report.sealedAt!)}',
+                        color: FlownetColors.emeraldGreen,
+                      ),
+                    if (report.isArchived && report.archivedAt != null)
+                      _buildMetadataChip(
+                        label: 'Archived ${_formatDate(report.archivedAt!)}',
+                        color: FlownetColors.coolGray,
+                      ),
+                  ],
+                ),
+              ],
 
               // Digital Signature indicator
               if (report.digitalSignature != null) ...[
@@ -1320,7 +1635,9 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
                       report.status == ReportStatus.submitted ||
                       report.status == ReportStatus.changeRequested) ...[
                     TextButton.icon(
-                      onPressed: () {
+                      onPressed: report.isArchived
+                          ? null
+                          : () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -1394,6 +1711,25 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetadataChip({required String label, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -1573,15 +1909,33 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
       if (format == null) return;
 
       if (format == 'pdf') {
-        await _exportService.exportReportAsPDF(report);
-        if (mounted) {
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text('Report exported successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
+        if (!mounted) return;
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Preparing your PDF in the background…'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        Future<void>(() async {
+          try {
+            await _exportService.exportReportAsPDFFromServer(report);
+            if (!mounted) return;
+            messenger.showSnackBar(
+              const SnackBar(
+                content: Text('PDF download started'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } catch (e) {
+            if (!mounted) return;
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text('Error exporting report: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        });
       } else if (format == 'print') {
         await _exportService.printReport(report);
       }

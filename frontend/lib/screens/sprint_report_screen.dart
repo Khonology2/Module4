@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/backend_api_service.dart';
+import '../services/api_client.dart';
+import '../services/auth_service.dart';
 import '../services/realtime_service.dart';
 import '../theme/flownet_theme.dart';
 
@@ -195,13 +197,15 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
           ),
         ],
       ),
-      floatingActionButton: _report != null ? FloatingActionButton.extended(
-        onPressed: () => _showPublishDialog(context, sprintTitle),
-        icon: const Icon(Icons.assignment_turned_in),
-        label: const Text('Sign Off & Publish'),
-        backgroundColor: FlownetColors.electricBlue,
-        foregroundColor: Colors.white,
-      ) : null,
+      floatingActionButton: (_report != null && (AuthService().currentUser?.isDeliveryLead ?? false))
+          ? FloatingActionButton.extended(
+              onPressed: () => _showPublishDialog(context, sprintTitle),
+              icon: const Icon(Icons.assignment_turned_in),
+              label: const Text('Sign Off & Publish'),
+              backgroundColor: FlownetColors.electricBlue,
+              foregroundColor: Colors.white,
+            )
+          : null,
       body: _loading && _report == null
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _report == null
@@ -657,22 +661,177 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
                       : () async {
                           setLocalState(() => isPublishing = true);
                           try {
-                            final createResp = await _backend.createSprintReportFromSprint(widget.sprintId, note: noteController.text.trim());
-                            if (!context.mounted) return;
-                            if (!createResp.isSuccess || createResp.data == null) {
-                              throw Exception(createResp.error ?? 'Failed to create report');
+                            Future<Map<String, dynamic>> loadSprint() async {
+                              final sprintResp = await _backend.getSprint(widget.sprintId);
+                              final raw = sprintResp.isSuccess ? sprintResp.data : null;
+                              if (raw is Map && raw['data'] is Map) {
+                                return Map<String, dynamic>.from(raw['data'] as Map);
+                              }
+                              if (raw is Map) return Map<String, dynamic>.from(raw);
+                              return <String, dynamic>{};
+                            }
+
+                            Future<List<Map<String, dynamic>>> loadSprintMetrics() async {
+                              final resp = await _backend.getSprintMetrics(widget.sprintId);
+                              if (!resp.isSuccess || resp.data == null) return <Map<String, dynamic>>[];
+                              final raw = resp.data;
+                              final dynamic extracted = raw is Map ? (raw['data'] ?? raw['metrics'] ?? raw['items'] ?? raw) : raw;
+                              final List<dynamic> items = extracted is List
+                                  ? extracted
+                                  : (extracted is Map ? <dynamic>[extracted] : const <dynamic>[]);
+                              return items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+                            }
+
+                            bool isSprintCompleted(Map<String, dynamic> sprintMap) {
+                              final statusRaw = (sprintMap['status'] ?? '')
+                                  .toString()
+                                  .toLowerCase()
+                                  .replaceAll(RegExp(r'[\s_-]+'), '');
+                              return statusRaw == 'completed' || statusRaw == 'done' || statusRaw == 'closed';
+                            }
+
+                            bool hasRequiredMetrics(Map<String, dynamic> sprintMap) {
+                              final testPassRate = sprintMap['test_pass_rate'] ?? sprintMap['testPassRate'];
+                              final defectsOpened = sprintMap['defects_opened'] ?? sprintMap['defectsOpened'];
+                              final defectsClosed = sprintMap['defects_closed'] ?? sprintMap['defectsClosed'];
+                              final codeReview = sprintMap['code_review_completion'] ?? sprintMap['codeReviewCompletion'];
+                              final documentation = sprintMap['documentation_status'] ?? sprintMap['documentationStatus'];
+                              return testPassRate != null &&
+                                  defectsOpened != null &&
+                                  defectsClosed != null &&
+                                  codeReview != null &&
+                                  documentation != null;
+                            }
+
+                            bool hasRequiredMetricsInSavedMetrics(List<Map<String, dynamic>> metricsList) {
+                              dynamic pick(Map<String, dynamic> m, List<String> keys) {
+                                for (final k in keys) {
+                                  if (m.containsKey(k) && m[k] != null) return m[k];
+                                }
+                                return null;
+                              }
+
+                              bool isPresent(dynamic v) {
+                                if (v == null) return false;
+                                if (v is String) return v.trim().isNotEmpty;
+                                return true;
+                              }
+
+                              for (final m in metricsList) {
+                                final testPassRate = pick(m, const ['test_pass_rate', 'testPassRate']);
+                                final defectsOpened = pick(m, const ['defects_opened', 'defectsOpened']);
+                                final defectsClosed = pick(m, const ['defects_closed', 'defectsClosed']);
+                                final codeReview = pick(m, const ['code_review_completion', 'codeReviewCompletion']);
+                                final documentation = pick(m, const ['documentation_status', 'documentationStatus']);
+                                if (isPresent(testPassRate) &&
+                                    isPresent(defectsOpened) &&
+                                    isPresent(defectsClosed) &&
+                                    isPresent(codeReview) &&
+                                    isPresent(documentation)) {
+                                  return true;
+                                }
+                              }
+                              return false;
+                            }
+
+                            Future<bool> metricsAreReady() async {
+                              final sprintMap = await loadSprint();
+                              if (!isSprintCompleted(sprintMap)) {
+                                throw Exception('Complete the sprint before publishing a sprint sign-off report.');
+                              }
+
+                              if (hasRequiredMetrics(sprintMap)) return true;
+
+                              final metricsList = await loadSprintMetrics();
+                              return hasRequiredMetricsInSavedMetrics(metricsList);
+                            }
+
+                            Future<void> ensureMetricsReady() async {
+                              if (await metricsAreReady()) return;
+
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Sprint metrics are required before publishing. Please complete the sprint metrics form.'),
+                                  backgroundColor: Colors.orange,
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
+                              await context.push('/sprint-metrics/${widget.sprintId}');
+                              if (!context.mounted) return;
+
+                              for (var i = 0; i < 2; i++) {
+                                if (await metricsAreReady()) return;
+                                await Future<void>.delayed(const Duration(milliseconds: 400));
+                              }
+                              throw Exception('Sprint metrics must be completed before publishing.');
+                            }
+
+                            await ensureMetricsReady();
+
+                            final sig = signatureController.text.trim();
+                            if (sig.isEmpty) {
+                              setLocalState(() => isPublishing = false);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Signature is required before publishing to the client.'),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                              return;
+                            }
+
+                            ApiResponse? createResp;
+                            for (var attempt = 0; attempt < 2; attempt++) {
+                              createResp = await _backend.createSprintReportFromSprint(
+                                widget.sprintId,
+                                note: noteController.text.trim(),
+                              );
+                              if (!context.mounted) return;
+                              if (createResp.isSuccess && createResp.data != null) break;
+
+                              final err = (createResp.error ?? '').toString();
+                              final errLower = err.toLowerCase();
+                              final isMetricsError =
+                                  errLower.contains('sprint metrics must be completed') ||
+                                  errLower.contains('metrics must be completed before creating a sprint sign-off report') ||
+                                  errLower.contains('sprint metrics are required') ||
+                                  errLower.contains('complete sprint metrics');
+                              if (isMetricsError && attempt == 0) {
+                                setLocalState(() => isPublishing = false);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Sprint metrics are incomplete. Please update and save them, then publish again.'),
+                                    backgroundColor: Colors.orange,
+                                    duration: Duration(seconds: 3),
+                                  ),
+                                );
+                                await context.push('/sprint-metrics/${widget.sprintId}');
+                                if (!context.mounted) return;
+                                setLocalState(() => isPublishing = true);
+                                await ensureMetricsReady();
+                                continue;
+                              }
+                              throw Exception(err.isNotEmpty ? err : 'Failed to create report');
+                            }
+
+                            if (createResp == null || !createResp.isSuccess || createResp.data == null) {
+                              throw Exception(createResp?.error ?? 'Failed to create report');
                             }
                             final reportId = (createResp.data['id'] ?? createResp.data['reportId'] ?? '').toString();
-                            if (reportId.isEmpty) {
-                              throw Exception('Invalid report id');
+                            if (reportId.isEmpty) throw Exception('Invalid report id');
+
+                            final sigResp = await _backend.addReportSignature(
+                              reportId,
+                              signatureData: sig,
+                              signatureType: 'typed',
+                            );
+                            if (!sigResp.isSuccess) {
+                              throw Exception(sigResp.error ?? 'Failed to attach signature');
                             }
-                            final sig = signatureController.text.trim();
-                            if (sig.isNotEmpty) {
-                              final sigResp = await _backend.addReportSignature(reportId, signatureData: sig, signatureType: 'typed');
-                              if (!sigResp.isSuccess) {
-                                throw Exception(sigResp.error ?? 'Failed to attach signature');
-                              }
-                            }
+
                             final submitResp = await _backend.submitReport(reportId);
                             if (!submitResp.isSuccess) {
                               throw Exception(submitResp.error ?? 'Failed to submit report');

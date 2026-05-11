@@ -577,7 +577,7 @@ extension UserSerialization on User {
   }
 
   static User fromJson(Map<String, dynamic> json) {
-    List<String> _stringList(dynamic v) {
+    List<String> stringList(dynamic v) {
       if (v is List) {
         return v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
       }
@@ -607,7 +607,7 @@ extension UserSerialization on User {
       createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
       lastLoginAt: json['lastLoginAt'] != null ? DateTime.parse(json['lastLoginAt']) : null,
       isActive: parseBool(json['isActive'] ?? json['is_active'] ?? json['isactive'], fallback: true),
-      projectIds: _stringList(json['projectIds'] ?? json['project_ids']),
+      projectIds: stringList(json['projectIds'] ?? json['project_ids']),
       preferences: Map<String, dynamic>.from(json['preferences'] ?? {}),
       emailVerified: parseBool(json['emailVerified'] ?? json['email_verified'], fallback: false),
       emailVerifiedAt: json['emailVerifiedAt'] != null ? DateTime.parse(json['emailVerifiedAt']) : null,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/sprint_metrics.dart';
 import '../providers/service_providers.dart';
+import '../services/api_client.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/flownet_logo.dart';
 
@@ -43,6 +44,25 @@ class _SprintMetricsScreenState extends ConsumerState<SprintMetricsScreen> {
   final _uatNotesController = TextEditingController();
   
   bool _isSubmitting = false;
+  bool _hasExistingMetrics = false;
+
+  String _cleanIntInput(String v) => v.replaceAll(RegExp(r'[^0-9-]+'), '').trim();
+  String _cleanDoubleInput(String v) => v.replaceAll('%', '').replaceAll(RegExp(r'[^0-9\.-]+'), '').trim();
+
+  int _parseRequiredInt(String v) => int.parse(_cleanIntInput(v));
+  double _parseRequiredDouble(String v) => double.parse(_cleanDoubleInput(v));
+
+  String? _validateRequiredInt(String? value) {
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return 'Required';
+    return int.tryParse(_cleanIntInput(v)) == null ? 'Enter a valid number' : null;
+  }
+
+  String? _validateRequiredDouble(String? value) {
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return 'Required';
+    return double.tryParse(_cleanDoubleInput(v)) == null ? 'Enter a valid number' : null;
+  }
 
   @override
   void initState() {
@@ -63,6 +83,7 @@ class _SprintMetricsScreenState extends ConsumerState<SprintMetricsScreen> {
       if (metricsList.isNotEmpty) {
         final latest = metricsList.first;
         setState(() {
+          _hasExistingMetrics = true;
           _committedPointsController.text = latest.committedPoints.toString();
           _completedPointsController.text = latest.completedPoints.toString();
           _carriedOverController.text = latest.carriedOverPoints.toString();
@@ -88,6 +109,57 @@ class _SprintMetricsScreenState extends ConsumerState<SprintMetricsScreen> {
     }
   }
 
+  Future<bool> _verifySavedMetrics() async {
+    final backendApi = ref.read(backendApiServiceProvider);
+    final resp = await backendApi.getSprintMetrics(widget.sprintId);
+    if (!resp.isSuccess || resp.data == null) return false;
+
+    final raw = resp.data;
+    final dynamic extracted = raw is Map ? (raw['data'] ?? raw['metrics'] ?? raw['items'] ?? raw) : raw;
+    final List<dynamic> items = extracted is List
+        ? extracted
+        : (extracted is Map ? <dynamic>[extracted] : const <dynamic>[]);
+
+    for (final e in items) {
+      if (e is! Map) continue;
+      final m = Map<String, dynamic>.from(e);
+      final testPassRate = m['test_pass_rate'] ?? m['testPassRate'];
+      final defectsOpened = m['defects_opened'] ?? m['defectsOpened'];
+      final defectsClosed = m['defects_closed'] ?? m['defectsClosed'];
+      final codeReview = m['code_review_completion'] ?? m['codeReviewCompletion'];
+      final documentation = m['documentation_status'] ?? m['documentationStatus'];
+      if (testPassRate != null &&
+          defectsOpened != null &&
+          defectsClosed != null &&
+          codeReview != null &&
+          documentation != null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _verifySprintHasRequiredMetrics() async {
+    final backendApi = ref.read(backendApiServiceProvider);
+    final resp = await backendApi.getSprint(widget.sprintId);
+    if (!resp.isSuccess || resp.data == null) return false;
+    final raw = resp.data;
+    final Map<String, dynamic> sprintMap = raw is Map && raw['data'] is Map
+        ? Map<String, dynamic>.from(raw['data'] as Map)
+        : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
+
+    final testPassRate = sprintMap['test_pass_rate'] ?? sprintMap['testPassRate'];
+    final defectsOpened = sprintMap['defects_opened'] ?? sprintMap['defectsOpened'];
+    final defectsClosed = sprintMap['defects_closed'] ?? sprintMap['defectsClosed'];
+    final codeReview = sprintMap['code_review_completion'] ?? sprintMap['codeReviewCompletion'];
+    final documentation = sprintMap['documentation_status'] ?? sprintMap['documentationStatus'];
+    return testPassRate != null &&
+        defectsOpened != null &&
+        defectsClosed != null &&
+        codeReview != null &&
+        documentation != null;
+  }
+
   Future<void> _submitMetrics() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -96,38 +168,82 @@ class _SprintMetricsScreenState extends ConsumerState<SprintMetricsScreen> {
     });
 
     try {
-      // Create metrics object (would be saved to API)
-      final metrics = SprintMetrics(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        sprintId: widget.sprintId,
-        committedPoints: int.parse(_committedPointsController.text),
-        completedPoints: int.parse(_completedPointsController.text),
-        carriedOverPoints: int.parse(_carriedOverController.text),
-        testPassRate: double.parse(_testPassRateController.text),
-        defectsOpened: int.parse(_defectsOpenedController.text),
-        defectsClosed: int.parse(_defectsClosedController.text),
-        criticalDefects: int.parse(_criticalDefectsController.text),
-        highDefects: int.parse(_highDefectsController.text),
-        mediumDefects: int.parse(_mediumDefectsController.text),
-        lowDefects: int.parse(_lowDefectsController.text),
-        codeReviewCompletion: double.parse(_codeReviewCompletionController.text),
-        documentationStatus: double.parse(_documentationStatusController.text),
-        risks: _risksController.text.isNotEmpty ? _risksController.text : null,
-        mitigations: _mitigationsController.text.isNotEmpty ? _mitigationsController.text : null,
-        scopeChanges: _scopeChangesController.text.isNotEmpty ? _scopeChangesController.text : null,
-        pointsAddedDuringSprint: int.tryParse(_pointsAddedController.text) ?? 0,
-        pointsRemovedDuringSprint: int.tryParse(_pointsRemovedController.text) ?? 0,
-        blockers: _blockersController.text.isNotEmpty ? _blockersController.text : null,
-        decisions: _decisionsController.text.isNotEmpty ? _decisionsController.text : null,
-        uatNotes: _uatNotesController.text.isNotEmpty ? _uatNotesController.text : null,
-        recordedAt: DateTime.now(),
-        recordedBy: 'Current User', // This would come from auth
-      );
+      final payload = <String, dynamic>{
+        'sprint_id': widget.sprintId,
+        'committed_points': _parseRequiredInt(_committedPointsController.text),
+        'completed_points': _parseRequiredInt(_completedPointsController.text),
+        'carried_over_points': _parseRequiredInt(_carriedOverController.text),
+        'test_pass_rate': _parseRequiredDouble(_testPassRateController.text),
+        'defects_opened': _parseRequiredInt(_defectsOpenedController.text),
+        'defects_closed': _parseRequiredInt(_defectsClosedController.text),
+        'critical_defects': _parseRequiredInt(_criticalDefectsController.text),
+        'high_defects': _parseRequiredInt(_highDefectsController.text),
+        'medium_defects': _parseRequiredInt(_mediumDefectsController.text),
+        'low_defects': _parseRequiredInt(_lowDefectsController.text),
+        'code_review_completion': _parseRequiredDouble(_codeReviewCompletionController.text),
+        'documentation_status': _parseRequiredDouble(_documentationStatusController.text),
+        'risks': _risksController.text.isNotEmpty ? _risksController.text : null,
+        'mitigations': _mitigationsController.text.isNotEmpty ? _mitigationsController.text : null,
+        'scope_changes': _scopeChangesController.text.isNotEmpty ? _scopeChangesController.text : null,
+        'points_added': int.tryParse(_pointsAddedController.text) ?? 0,
+        'points_removed': int.tryParse(_pointsRemovedController.text) ?? 0,
+        'blockers': _blockersController.text.isNotEmpty ? _blockersController.text : null,
+        'decisions': _decisionsController.text.isNotEmpty ? _decisionsController.text : null,
+        'uat_notes': _uatNotesController.text.isNotEmpty ? _uatNotesController.text : null,
+      };
 
-final api = ref.read(backendApiServiceProvider);
-      final response = await api.createSprintMetrics(widget.sprintId, metrics.toJson());
+      final api = ref.read(backendApiServiceProvider);
+      ApiResponse response;
+      if (_hasExistingMetrics) {
+        response = await api.updateSprintMetrics(widget.sprintId, payload);
+        if (!response.isSuccess) {
+          response = await api.createSprintMetrics(widget.sprintId, payload);
+        }
+      } else {
+        response = await api.createSprintMetrics(widget.sprintId, payload);
+        if (!response.isSuccess) {
+          response = await api.updateSprintMetrics(widget.sprintId, payload);
+        }
+      }
       if (!response.isSuccess) {
         throw Exception(response.error ?? 'Failed to save sprint metrics');
+      }
+
+      var verified = await _verifySavedMetrics();
+      if (!verified) {
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        verified = await _verifySavedMetrics();
+      }
+      if (!verified) {
+        throw Exception('Sprint metrics save did not persist. Please try again.');
+      }
+
+      final sprintUpdates = <String, dynamic>{
+        'committed_points': payload['committed_points'],
+        'completed_points': payload['completed_points'],
+        'carried_over_points': payload['carried_over_points'],
+        'test_pass_rate': payload['test_pass_rate'],
+        'defects_opened': payload['defects_opened'],
+        'defects_closed': payload['defects_closed'],
+        'code_review_completion': payload['code_review_completion'],
+        'documentation_status': payload['documentation_status'],
+        'uat_notes': payload['uat_notes'],
+        'blockers': payload['blockers'],
+        'decisions': payload['decisions'],
+        'risks': payload['risks'],
+      };
+      final sprintUpdateResp = await api.updateSprint(widget.sprintId, sprintUpdates);
+      if (!sprintUpdateResp.isSuccess) {
+        throw Exception(sprintUpdateResp.error ?? 'Failed to update sprint with metrics');
+      }
+
+      var sprintVerified = await _verifySprintHasRequiredMetrics();
+      if (!sprintVerified) {
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        sprintVerified = await _verifySprintHasRequiredMetrics();
+      }
+      if (!sprintVerified) {
+        throw Exception('Sprint metrics were saved but the sprint record was not updated. Please try again.');
       }
       
       if (mounted) {
@@ -138,7 +254,10 @@ final api = ref.read(backendApiServiceProvider);
               backgroundColor: Colors.green,
             ),
           );
-          Navigator.pop(context);
+          setState(() {
+            _hasExistingMetrics = true;
+          });
+          Navigator.pop(context, true);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -208,7 +327,7 @@ final api = ref.read(backendApiServiceProvider);
                         prefixIcon: Icon(Icons.assignment),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredInt,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -221,7 +340,7 @@ final api = ref.read(backendApiServiceProvider);
                         prefixIcon: Icon(Icons.check_circle),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredInt,
                     ),
                   ),
                 ],
@@ -236,7 +355,7 @@ final api = ref.read(backendApiServiceProvider);
                   prefixIcon: Icon(Icons.forward),
                 ),
                 keyboardType: TextInputType.number,
-                validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                validator: _validateRequiredInt,
               ),
               const SizedBox(height: 24),
 
@@ -252,7 +371,7 @@ final api = ref.read(backendApiServiceProvider);
                   prefixIcon: Icon(Icons.science),
                 ),
                 keyboardType: TextInputType.number,
-                validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                validator: _validateRequiredDouble,
               ),
               const SizedBox(height: 16),
               
@@ -267,7 +386,7 @@ final api = ref.read(backendApiServiceProvider);
                         prefixIcon: Icon(Icons.bug_report),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredInt,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -280,7 +399,7 @@ final api = ref.read(backendApiServiceProvider);
                         prefixIcon: Icon(Icons.check),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredInt,
                     ),
                   ),
                 ],
@@ -307,7 +426,7 @@ final api = ref.read(backendApiServiceProvider);
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredInt,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -319,7 +438,7 @@ final api = ref.read(backendApiServiceProvider);
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredInt,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -331,7 +450,7 @@ final api = ref.read(backendApiServiceProvider);
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredInt,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -343,7 +462,7 @@ final api = ref.read(backendApiServiceProvider);
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredInt,
                     ),
                   ),
                 ],
@@ -365,7 +484,7 @@ final api = ref.read(backendApiServiceProvider);
                         prefixIcon: Icon(Icons.reviews),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredDouble,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -378,7 +497,7 @@ final api = ref.read(backendApiServiceProvider);
                         prefixIcon: Icon(Icons.description),
                       ),
                       keyboardType: TextInputType.number,
-                      validator: (value) => value?.isEmpty == true ? 'Required' : null,
+                      validator: _validateRequiredDouble,
                     ),
                   ),
                 ],

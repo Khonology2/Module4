@@ -19,6 +19,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import pool from './dbPool.js'; // your Postgres pool connection
+import PDFDocument from 'pdfkit';
 
 // OpenAI initialization
 let openai = null;
@@ -2565,7 +2566,13 @@ app.get('/api/v1/sprints', authenticateToken, async (req, res) => {
                       sm.blockers,
                       sm.decisions
                FROM sprints s 
-               LEFT JOIN sprint_metrics sm ON s.id = sm.sprint_id`;
+               LEFT JOIN LATERAL (
+                 SELECT *
+                 FROM sprint_metrics
+                 WHERE sprint_id = s.id
+                 ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST
+                 LIMIT 1
+               ) sm ON true`;
     const params = [];
     let where = [];
 
@@ -3205,6 +3212,28 @@ app.put('/api/v1/sprints/:sprintId/status', authenticateToken, requirePermission
       });
     }
 
+    // If attempting to complete the sprint, require metrics to exist (so sign-off report graphs are based on captured values)
+    const shouldEnforceMetrics = normalizedStatus === 'completed' || normalizedStatus === 'closed';
+    if (shouldEnforceMetrics) {
+      const m = await pool.query(
+        `SELECT id, recorded_by, updated_at FROM sprint_metrics WHERE sprint_id = $1 ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST LIMIT 1`,
+        [sprintId]
+      );
+      if (m.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Sprint metrics must be completed before marking the sprint as completed'
+        });
+      }
+      const recordedBy = String(m.rows[0]?.recorded_by || '').trim();
+      if (!recordedBy) {
+        return res.status(400).json({
+          success: false,
+          error: 'Sprint metrics must be completed before marking the sprint as completed'
+        });
+      }
+    }
+
     const result = await pool.query(`
       UPDATE sprints
       SET status = $1::text, updated_at = NOW()
@@ -3252,30 +3281,155 @@ app.put('/api/v1/sprints/:sprintId/status', authenticateToken, requirePermission
   }
 });
 
+// Sprint metrics endpoints (required for sprint sign-off report graphs)
+app.get('/api/v1/sprints/:sprintId/metrics', authenticateToken, async (req, res) => {
+  try {
+    const { sprintId } = req.params;
+    const result = await pool.query(
+      `SELECT * FROM sprint_metrics WHERE sprint_id = $1 ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST`,
+      [sprintId]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error fetching sprint metrics:', error);
+    if (error && error.code === '42P01') {
+      return res.json({ success: true, data: [] });
+    }
+    res.status(500).json({ success: false, error: 'Failed to fetch sprint metrics' });
+  }
+});
+
+async function upsertSprintMetricsV1(req, res) {
+  try {
+    const { sprintId } = req.params;
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+
+    const toInt = (v) => {
+      if (v == null || String(v).trim() === '') return null;
+      const n = parseInt(String(v), 10);
+      return Number.isFinite(n) ? n : null;
+    };
+    const toFloat = (v) => {
+      if (v == null || String(v).trim() === '') return null;
+      const n = parseFloat(String(v));
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const patch = {};
+    const plannedPoints = toInt(body.plannedPoints ?? body.planned_points);
+    const committedPoints = toInt(body.committedPoints ?? body.committed_points);
+    const completedPoints = toInt(body.completedPoints ?? body.completed_points);
+    const carriedOverPoints = toInt(body.carriedOverPoints ?? body.carried_over_points);
+    const testPassRate = toFloat(body.testPassRate ?? body.test_pass_rate);
+    const defectsOpened = toInt(body.defectsOpened ?? body.defects_opened);
+    const defectsClosed = toInt(body.defectsClosed ?? body.defects_closed);
+    const criticalDefects = toInt(body.criticalDefects ?? body.critical_defects);
+    const highDefects = toInt(body.highDefects ?? body.high_defects);
+    const mediumDefects = toInt(body.mediumDefects ?? body.medium_defects);
+    const lowDefects = toInt(body.lowDefects ?? body.low_defects);
+    const codeReviewCompletion = toFloat(body.codeReviewCompletion ?? body.code_review_completion);
+    const documentationStatus = toFloat(body.documentationStatus ?? body.documentation_status);
+    const uatPassRate = toFloat(body.uatPassRate ?? body.uat_pass_rate);
+    const risks = body.risks != null ? String(body.risks) : null;
+    const mitigations = body.mitigations != null ? String(body.mitigations) : null;
+    const scopeChanges = body.scopeChanges != null ? String(body.scopeChanges) : (body.scope_changes != null ? String(body.scope_changes) : null);
+    const uatNotes = body.uatNotes != null ? String(body.uatNotes) : (body.uat_notes != null ? String(body.uat_notes) : null);
+    const blockers = body.blockers != null ? String(body.blockers) : null;
+    const decisions = body.decisions != null ? String(body.decisions) : null;
+
+    if (plannedPoints != null) patch.planned_points = plannedPoints;
+    if (committedPoints != null) patch.committed_points = committedPoints;
+    if (completedPoints != null) patch.completed_points = completedPoints;
+    if (carriedOverPoints != null) patch.carried_over_points = carriedOverPoints;
+    if (testPassRate != null) patch.test_pass_rate = testPassRate;
+    if (defectsOpened != null) patch.defects_opened = defectsOpened;
+    if (defectsClosed != null) patch.defects_closed = defectsClosed;
+    if (criticalDefects != null) patch.critical_defects = criticalDefects;
+    if (highDefects != null) patch.high_defects = highDefects;
+    if (mediumDefects != null) patch.medium_defects = mediumDefects;
+    if (lowDefects != null) patch.low_defects = lowDefects;
+    if (codeReviewCompletion != null) patch.code_review_completion = codeReviewCompletion;
+    if (documentationStatus != null) patch.documentation_status = documentationStatus;
+    if (uatPassRate != null) patch.uat_pass_rate = uatPassRate;
+    if (risks != null) patch.risks = risks;
+    if (mitigations != null) patch.mitigations = mitigations;
+    if (scopeChanges != null) patch.scope_changes = scopeChanges;
+    if (uatNotes != null) patch.uat_notes = uatNotes;
+    if (blockers != null) patch.blockers = blockers;
+    if (decisions != null) patch.decisions = decisions;
+
+    const userId = req.user?.id ?? req.user?.sub ?? null;
+    patch.recorded_by = userId ? String(userId) : (req.user?.email ? String(req.user.email) : null);
+    patch.recorded_at = new Date();
+
+    const existing = await pool.query(
+      `SELECT id FROM sprint_metrics WHERE sprint_id = $1 ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST LIMIT 1`,
+      [sprintId]
+    );
+
+    if (existing.rows.length > 0) {
+      const id = existing.rows[0].id;
+      const keys = Object.keys(patch);
+      const sets = keys.map((k, i) => `${k} = $${i + 1}`);
+      const vals = keys.map((k) => patch[k]);
+      vals.push(id);
+      const upd = await pool.query(
+        `UPDATE sprint_metrics SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${vals.length} RETURNING *`,
+        vals
+      );
+      return res.json({ success: true, data: [upd.rows[0]] });
+    }
+
+    const keys = ['sprint_id', ...Object.keys(patch)];
+    const vals = [sprintId, ...Object.values(patch)];
+    const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
+    const ins = await pool.query(
+      `INSERT INTO sprint_metrics (${keys.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+      vals
+    );
+    return res.json({ success: true, data: [ins.rows[0]] });
+  } catch (error) {
+    console.error('Error saving sprint metrics:', error);
+    if (error && error.code === '42P01') {
+      return res.status(404).json({ success: false, error: 'Endpoint not found (sprint_metrics table missing)' });
+    }
+    res.status(500).json({ success: false, error: error.message || 'Failed to save sprint metrics' });
+  }
+}
+
+app.post('/api/v1/sprints/:sprintId/metrics', authenticateToken, upsertSprintMetricsV1);
+app.put('/api/v1/sprints/:sprintId/metrics', authenticateToken, upsertSprintMetricsV1);
+
 // Get single sprint details
 app.get('/api/v1/sprints/:sprintId', authenticateToken, async (req, res) => {
   try {
     const { sprintId } = req.params;
     const result = await pool.query(`
       SELECT s.*, 
-             sm.planned_points,
-             sm.committed_points,
-             sm.completed_points,
-             sm.carried_over_points,
-             sm.test_pass_rate,
-             sm.code_coverage,
-             sm.escaped_defects,
-             sm.defects_opened,
-             sm.defects_closed,
-             sm.code_review_completion,
-             sm.documentation_status,
-             sm.uat_notes,
-             sm.uat_pass_rate,
-             sm.risks,
-             sm.blockers,
-             sm.decisions
+             COALESCE(sm.planned_points, s.planned_points) as planned_points,
+             COALESCE(sm.committed_points, s.committed_points) as committed_points,
+             COALESCE(sm.completed_points, s.completed_points) as completed_points,
+             COALESCE(sm.carried_over_points, s.carried_over_points) as carried_over_points,
+             COALESCE(sm.test_pass_rate, s.test_pass_rate) as test_pass_rate,
+             COALESCE(sm.code_coverage, s.code_coverage) as code_coverage,
+             COALESCE(sm.escaped_defects, s.escaped_defects) as escaped_defects,
+             COALESCE(sm.defects_opened, s.defects_opened) as defects_opened,
+             COALESCE(sm.defects_closed, s.defects_closed) as defects_closed,
+             COALESCE(sm.code_review_completion, s.code_review_completion) as code_review_completion,
+             COALESCE(sm.documentation_status, s.documentation_status) as documentation_status,
+             COALESCE(sm.uat_notes, s.uat_notes) as uat_notes,
+             COALESCE(sm.uat_pass_rate, s.uat_pass_rate) as uat_pass_rate,
+             COALESCE(sm.risks, s.risks) as risks,
+             COALESCE(sm.blockers, s.blockers) as blockers,
+             COALESCE(sm.decisions, s.decisions) as decisions
       FROM sprints s 
-      LEFT JOIN sprint_metrics sm ON s.id = sm.sprint_id
+      LEFT JOIN LATERAL (
+        SELECT *
+        FROM sprint_metrics
+        WHERE sprint_id = s.id
+        ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST
+        LIMIT 1
+      ) sm ON true
       WHERE s.id = $1
     `, [sprintId]);
     
@@ -5403,6 +5557,41 @@ app.put('/api/v1/approvals/:id/approve', authenticateToken, async (req, res) => 
     const { id } = req.params;
     const userId = req.user.id;
     const review_reason = req.body?.review_reason || req.body?.comments || null;
+    if (typeof id === 'string' && id.startsWith('report:')) {
+      const reportId = id.substring('report:'.length).trim();
+      const uuidRe = /^[0-9a-fA-F-]{36}$/;
+      if (!uuidRe.test(reportId)) {
+        return res.status(400).json({ success: false, error: 'Invalid report id' });
+      }
+      const comment = (typeof review_reason === 'string' ? review_reason.trim() : '') || null;
+      const updated = await pool.query(
+        `UPDATE sign_off_reports
+         SET status = 'approved', updated_at = NOW()
+         WHERE id = $1::uuid
+         RETURNING *`,
+        [reportId],
+      );
+      if (updated.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Report not found' });
+      }
+      try {
+        await pool.query(
+          `INSERT INTO client_reviews (report_id, reviewer_id, status, feedback, approved_at, created_at)
+           VALUES ($1::uuid, $2::uuid, 'approved', $3, NOW(), NOW())`,
+          [reportId, userId, comment],
+        );
+      } catch (e) {
+        console.warn('⚠️ client_reviews insert (approve) non-fatal:', e?.message || e);
+      }
+      const deliverableId = updated.rows[0].deliverable_id;
+      if (deliverableId) {
+        try {
+          await pool.query(`UPDATE deliverables SET status = 'approved', updated_at = NOW() WHERE id = $1::uuid`, [deliverableId]);
+        } catch (_) {}
+      }
+      io.emit('report_approved', { reportId });
+      return res.json({ success: true, data: { id, status: 'approved' } });
+    }
     const result = await pool.query(
       `UPDATE approval_requests SET status = 'approved', review_reason = $1, reviewed_by = $2, reviewed_at = NOW(), updated_at = NOW()
        WHERE id = $3 RETURNING *`,
@@ -5423,6 +5612,41 @@ app.put('/api/v1/approvals/:id/reject', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
     const review_reason = req.body?.review_reason || req.body?.comments || null;
+    if (typeof id === 'string' && id.startsWith('report:')) {
+      const reportId = id.substring('report:'.length).trim();
+      const uuidRe = /^[0-9a-fA-F-]{36}$/;
+      if (!uuidRe.test(reportId)) {
+        return res.status(400).json({ success: false, error: 'Invalid report id' });
+      }
+      const details = (typeof review_reason === 'string' ? review_reason.trim() : '') || 'Changes requested';
+      const updated = await pool.query(
+        `UPDATE sign_off_reports
+         SET status = 'change_requested', updated_at = NOW()
+         WHERE id = $1::uuid
+         RETURNING *`,
+        [reportId],
+      );
+      if (updated.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Report not found' });
+      }
+      try {
+        await pool.query(
+          `INSERT INTO client_reviews (report_id, reviewer_id, status, feedback, created_at)
+           VALUES ($1::uuid, $2::uuid, 'change_requested', $3, NOW())`,
+          [reportId, userId, details],
+        );
+      } catch (e) {
+        console.warn('⚠️ client_reviews insert (reject) non-fatal:', e?.message || e);
+      }
+      const deliverableId = updated.rows[0].deliverable_id;
+      if (deliverableId) {
+        try {
+          await pool.query(`UPDATE deliverables SET status = 'change_requested', updated_at = NOW() WHERE id = $1::uuid`, [deliverableId]);
+        } catch (_) {}
+      }
+      io.emit('report_change_requested', { reportId });
+      return res.json({ success: true, data: { id, status: 'rejected' } });
+    }
     const result = await pool.query(
       `UPDATE approval_requests SET status = 'rejected', review_reason = $1, reviewed_by = $2, reviewed_at = NOW(), updated_at = NOW()
        WHERE id = $3 RETURNING *`,
@@ -5457,6 +5681,7 @@ app.get('/api/v1/sign-off-reports', authenticateToken, async (req, res) => {
     const { status, search, deliverableId, projectId, sprintId, from, to } = req.query;
     const userId = req.user.id;
     const userRole = req.user.role;
+    const roleNorm = String(userRole || '').toLowerCase();
 
     let query = `
       SELECT 
@@ -5495,11 +5720,18 @@ app.get('/api/v1/sign-off-reports', authenticateToken, async (req, res) => {
     let paramCount = 0;
 
     // Role-based filtering
-    if (userRole === 'teamMember') {
+    if (roleNorm === 'teammember') {
       query += ` AND (r.created_by = $${++paramCount}::uuid OR d.assigned_to = $${paramCount}::uuid)`;
       params.push(userId);
-    } else if (userRole === 'clientReviewer') {
-      // Client reviewers can see all reports
+    } else if (roleNorm === 'deliverylead') {
+      query += ` AND r.created_by = $${++paramCount}::uuid`;
+      params.push(userId);
+    } else if (roleNorm === 'clientreviewer' || roleNorm === 'client') {
+      query += ` AND r.status <> 'draft'`;
+    } else if (roleNorm === 'systemadmin' || roleNorm === 'admin') {
+      // System admins can see all reports (read-only enforced on write endpoints)
+    } else {
+      query += ` AND 1=0`;
     }
 
     if (status) {
@@ -5588,6 +5820,7 @@ app.get('/api/v1/sign-off-reports/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
+    const roleNorm = String(req.user?.role || '').toLowerCase();
 
     // Log view action in audit
     await pool.query(`
@@ -5613,6 +5846,23 @@ app.get('/api/v1/sign-off-reports/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Report not found' });
     }
 
+    const reportRow = result.rows[0];
+    const isOwner = reportRow.created_by && String(reportRow.created_by) === String(userId);
+    const isAdmin = roleNorm === 'systemadmin' || roleNorm === 'admin';
+    const isDeliveryLead = roleNorm === 'deliverylead';
+    const isClientRole = roleNorm === 'clientreviewer' || roleNorm === 'client';
+    const statusNorm = String(reportRow.status || 'draft').toLowerCase();
+
+    if (!isAdmin) {
+      if (isDeliveryLead) {
+        if (!isOwner) return res.status(403).json({ success: false, error: 'Forbidden' });
+      } else if (isClientRole) {
+        if (statusNorm === 'draft') return res.status(403).json({ success: false, error: 'Forbidden' });
+      } else {
+        return res.status(403).json({ success: false, error: 'Forbidden' });
+      }
+    }
+
     // Get reviews
     const reviewsResult = await pool.query(`
       SELECT cr.*, u.name as reviewer_name
@@ -5622,7 +5872,7 @@ app.get('/api/v1/sign-off-reports/:id', authenticateToken, async (req, res) => {
       ORDER BY cr.created_at DESC
     `, [id]);
 
-    const report = result.rows[0];
+    const report = reportRow;
     report.reviews = reviewsResult.rows;
 
     res.json({ success: true, data: report });
@@ -5635,6 +5885,10 @@ app.get('/api/v1/sign-off-reports/:id', authenticateToken, async (req, res) => {
 // Create sign-off report
 app.post('/api/v1/sign-off-reports', authenticateToken, async (req, res) => {
   try {
+    const roleNorm = String(req.user?.role || '').toLowerCase();
+    if (roleNorm !== 'deliverylead') {
+      return res.status(403).json({ success: false, error: 'Only delivery leads can create sign-off reports' });
+    }
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const deliverableId = body.deliverableId ?? body.deliverable_id ?? null;
     const reportTitle = body.reportTitle ?? body.report_title ?? null;
@@ -5691,9 +5945,325 @@ app.post('/api/v1/sign-off-reports', authenticateToken, async (req, res) => {
   }
 });
 
+// Create a sprint-based sign-off report (draft) populated with sprint, project, deliverables, team and metrics
+app.post('/api/v1/sign-off-reports/from-sprint/:sprintId', authenticateToken, async (req, res) => {
+  try {
+    const { sprintId } = req.params;
+    const note = req.body?.note != null ? String(req.body.note) : null;
+    const userId = req.user?.id ?? req.user?.sub ?? null;
+    const roleNorm = String(req.user?.role || '').toLowerCase();
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required (missing user id in token)' });
+    }
+    if (roleNorm !== 'deliverylead') {
+      return res.status(403).json({ success: false, error: 'Only delivery leads can prepare sprint sign-off reports' });
+    }
+
+    const sprintResult = await pool.query(
+      `SELECT s.*, p.id as project_id, p.name as project_name
+       FROM sprints s
+       LEFT JOIN projects p ON s.project_id = p.id
+       WHERE s.id = $1`,
+      [sprintId]
+    );
+    if (sprintResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Sprint not found' });
+    }
+    const sprint = sprintResult.rows[0];
+    const sprintStatusNorm = String(sprint.status || '').toLowerCase().replace(/[\s_-]+/g, '');
+    const sprintCompleted = sprintStatusNorm == 'completed' || sprintStatusNorm == 'done' || sprintStatusNorm == 'closed';
+    if (!sprintCompleted) {
+      return res.status(400).json({ success: false, error: 'Sprint must be completed before creating a sprint sign-off report' });
+    }
+    const projectId = sprint.project_id;
+
+    const memberRows = await pool.query(
+      `SELECT 
+         u.id,
+         u.email,
+         COALESCE(
+           u.name,
+           NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '')
+         ) as name,
+         pm.role as project_role
+       FROM project_members pm
+       JOIN users u ON pm.user_id = u.id
+       WHERE pm.project_id = $1
+       ORDER BY pm.joined_at ASC`,
+      [projectId]
+    );
+
+    let deliverables = [];
+    try {
+      const deliverableRows = await pool.query(
+        `SELECT 
+           d.id,
+           d.title,
+           d.status,
+           d.description,
+           d.assigned_to,
+           d.created_by,
+           d.due_date,
+           d.created_at,
+           d.updated_at,
+           COALESCE(
+             u.name,
+             NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '')
+           ) as assigned_to_name,
+           u.email as assigned_to_email
+         FROM sprint_deliverables sd
+         JOIN deliverables d ON sd.deliverable_id = d.id
+         LEFT JOIN users u ON d.assigned_to = u.id
+         WHERE sd.sprint_id = $1
+         ORDER BY d.created_at ASC`,
+        [sprintId]
+      );
+      deliverables = deliverableRows.rows;
+    } catch (e) {
+      deliverables = [];
+    }
+
+    const deliverablesByUser = new Map();
+    for (const d of deliverables) {
+      const assignee = d.assigned_to ? String(d.assigned_to) : null;
+      if (!assignee) continue;
+      const list = deliverablesByUser.get(assignee) || [];
+      list.push(d);
+      deliverablesByUser.set(assignee, list);
+    }
+
+    const members = memberRows.rows.map((m) => {
+      const userDeliverables = deliverablesByUser.get(String(m.id)) || [];
+      const work = userDeliverables.length === 0
+        ? 'No sprint deliverables assigned'
+        : userDeliverables.map((d) => `${d.title} (${d.status || 'unknown'})`).join(', ');
+      return {
+        id: String(m.id),
+        name: m.name || m.email || 'Unknown',
+        email: m.email || '',
+        role: m.project_role || '',
+        work,
+      };
+    });
+
+    const statusNorm = (v) => String(v || '').toLowerCase().trim();
+    let completed = 0;
+    let inProgress = 0;
+    let notStarted = 0;
+    let blocked = 0;
+    for (const d of deliverables) {
+      const s = statusNorm(d.status);
+      if (s.includes('block')) blocked += 1;
+      if (s.includes('not') && s.includes('start')) notStarted += 1;
+      if (s.includes('progress')) inProgress += 1;
+      if (s.includes('done') || s.includes('complete') || s.includes('approved') || s.includes('signed')) completed += 1;
+    }
+    const total = deliverables.length;
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    let metrics = null;
+    try {
+      const m = await pool.query(
+        `SELECT *
+         FROM sprint_metrics
+         WHERE sprint_id = $1
+         ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST
+         LIMIT 1`,
+        [sprintId]
+      );
+      metrics = m.rows.length > 0 ? m.rows[0] : null;
+    } catch (_) {
+      metrics = null;
+    }
+    const isPresent = (v) => v !== null && v !== undefined && String(v).trim() !== '';
+    const sprintHasRequiredMetrics =
+      isPresent(sprint.test_pass_rate) &&
+      isPresent(sprint.defects_opened) &&
+      isPresent(sprint.defects_closed) &&
+      isPresent(sprint.code_review_completion) &&
+      isPresent(sprint.documentation_status);
+
+    if (!metrics && sprintHasRequiredMetrics) {
+      metrics = {
+        planned_points: sprint.planned_points ?? null,
+        committed_points: sprint.committed_points ?? null,
+        completed_points: sprint.completed_points ?? null,
+        carried_over_points: sprint.carried_over_points ?? null,
+        points_added_during_sprint: sprint.added_during_sprint ?? sprint.points_added_during_sprint ?? null,
+        points_removed_during_sprint: sprint.removed_during_sprint ?? sprint.points_removed_during_sprint ?? null,
+        test_pass_rate: sprint.test_pass_rate ?? null,
+        defects_opened: sprint.defects_opened ?? null,
+        defects_closed: sprint.defects_closed ?? null,
+        code_review_completion: sprint.code_review_completion ?? null,
+        documentation_status: sprint.documentation_status ?? null,
+        uat_notes: sprint.uat_notes ?? null,
+        uat_pass_rate: sprint.uat_pass_rate ?? null,
+        risks: sprint.risks ?? null,
+        blockers: sprint.blockers ?? null,
+        decisions: sprint.decisions ?? null,
+      };
+      try {
+        const cols = [
+          'sprint_id',
+          'planned_points',
+          'committed_points',
+          'completed_points',
+          'carried_over_points',
+          'points_added_during_sprint',
+          'points_removed_during_sprint',
+          'test_pass_rate',
+          'defects_opened',
+          'defects_closed',
+          'code_review_completion',
+          'documentation_status',
+          'uat_notes',
+          'uat_pass_rate',
+          'risks',
+          'blockers',
+          'decisions',
+          'recorded_by',
+          'recorded_at',
+          'updated_at',
+        ];
+        const vals = [
+          sprintId,
+          metrics.planned_points,
+          metrics.committed_points,
+          metrics.completed_points,
+          metrics.carried_over_points,
+          metrics.points_added_during_sprint,
+          metrics.points_removed_during_sprint,
+          metrics.test_pass_rate,
+          metrics.defects_opened,
+          metrics.defects_closed,
+          metrics.code_review_completion,
+          metrics.documentation_status,
+          metrics.uat_notes,
+          metrics.uat_pass_rate,
+          metrics.risks,
+          metrics.blockers,
+          metrics.decisions,
+          userId ? String(userId) : null,
+          new Date(),
+          new Date(),
+        ];
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+        await pool.query(`INSERT INTO sprint_metrics (${cols.join(', ')}) VALUES (${placeholders})`, vals);
+      } catch (_) {}
+    }
+
+    if (!metrics) {
+      return res.status(400).json({ success: false, error: 'Sprint metrics must be completed before creating a sprint sign-off report' });
+    }
+
+    const sprintPerformanceData = JSON.stringify([{
+      id: String(sprint.id),
+      name: sprint.name || `Sprint ${sprintId}`,
+      status: sprint.status || null,
+      start_date: sprint.start_date ? new Date(sprint.start_date).toISOString() : null,
+      end_date: sprint.end_date ? new Date(sprint.end_date).toISOString() : null,
+      planned_points: metrics?.planned_points ?? 0,
+      committed_points: metrics?.committed_points ?? 0,
+      completed_points: metrics?.completed_points ?? 0,
+      carried_over_points: metrics?.carried_over_points ?? 0,
+      points_added: metrics?.points_added_during_sprint ?? 0,
+      points_removed: metrics?.points_removed_during_sprint ?? 0,
+      test_pass_rate: metrics?.test_pass_rate ?? 0,
+      defects_opened: metrics?.defects_opened ?? 0,
+      defects_closed: metrics?.defects_closed ?? 0,
+      code_review_completion: metrics?.code_review_completion ?? 0,
+      documentation_status: metrics?.documentation_status ?? null,
+    }]);
+
+    const sprintReportData = {
+      project: {
+        id: projectId ? String(projectId) : null,
+        name: sprint.project_name || '-',
+        key: '-',
+      },
+      sprint: {
+        id: String(sprint.id),
+        name: sprint.name || `Sprint ${sprintId}`,
+        status: sprint.status || null,
+        startDate: sprint.start_date ? new Date(sprint.start_date).toISOString() : null,
+        endDate: sprint.end_date ? new Date(sprint.end_date).toISOString() : null,
+      },
+      summary: {
+        totalDeliverables: total,
+        completedDeliverables: completed,
+        inProgressDeliverables: inProgress,
+        notStartedDeliverables: notStarted,
+        blockedDeliverables: blocked,
+        sprintProgressPercent: completionRate,
+        completionRatePercent: completionRate,
+        health: completionRate >= 80 ? 'good' : (completionRate >= 50 ? 'average' : 'poor'),
+      },
+      team: { members },
+      deliverables: deliverables.map((d) => ({
+        id: String(d.id),
+        name: d.title,
+        title: d.title,
+        status: d.status,
+        ownerName: d.assigned_to_name || '-',
+        ownerEmail: d.assigned_to_email || '-',
+        dueDate: d.due_date ? new Date(d.due_date).toISOString() : null,
+      })),
+    };
+
+    const lines = [];
+    lines.push('SPRINT SIGN-OFF REPORT');
+    lines.push('');
+    lines.push('PROJECT DETAIL:');
+    lines.push(`Name: ${sprint.project_name || '-'}`);
+    lines.push('');
+    lines.push('SPRINT DETAIL:');
+    lines.push(`Name: ${sprint.name || '-'}`);
+    lines.push(`Status: ${sprint.status || '-'}`);
+    lines.push(`Start: ${sprint.start_date ? new Date(sprint.start_date).toISOString().slice(0, 10) : '-'}`);
+    lines.push(`End: ${sprint.end_date ? new Date(sprint.end_date).toISOString().slice(0, 10) : '-'}`);
+    lines.push('');
+    lines.push('TEAM MEMBERS:');
+    if (members.length === 0) {
+      lines.push('None');
+    } else {
+      for (const m of members) {
+        lines.push(`- ${m.name}${m.role ? ' (' + m.role + ')' : ''}: ${m.work}`);
+      }
+    }
+    lines.push('');
+    lines.push('SIGN-OFF NOTES:');
+    lines.push(note && note.trim() ? note.trim() : '-');
+
+    const content = {
+      reportTitle: `Sprint Report: ${sprint.name || 'Sprint ' + sprintId}`,
+      reportContent: lines.join('\n'),
+      sprintIds: [String(sprintId)],
+      sprintPerformanceData,
+      sprintReportData,
+      preparedBy: String(userId),
+    };
+
+    const created = await pool.query(
+      `INSERT INTO sign_off_reports (deliverable_id, created_by, status, content, created_at, updated_at)
+       VALUES (NULL, $1::uuid, 'draft', $2::jsonb, NOW(), NOW())
+       RETURNING *`,
+      [String(userId), JSON.stringify(content)]
+    );
+
+    return res.status(201).json({ success: true, data: created.rows[0] });
+  } catch (error) {
+    console.error('Error creating sprint sign-off report:', error);
+    return res.status(500).json({ success: false, error: 'Failed to create sprint sign-off report' });
+  }
+});
+
 // Create client review link (token for no-login client access) - must be before /:id routes
 app.post('/api/v1/sign-off-reports/client-review-links', authenticateToken, async (req, res) => {
   try {
+    const roleNorm = String(req.user?.role || '').toLowerCase();
+    if (roleNorm !== 'deliverylead') {
+      return res.status(403).json({ success: false, error: 'Only delivery leads can create client review links' });
+    }
     const { reportId, clientEmail, expiresInSeconds } = req.body;
     if (!reportId) {
       return res.status(400).json({ success: false, error: 'reportId is required' });
@@ -5706,11 +6276,19 @@ app.post('/api/v1/sign-off-reports/client-review-links', authenticateToken, asyn
     const tokenPayload = { reportId, clientEmail, type: 'client_review' };
     const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn });
     const result = await pool.query(
-      `SELECT id, status FROM sign_off_reports WHERE id = $1::uuid`,
+      `SELECT id, status, created_by FROM sign_off_reports WHERE id = $1::uuid`,
       [reportId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+    const row = result.rows[0];
+    if (String(row.created_by || '') !== String(req.user.id || '')) {
+      return res.status(403).json({ success: false, error: 'Only the originating delivery lead can create the client review link' });
+    }
+    const st = String(row.status || 'draft').toLowerCase();
+    if (st === 'draft') {
+      return res.status(400).json({ success: false, error: 'Submit the report before creating a client review link' });
     }
     res.status(201).json({
       success: true,
@@ -5766,6 +6344,27 @@ app.get('/api/v1/sign-off-reports/client-review/:token', async (req, res) => {
     const statusMap = { change_requested: 'changeRequested', pending_review: 'underReview' };
     const rawStatus = (row.status || 'draft').toLowerCase();
     const status = statusMap[rawStatus] || rawStatus;
+    if (rawStatus === 'draft') {
+      return res.status(403).json({ success: false, error: 'Report not available for client review' });
+    }
+    let deliveryLeadSignature = null;
+    try {
+      const sig = await pool.query(
+        `SELECT ds.signature_data, ds.signed_at,
+                COALESCE(
+                  u.name,
+                  NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '')
+                ) as signer_name,
+                u.email as signer_email
+         FROM digital_signatures ds
+         LEFT JOIN users u ON ds.signer_id = u.id
+         WHERE ds.report_id = $1::uuid AND ds.signer_role = 'deliveryLead' AND ds.is_valid = true
+         ORDER BY ds.signed_at DESC
+         LIMIT 1`,
+        [reportId]
+      );
+      if (sig.rows.length > 0) deliveryLeadSignature = sig.rows[0];
+    } catch (_) {}
     const report = {
       id: row.id,
       deliverableId: (row.deliverable_id || '').toString(),
@@ -5775,9 +6374,11 @@ app.get('/api/v1/sign-off-reports/client-review/:token', async (req, res) => {
       status,
       createdAt: row.created_at,
       createdBy: (row.created_by || '').toString(),
+      submittedAt: row.submitted_at || c.submittedAt || c.submitted_at,
       approvedAt: row.approved_at || c.approvedAt || c.approved_at,
       changeRequestDetails: c.changeRequestDetails || c.change_request_details,
       sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+      deliveryLeadSignature: deliveryLeadSignature,
     };
     let deliverable = null;
     if (row.deliverable_id) {
@@ -5824,6 +6425,10 @@ app.put('/api/v1/sign-off-reports/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { reportTitle, reportContent, sprintPerformanceData, knownLimitations, nextSteps, sprintIds } = req.body;
     const userId = req.user.id;
+    const roleNorm = String(req.user?.role || '').toLowerCase();
+    if (roleNorm !== 'deliverylead') {
+      return res.status(403).json({ success: false, error: 'Only delivery leads can update sign-off reports' });
+    }
 
     // Get existing report
     const existingResult = await pool.query(`
@@ -5835,6 +6440,13 @@ app.put('/api/v1/sign-off-reports/:id', authenticateToken, async (req, res) => {
     }
 
     const existing = existingResult.rows[0];
+    const statusNorm = String(existing.status || 'draft').toLowerCase();
+    if (String(existing.created_by || '') !== String(userId || '')) {
+      return res.status(403).json({ success: false, error: 'Only the originating delivery lead can update this report' });
+    }
+    if (statusNorm !== 'draft' && statusNorm !== 'change_requested') {
+      return res.status(403).json({ success: false, error: 'This report can no longer be edited' });
+    }
     const existingContent = existing.content || {};
     
     const updatedContent = {
@@ -5872,6 +6484,10 @@ app.post('/api/v1/sign-off-reports/:id/submit', authenticateToken, async (req, r
   try {
     const { id } = req.params;
     const userId = req.user.id;
+    const roleNorm = String(req.user?.role || '').toLowerCase();
+    if (roleNorm !== 'deliverylead') {
+      return res.status(403).json({ success: false, error: 'Only delivery leads can submit sign-off reports' });
+    }
 
     // Check if delivery lead signature exists in digital_signatures table
     const signatureCheck = await pool.query(`
@@ -5887,6 +6503,19 @@ app.post('/api/v1/sign-off-reports/:id/submit', authenticateToken, async (req, r
         success: false, 
         error: 'Digital signature required. Please sign the report before submitting.' 
       });
+    }
+
+    const pre = await pool.query(`SELECT id, status, content, created_by FROM sign_off_reports WHERE id = $1::uuid`, [id]);
+    if (pre.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+    const preRow = pre.rows[0];
+    if (String(preRow.created_by || '') !== String(userId || '')) {
+      return res.status(403).json({ success: false, error: 'Only the originating delivery lead can submit this report' });
+    }
+    const preStatus = String(preRow.status || 'draft').toLowerCase();
+    if (preStatus !== 'draft' && preStatus !== 'change_requested') {
+      return res.status(400).json({ success: false, error: 'Only draft or change-requested reports can be submitted' });
     }
 
     const result = await pool.query(`
@@ -5908,32 +6537,6 @@ app.post('/api/v1/sign-off-reports/:id/submit', authenticateToken, async (req, r
       VALUES ($1, 'submit_report', 'sign_off_report', $2, $3::jsonb, NOW())
     `, [userId, id, JSON.stringify({ signatureVerified: true })]);
 
-    // Create notification for client reviewers
-    const clientReviewers = await pool.query(`
-      SELECT id FROM users WHERE role = 'clientReviewer' AND is_active = true
-    `);
-    
-    const reportData = result.rows[0];
-    const submitter = await pool.query(`SELECT name, email FROM users WHERE id = $1`, [userId]);
-    const submitterName = submitter.rows[0]?.name || submitter.rows[0]?.email || 'A user';
-    
-    for (const reviewer of clientReviewers.rows) {
-      const notificationId = uuidv4();
-      await pool.query(`
-        INSERT INTO notifications (
-          id, title, message, type, user_id, action_url, is_read, created_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
-      `, [
-        notificationId,
-        '📋 New Report Submitted for Review',
-        `${submitterName} has submitted "${reportData.report_title}" for your review. Please review and approve or request changes.`,
-        'report_submission',
-        reviewer.id,
-        `/report-repository`
-      ]);
-    }
-
     res.json({ success: true, data: result.rows[0] });
   } catch (error) {
     console.error('Error submitting sign-off report:', error);
@@ -5951,19 +6554,29 @@ app.post('/api/v1/sign-off-reports/:id/approve', authenticateOrReviewToken, asyn
     const userRole = req.user?.role;
     const clientEmail = isTokenAccess ? (req.reviewTokenPayload.clientEmail || 'client@link') : null;
 
-    if (!isTokenAccess) {
-    if (userRole !== 'clientReviewer') {
-      return res.status(403).json({ success: false, error: 'Only client reviewers can approve reports' });
-    }
-    if (!digitalSignature) {
-      return res.status(400).json({ 
-        success: false, 
-          error: 'Digital signature required. Please sign the report before approving.',
+    if (!digitalSignature || String(digitalSignature).trim().isEmpty) {
+      return res.status(400).json({
+        success: false,
+        error: 'Digital signature required. Please sign the report before approving.',
       });
+    }
+    if (!isTokenAccess) {
+      const roleNorm = String(userRole || '').toLowerCase();
+      if (roleNorm !== 'clientreviewer' && roleNorm !== 'client') {
+        return res.status(403).json({ success: false, error: 'Only clients can approve reports' });
       }
     }
     if (isTokenAccess && req.reviewTokenPayload.reportId !== id) {
       return res.status(403).json({ success: false, error: 'Token does not match this report' });
+    }
+
+    const reportCheck = await pool.query(`SELECT id, status FROM sign_off_reports WHERE id = $1::uuid`, [id]);
+    if (reportCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+    const st = String(reportCheck.rows[0].status || 'draft').toLowerCase();
+    if (st !== 'submitted') {
+      return res.status(400).json({ success: false, error: 'Only submitted reports can be approved' });
     }
 
     // Update report status
@@ -6007,8 +6620,8 @@ app.post('/api/v1/sign-off-reports/:id/approve', authenticateOrReviewToken, asyn
       WHERE id = $2::uuid
     `, [JSON.stringify(updatedContent), id]);
     
-    if (digitalSignature && userId) {
-    const signatureHash = crypto.createHash('sha256').update(digitalSignature).digest('hex');
+    if (userId) {
+      const signatureHash = crypto.createHash('sha256').update(digitalSignature).digest('hex');
       try {
     await pool.query(`
       INSERT INTO digital_signatures (
@@ -6074,26 +6687,36 @@ app.post('/api/v1/sign-off-reports/:id/approve', authenticateOrReviewToken, asyn
 app.post('/api/v1/sign-off-reports/:id/request-changes', authenticateOrReviewToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { changeRequestDetails } = req.body;
+    const { changeRequestDetails, digitalSignature } = req.body;
     const isTokenAccess = !!req.reviewTokenPayload;
     const userId = isTokenAccess ? null : req.user?.id;
     const userRole = req.user?.role;
     const clientEmail = isTokenAccess ? (req.reviewTokenPayload.clientEmail || 'client@link') : null;
 
-    if (!isTokenAccess && userRole !== 'clientReviewer') {
-      return res.status(403).json({ success: false, error: 'Only client reviewers can request changes' });
+    if (!digitalSignature || String(digitalSignature).trim().isEmpty) {
+      return res.status(400).json({
+        success: false,
+        error: 'Digital signature required. Please sign the report before requesting changes.',
+      });
+    }
+    if (!isTokenAccess) {
+      const roleNorm = String(userRole || '').toLowerCase();
+      if (roleNorm !== 'clientreviewer' && roleNorm !== 'client') {
+        return res.status(403).json({ success: false, error: 'Only clients can request changes' });
+      }
     }
     if (isTokenAccess && req.reviewTokenPayload.reportId !== id) {
       return res.status(403).json({ success: false, error: 'Token does not match this report' });
     }
 
     const details = typeof changeRequestDetails === 'string' ? changeRequestDetails.trim() : (changeRequestDetails || '');
-    if (!details) {
-      return res.status(400).json({
-        success: false,
-        error: 'Comment is required',
-        message: 'Change request details are mandatory. Please provide a comment explaining the requested changes.',
-      });
+    const reportCheck = await pool.query(`SELECT id, status FROM sign_off_reports WHERE id = $1::uuid`, [id]);
+    if (reportCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+    const st = String(reportCheck.rows[0].status || 'draft').toLowerCase();
+    if (st !== 'submitted') {
+      return res.status(400).json({ success: false, error: 'Only submitted reports can be reviewed' });
     }
 
     const result = await pool.query(`
@@ -6112,10 +6735,45 @@ app.post('/api/v1/sign-off-reports/:id/request-changes', authenticateOrReviewTok
       await pool.query(`UPDATE deliverables SET status = 'change_requested', updated_at = NOW() WHERE id = $1::uuid`, [deliverableId]);
     }
 
-    await pool.query(`
-      INSERT INTO client_reviews (report_id, reviewer_id, status, feedback, created_at)
-      VALUES ($1::uuid, $2::uuid, 'change_requested', $3, NOW())
-    `, [id, userId, details]);
+    await pool.query(
+      `INSERT INTO client_reviews (report_id, reviewer_id, status, feedback, created_at)
+       VALUES ($1::uuid, $2::uuid, 'change_requested', $3, NOW())`,
+      [id, userId, details || (isTokenAccess ? clientEmail : null)]
+    );
+
+    const currentContent = result.rows[0].content || {};
+    const updatedContent = {
+      ...(typeof currentContent === 'object' && currentContent !== null ? currentContent : {}),
+      changeRequestDetails: details || null,
+      clientSignature: digitalSignature,
+      clientSignatureDate: new Date().toISOString(),
+      clientSignerId: userId || clientEmail,
+    };
+    await pool.query(`UPDATE sign_off_reports SET content = $1::jsonb WHERE id = $2::uuid`, [
+      JSON.stringify(updatedContent),
+      id,
+    ]);
+
+    if (userId) {
+      const signatureHash = crypto.createHash('sha256').update(digitalSignature).digest('hex');
+      try {
+        await pool.query(
+          `INSERT INTO digital_signatures (
+             report_id, signer_id, signer_role, signature_type,
+             signature_data, signature_hash, signed_at, created_at
+           )
+           VALUES ($1::uuid, $2::uuid, $3, 'manual', $4, $5, NOW(), NOW())
+           ON CONFLICT (report_id, signer_id, signer_role)
+           DO UPDATE SET
+             signature_data = EXCLUDED.signature_data,
+             signature_hash = EXCLUDED.signature_hash,
+             signed_at = NOW()`,
+          [id, userId, userRole, digitalSignature, signatureHash]
+        );
+      } catch (sigErr) {
+        if (sigErr.code !== '42P01') console.error('Digital signature insert:', sigErr);
+      }
+    }
 
     try {
     await pool.query(`
@@ -6159,6 +6817,138 @@ app.post('/api/v1/sign-off-reports/:id/request-changes', authenticateOrReviewTok
   }
 });
 
+app.post('/api/v1/sign-off-reports/:id/reject', authenticateOrReviewToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { comment, digitalSignature } = req.body;
+    const isTokenAccess = !!req.reviewTokenPayload;
+    const userId = isTokenAccess ? null : req.user?.id;
+    const userRole = req.user?.role;
+    const clientEmail = isTokenAccess ? (req.reviewTokenPayload.clientEmail || 'client@link') : null;
+
+    if (!digitalSignature || String(digitalSignature).trim().isEmpty) {
+      return res.status(400).json({
+        success: false,
+        error: 'Digital signature required. Please sign the report before rejecting.',
+      });
+    }
+    if (!isTokenAccess) {
+      const roleNorm = String(userRole || '').toLowerCase();
+      if (roleNorm !== 'clientreviewer' && roleNorm !== 'client') {
+        return res.status(403).json({ success: false, error: 'Only clients can reject reports' });
+      }
+    }
+    if (isTokenAccess && req.reviewTokenPayload.reportId !== id) {
+      return res.status(403).json({ success: false, error: 'Token does not match this report' });
+    }
+
+    const reportCheck = await pool.query(`SELECT id, status FROM sign_off_reports WHERE id = $1::uuid`, [id]);
+    if (reportCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+    const st = String(reportCheck.rows[0].status || 'draft').toLowerCase();
+    if (st !== 'submitted') {
+      return res.status(400).json({ success: false, error: 'Only submitted reports can be reviewed' });
+    }
+
+    const result = await pool.query(
+      `UPDATE sign_off_reports
+       SET status = 'rejected', updated_at = NOW()
+       WHERE id = $1::uuid
+       RETURNING *`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+
+    const deliverableId = result.rows[0].deliverable_id;
+    if (deliverableId) {
+      await pool.query(`UPDATE deliverables SET status = 'rejected', updated_at = NOW() WHERE id = $1::uuid`, [deliverableId]);
+    }
+
+    await pool.query(
+      `INSERT INTO client_reviews (report_id, reviewer_id, status, feedback, created_at)
+       VALUES ($1::uuid, $2::uuid, 'rejected', $3, NOW())`,
+      [id, userId, (comment && String(comment).trim()) ? String(comment).trim() : (isTokenAccess ? clientEmail : null)]
+    );
+
+    const currentContent = result.rows[0].content || {};
+    const updatedContent = {
+      ...(typeof currentContent === 'object' && currentContent !== null ? currentContent : {}),
+      clientComment: (comment && String(comment).trim()) ? String(comment).trim() : null,
+      clientSignature: digitalSignature,
+      clientSignatureDate: new Date().toISOString(),
+      clientSignerId: userId || clientEmail,
+    };
+    await pool.query(`UPDATE sign_off_reports SET content = $1::jsonb WHERE id = $2::uuid`, [
+      JSON.stringify(updatedContent),
+      id,
+    ]);
+
+    if (userId) {
+      const signatureHash = crypto.createHash('sha256').update(digitalSignature).digest('hex');
+      try {
+        await pool.query(
+          `INSERT INTO digital_signatures (
+             report_id, signer_id, signer_role, signature_type,
+             signature_data, signature_hash, signed_at, created_at
+           )
+           VALUES ($1::uuid, $2::uuid, $3, 'manual', $4, $5, NOW(), NOW())
+           ON CONFLICT (report_id, signer_id, signer_role)
+           DO UPDATE SET
+             signature_data = EXCLUDED.signature_data,
+             signature_hash = EXCLUDED.signature_hash,
+             signed_at = NOW()`,
+          [id, userId, userRole, digitalSignature, signatureHash]
+        );
+      } catch (sigErr) {
+        if (sigErr.code !== '42P01') console.error('Digital signature insert:', sigErr);
+      }
+    }
+
+    try {
+      await pool.query(
+        `INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, created_at)
+         VALUES ($1, 'reject_report', 'sign_off_report', $2, $3::jsonb, NOW())`,
+        [userId, id, JSON.stringify({ comment: comment || null, clientEmail: clientEmail || undefined })]
+      );
+    } catch (auditErr) {
+      if (auditErr.code !== '42P01') console.error('Audit log insert:', auditErr);
+    }
+
+    const reportCreator = result.rows[0].created_by;
+    if (reportCreator) {
+      let reviewerName = 'Client Reviewer';
+      if (userId) {
+        const reviewer = await pool.query(`SELECT name, email FROM users WHERE id = $1`, [userId]);
+        reviewerName = reviewer.rows[0]?.name || reviewer.rows[0]?.email || reviewerName;
+      } else if (clientEmail) {
+        reviewerName = clientEmail;
+      }
+      const reportTitle = (result.rows[0].content && result.rows[0].content.reportTitle) || result.rows[0].report_title || 'Report';
+      const notificationId = uuidv4();
+      await pool.query(
+        `INSERT INTO notifications (id, title, message, type, user_id, action_url, is_read, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, false, NOW())`,
+        [
+          notificationId,
+          '❌ Report Rejected',
+          `${reviewerName} has rejected "${reportTitle}".${comment ? ' Feedback: ' + comment : ''}`,
+          'report_rejected',
+          reportCreator,
+          `/report-repository`,
+        ]
+      );
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Error rejecting sign-off report:', error);
+    res.status(500).json({ success: false, error: 'Failed to reject sign-off report' });
+  }
+});
+
 // Get audit history for sign-off report
 app.get('/api/v1/sign-off-reports/:id/audit', authenticateToken, async (req, res) => {
   try {
@@ -6193,6 +6983,265 @@ app.get('/api/v1/sign-off-reports/:id/audit', authenticateToken, async (req, res
     console.error('Error fetching report audit:', error);
     // Return empty array instead of error for better UX
     res.json({ success: true, data: [] });
+  }
+});
+
+// Download sign-off report as PDF (server-side generation to avoid freezing the frontend during export)
+app.get('/api/v1/sign-off-reports/:id/pdf', authenticateOrReviewToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const reportResult = await pool.query(
+      `SELECT r.*, d.title as deliverable_title, d.project_id, p.name as project_name
+       FROM sign_off_reports r
+       LEFT JOIN deliverables d ON r.deliverable_id = d.id
+       LEFT JOIN projects p ON d.project_id = p.id
+       WHERE r.id = $1::uuid`,
+      [id]
+    );
+    if (reportResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+    const row = reportResult.rows[0];
+    const content = (row.content && typeof row.content === 'object') ? row.content : {};
+
+    const sprintReportData = content.sprintReportData || content.sprint_report_data || null;
+    const sprintName = sprintReportData && sprintReportData.sprint ? sprintReportData.sprint.name : null;
+    const title = String(
+      content.reportTitle ||
+      content.report_title ||
+      sprintName ||
+      row.report_title ||
+      row.deliverable_title ||
+      'Sprint Sign-Off Report'
+    ).trim();
+
+    const now = new Date();
+    const docDate = row.created_at ? new Date(row.created_at) : now;
+    const dateLabel = docDate.toISOString().slice(0, 10);
+
+    const signatureResult = await pool.query(
+      `SELECT 
+         ds.signature_data,
+         ds.signer_role,
+         ds.signed_at,
+         ds.signature_type,
+         ds.is_valid,
+         COALESCE(
+           u.name,
+           NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '')
+         ) as signer_name,
+         u.email as signer_email
+       FROM digital_signatures ds
+       LEFT JOIN users u ON ds.signer_id = u.id
+       WHERE ds.report_id = $1::uuid
+       ORDER BY ds.signed_at DESC`,
+      [id]
+    );
+    const signatures = [...signatureResult.rows];
+
+    const clientSig = content.clientSignature ?? content.client_signature ?? null;
+    if (clientSig && String(clientSig).trim().length > 0) {
+      signatures.push({
+        signature_data: clientSig,
+        signer_role: 'clientReviewer',
+        signed_at: content.clientSignatureDate ?? content.client_signature_date ?? row.approved_at ?? row.updated_at ?? now.toISOString(),
+        signature_type: 'manual',
+        is_valid: true,
+        signer_name: 'Client',
+        signer_email: null,
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${title.replaceAll('"', '')}.pdf"`);
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const headerImageHeight = 78;
+    const barHeight = 18;
+
+    const bgCandidates = [
+      path.join(__dirname, '..', 'frontend', 'assets', 'Icons', 'Chatbot_BG.png'),
+      path.join(__dirname, '..', 'frontend', 'assets', 'images', 'khono_bg.png'),
+    ];
+    const iconCandidates = [
+      path.join(__dirname, '..', 'frontend', 'assets', 'Icons', 'Sprints console active.png.png'),
+      path.join(__dirname, '..', 'frontend', 'assets', 'Sprints.png'),
+    ];
+    const bgPath = bgCandidates.find((p) => fs.existsSync(p)) || null;
+    const sprintIconPath = iconCandidates.find((p) => fs.existsSync(p)) || null;
+
+    if (bgPath) {
+      doc.image(bgPath, 0, 0, { width: pageWidth, height: headerImageHeight });
+    } else {
+      doc.rect(0, 0, pageWidth, headerImageHeight).fill('#111111');
+    }
+
+    const brandRed = '#B10000';
+    const brandWhite = '#FFFFFF';
+
+    const brandText = 'KHONOLOGY';
+    const spaced = brandText.split('');
+    let x = 40;
+    const yBrand = 18;
+    doc.fillColor(brandRed).fontSize(22).font('Helvetica-Bold');
+    for (const ch of spaced) {
+      doc.text(ch, x, yBrand, { lineBreak: false });
+      x += 18;
+    }
+
+    doc.fillColor(brandWhite).fontSize(18).font('Helvetica-Bold');
+    doc.text('SPRINT SIGN-OFF REPORT', 40, 45, { lineBreak: false });
+
+    const circleSize = 56;
+    const circleX = pageWidth - 40 - circleSize;
+    const circleY = 10;
+    const circleCx = circleX + circleSize / 2;
+    const circleCy = circleY + circleSize / 2;
+    doc.circle(circleCx, circleCy, circleSize / 2).fill(brandWhite);
+    if (sprintIconPath) {
+      try {
+        doc.save();
+        doc.circle(circleCx, circleCy, circleSize / 2).clip();
+        doc.image(sprintIconPath, circleX + 8, circleY + 8, { width: circleSize - 16, height: circleSize - 16 });
+        doc.restore();
+      } catch (_) {}
+    }
+
+    doc.rect(0, headerImageHeight, pageWidth, barHeight).fill(brandRed);
+
+    doc.fillColor('#FFFFFF').fontSize(10).font('Helvetica-Bold');
+    const safeTitle = title.length > 80 ? `${title.slice(0, 77)}...` : title;
+    doc.text(`Title: ${safeTitle}`, 40, headerImageHeight + 4, { width: pageWidth - 160, lineBreak: false });
+    doc.text(`Date: ${dateLabel}`, pageWidth - 140, headerImageHeight + 4, { width: 100, align: 'right', lineBreak: false });
+
+    doc.moveDown(6);
+    doc.y = headerImageHeight + barHeight + 24;
+
+    const section = (label) => {
+      const left = doc.page.margins.left;
+      const right = doc.page.margins.right;
+      const width = pageWidth - left - right;
+      const y = doc.y;
+      const h = 18;
+      doc.rect(left, y, width, h).fill('#F2CCCC');
+      doc.fillColor('#111111').fontSize(11).font('Helvetica-Bold');
+      doc.text(label, left + 12, y + 5, { width: width - 24, lineBreak: false });
+      doc.y = y + h + 10;
+      doc.fillColor('#111111').fontSize(10).font('Helvetica');
+    };
+
+    const writeKvs = (kvs) => {
+      for (const [k, v] of kvs) {
+        doc.fillColor('#333333').font('Helvetica-Bold').text(`${k} `, { continued: true });
+        doc.fillColor('#111111').font('Helvetica').text(String(v ?? '-'));
+      }
+      doc.moveDown(0.6);
+    };
+
+    const data = sprintReportData || {};
+    const project = (data.project && typeof data.project === 'object') ? data.project : {};
+    const sprint = (data.sprint && typeof data.sprint === 'object') ? data.sprint : {};
+    const summary = (data.summary && typeof data.summary === 'object') ? data.summary : {};
+    const teamMembers = (((data.team && typeof data.team === 'object') ? data.team : {}).members) || [];
+
+    section('PROJECT DETAIL');
+    writeKvs([
+      ['Name:', project.name || row.project_name || '-'],
+      ['Key:', project.key || '-'],
+      ['ID:', project.id || row.project_id || '-'],
+    ]);
+
+    section('SPRINT DETAIL');
+    writeKvs([
+      ['Name:', sprint.name || '-'],
+      ['ID:', sprint.id || '-'],
+      ['Status:', sprint.status || '-'],
+      ['Start:', sprint.startDate ? String(sprint.startDate).slice(0, 10) : '-'],
+      ['End:', sprint.endDate ? String(sprint.endDate).slice(0, 10) : '-'],
+    ]);
+
+    section('SPRINT SUMMARY');
+    writeKvs([
+      ['Total Deliverables:', summary.totalDeliverables ?? '-'],
+      ['Completed:', summary.completedDeliverables ?? '-'],
+      ['In Progress:', summary.inProgressDeliverables ?? '-'],
+      ['Not Started:', summary.notStartedDeliverables ?? '-'],
+      ['Blocked:', summary.blockedDeliverables ?? '-'],
+      ['Completion Rate:', `${summary.completionRatePercent ?? summary.sprintProgressPercent ?? '-'}%`],
+      ['Health:', summary.health ? String(summary.health).toUpperCase() : '-'],
+    ]);
+
+    section('TEAM MEMBERS');
+    if (Array.isArray(teamMembers) && teamMembers.length > 0) {
+      for (const m of teamMembers) {
+        const name = m.name || 'Unknown';
+        const role = m.role || '';
+        const email = m.email || '';
+        const work = m.work || '';
+        doc.fillColor('#111111').font('Helvetica').text(`• ${name}${role ? ' (' + role + ')' : ''}${email ? ' — ' + email : ''}`);
+        if (work) {
+          doc.fillColor('#555555').fontSize(9).text(`  Work: ${work}`);
+          doc.fontSize(10);
+        }
+      }
+      doc.moveDown(0.6);
+    } else {
+      doc.fillColor('#111111').font('Helvetica').text('None');
+      doc.moveDown(0.6);
+    }
+
+    const notes = String(content.changeRequestDetails || content.change_request_details || content.clientComment || content.client_comment || '').trim();
+    if (notes) {
+      section('COMMENTS');
+      doc.fillColor('#111111').font('Helvetica').text(notes);
+      doc.moveDown(0.6);
+    }
+
+    section('DIGITAL SIGNATURES');
+    if (signatures.length === 0) {
+      doc.fillColor('#111111').font('Helvetica').text('None');
+      doc.moveDown(0.6);
+    } else {
+      for (const s of signatures) {
+        const signer = (s.signer_name || s.signer_email || 'Unknown').toString();
+        const role = (s.signer_role || '').toString();
+        const when = s.signed_at ? new Date(s.signed_at).toISOString().replace('T', ' ').slice(0, 19) : '';
+        doc.fillColor('#111111').font('Helvetica').text(`• ${signer}${role ? ' (' + role + ')' : ''}${when ? ' — ' + when : ''}`);
+        const rawSig = (s.signature_data || '').toString().trim();
+        if (rawSig) {
+          const base64 = rawSig.includes('base64,') ? rawSig.split('base64,').pop() : rawSig;
+          try {
+            const buf = Buffer.from(base64, 'base64');
+            if (buf.length > 0) {
+              const sigW = 240;
+              const sigH = 80;
+              const xSig = doc.page.margins.left + 22;
+              const ySig = doc.y + 8;
+              doc.save();
+              doc.rect(xSig - 6, ySig - 6, sigW + 12, sigH + 12).strokeColor('#D0D0D0').lineWidth(1).stroke();
+              doc.restore();
+              doc.image(buf, xSig, ySig, { width: sigW, height: sigH, fit: [sigW, sigH] });
+              doc.y = ySig + sigH + 14;
+            } else {
+              doc.moveDown(0.2);
+            }
+          } catch (_) {
+            doc.moveDown(0.2);
+          }
+        } else {
+          doc.moveDown(0.2);
+        }
+      }
+    }
+
+    doc.end();
+  } catch (error) {
+    console.error('Error generating report PDF:', error);
+    return res.status(500).json({ success: false, error: 'Failed to generate PDF' });
   }
 });
 
@@ -6661,8 +7710,63 @@ app.get('/api/v1/sign-off-reports/:id/signatures', authenticateToken, async (req
       WHERE ds.report_id = $1::uuid
       ORDER BY ds.signed_at DESC
     `, [id]);
+    const rows = [...result.rows];
 
-    res.json({ success: true, data: result.rows });
+    try {
+      const reportResult = await pool.query(
+        `SELECT content, approved_at, updated_at FROM sign_off_reports WHERE id = $1::uuid`,
+        [id]
+      );
+      if (reportResult.rows.length > 0) {
+        const r = reportResult.rows[0];
+        const c = (r.content && typeof r.content === 'object') ? r.content : {};
+        const clientSig = c.clientSignature ?? c.client_signature ?? null;
+        if (clientSig && String(clientSig).trim().length > 0) {
+          let signerName = 'Client';
+          let signerEmail = null;
+          try {
+            const cr = await pool.query(
+              `SELECT cr.*, u.name as reviewer_name, u.email as reviewer_email
+               FROM client_reviews cr
+               LEFT JOIN users u ON cr.reviewer_id = u.id
+               WHERE cr.report_id = $1::uuid
+               ORDER BY cr.created_at DESC
+               LIMIT 1`,
+              [id]
+            );
+            if (cr.rows.length > 0) {
+              signerName = cr.rows[0].reviewer_name || signerName;
+              signerEmail = cr.rows[0].reviewer_email || null;
+              if (!signerName || String(signerName).trim() === '') {
+                signerName = (cr.rows[0].feedback && String(cr.rows[0].feedback).includes('@'))
+                    ? String(cr.rows[0].feedback).trim()
+                    : signerName;
+              }
+            }
+          } catch (_) {}
+
+          rows.unshift({
+            id: null,
+            report_id: id,
+            signer_id: null,
+            signer_role: 'clientReviewer',
+            signature_type: 'manual',
+            signature_data: clientSig,
+            signature_hash: null,
+            ip_address: null,
+            user_agent: null,
+            signed_at: c.clientSignatureDate ?? c.client_signature_date ?? r.approved_at ?? r.updated_at ?? new Date().toISOString(),
+            created_at: null,
+            updated_at: null,
+            signer_name: signerName,
+            signer_email: signerEmail,
+            is_valid: true,
+          });
+        }
+      }
+    } catch (_) {}
+
+    res.json({ success: true, data: rows });
   } catch (error) {
     console.error('Error fetching digital signatures:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch signatures' });

@@ -177,7 +177,7 @@ class DashboardStats {
 extension DashboardStatsX on DashboardStats {
   String get avgSignoffDaysDisplay {
     if (avgSignoffDays <= 0) return '—';
-    return '${avgSignoffDays.toStringAsFixed(1)} days';
+    return '${avgSignoffDays.toStringAsFixed(1)}d';
   }
 }
 

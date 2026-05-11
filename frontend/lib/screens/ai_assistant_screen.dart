@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -54,7 +55,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   bool _hasUserStartedConversation = false;
   List<String> _quickSuggestions = const <String>[];
   List<String> _serverSuggestions = const <String>[];
-  bool _isDownloading = false;
+  final Set<String> _downloadsInProgress = <String>{};
   final Map<String, SignOffReport> _reportCache = <String, SignOffReport>{};
   final Map<String, Future<PdfBytesResult>> _pdfBuildCache = <String, Future<PdfBytesResult>>{};
 
@@ -190,7 +191,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     final reportId = (action['reportId'] ?? action['report_id'] ?? action['id'])?.toString().trim();
     if (reportId != null && reportId.isNotEmpty) {
       final meta = action['metadata'];
-      final metaMap = meta is Map ? Map<String, dynamic>.from(meta as Map) : const <String, dynamic>{};
+      final metaMap = meta is Map ? Map<String, dynamic>.from(meta) : const <String, dynamic>{};
       final suggestedTitle = _pickSuggestedTitle(action: action, meta: metaMap);
 
       if (!kIsWeb) {
@@ -223,9 +224,9 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
           } catch (_) {}
         }
         try {
-          final resp = await BackendApiService().getSignOffReport(reportId).timeout(const Duration(milliseconds: 800));
+          final resp = await BackendApiService().getSignOffReport(reportId, timeout: const Duration(milliseconds: 800));
           if (resp.isSuccess && resp.data != null) {
-            final data = resp.data is Map ? Map<String, dynamic>.from(resp.data as Map) : <String, dynamic>{};
+            final data = resp.data is Map ? Map<String, dynamic>.from(resp.data) : <String, dynamic>{};
             final parsed = SignOffReport.fromJson(data);
             report = parsed.copyWith(
               reportTitle: report.reportTitle.trim().isNotEmpty ? report.reportTitle : parsed.reportTitle,
@@ -244,6 +245,11 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       if (suggestedTitle.isNotEmpty && suggestedTitle != report.reportTitle) {
         try {
           final updates = <String, dynamic>{'reportTitle': suggestedTitle};
+          updates['content'] = <String, dynamic>{
+            'reportTitle': suggestedTitle,
+            'title': suggestedTitle,
+          };
+          updates['report_title'] = suggestedTitle;
 
           Map<String, dynamic>? perfMap;
           final perf = report.sprintPerformanceData;
@@ -260,12 +266,14 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
           sprintData['reportTitle'] = suggestedTitle;
           sprintData['aiTitle'] = suggestedTitle;
           updates['sprintReportData'] = sprintData;
+          updates['sprint_report_data'] = sprintData;
 
           if (perfMap != null) {
             perfMap['title'] = suggestedTitle;
             perfMap['reportTitle'] = suggestedTitle;
             perfMap['aiTitle'] = suggestedTitle;
             updates['sprintPerformanceData'] = jsonEncode(perfMap);
+            updates['sprint_performance_data'] = updates['sprintPerformanceData'];
           }
 
           BackendApiService().updateSignOffReport(reportId, updates);
@@ -290,7 +298,32 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         } catch (_) {}
       }
 
-      await ReportExportService().exportReportAsPDF(report, fast: true);
+      final existingSig = report.digitalSignature?.trim() ?? '';
+      if (existingSig.isEmpty) {
+        final signature = await _promptForSignature(reportId: reportId);
+        if (signature != null && signature.trim().isNotEmpty) {
+          report = report.copyWith(digitalSignature: signature);
+          _reportCache[reportId] = report;
+          try {
+            unawaited(
+              ApiClient().post(
+                '/sign-off-reports/$reportId/signature',
+                body: {
+                  'signatureData': signature,
+                  'signatureType': 'manual',
+                },
+                timeout: const Duration(seconds: 2),
+              ),
+            );
+          } catch (_) {}
+          try {
+            BackendApiService().updateSignOffReport(reportId, {'digitalSignature': signature}, timeout: const Duration(seconds: 2));
+          } catch (_) {}
+        }
+      }
+
+      final exporter = ReportExportService();
+      await exporter.exportReportAsPDFFromServer(report);
       return;
     }
 
@@ -310,11 +343,14 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       if (_reportCache.containsKey(reportId)) continue;
 
       Future<void>(() async {
+        final meta = m['metadata'];
+        final metaMap = meta is Map ? Map<String, dynamic>.from(meta) : const <String, dynamic>{};
+        final suggestedTitle = _pickSuggestedTitle(action: m, meta: metaMap);
         SignOffReport report = _buildReportFromAction(reportId: reportId, action: m);
         try {
-          final resp = await BackendApiService().getSignOffReport(reportId).timeout(const Duration(milliseconds: 800));
+          final resp = await BackendApiService().getSignOffReport(reportId, timeout: const Duration(milliseconds: 800));
           if (resp.isSuccess && resp.data != null) {
-            final data = resp.data is Map ? Map<String, dynamic>.from(resp.data as Map) : <String, dynamic>{};
+            final data = resp.data is Map ? Map<String, dynamic>.from(resp.data) : <String, dynamic>{};
             final parsed = SignOffReport.fromJson(data);
             report = parsed.copyWith(
               reportTitle: report.reportTitle.trim().isNotEmpty ? report.reportTitle : parsed.reportTitle,
@@ -328,9 +364,27 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         } catch (_) {}
         if (mounted) {
           _reportCache[reportId] = report;
-          if (!kIsWeb) {
-            _pdfBuildCache.putIfAbsent(reportId, () => ReportExportService().buildPdfBytes(report, fast: true));
-          }
+        }
+        if (suggestedTitle.isNotEmpty) {
+          try {
+            final updates = <String, dynamic>{
+              'reportTitle': suggestedTitle,
+              'report_title': suggestedTitle,
+              'content': <String, dynamic>{
+                'reportTitle': suggestedTitle,
+                'title': suggestedTitle,
+              },
+            };
+            final sprintData = (report.sprintReportData != null && report.sprintReportData!.isNotEmpty)
+                ? Map<String, dynamic>.from(report.sprintReportData!)
+                : <String, dynamic>{};
+            sprintData['title'] = suggestedTitle;
+            sprintData['reportTitle'] = suggestedTitle;
+            sprintData['aiTitle'] = suggestedTitle;
+            updates['sprintReportData'] = sprintData;
+            updates['sprint_report_data'] = sprintData;
+            BackendApiService().updateSignOffReport(reportId, updates);
+          } catch (_) {}
         }
       });
     }
@@ -348,7 +402,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       (action['report_title'] ?? '').toString(),
       (meta['reportTitle'] ?? '').toString(),
       (meta['report_title'] ?? '').toString(),
-      titleFallback,
+      if (_looksLikeReportTitle(titleFallback) && _looksLikeLikelyTitleLabel(titleFallback)) titleFallback,
     ].map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
 
     int score(String s) {
@@ -364,7 +418,51 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
 
     candidates.sort((a, b) => score(b).compareTo(score(a)));
     final best = candidates.isNotEmpty ? candidates.first : '';
-    return _looksLikeReportTitle(best) ? best : '';
+    if (_looksLikeReportTitle(best) && !_looksLikeFeedbackText(best)) return best;
+    final fallback = _deriveTitleFromSprintData(action: action, meta: meta);
+    if (fallback.isNotEmpty) return fallback;
+    return '';
+  }
+
+  bool _looksLikeLikelyTitleLabel(String s) {
+    final v = s.trim().toLowerCase();
+    if (v.isEmpty) return false;
+    if (v.contains('sign-off')) return true;
+    if (v.contains('sign off')) return true;
+    if (v.contains('sprint')) return true;
+    if (v.contains('report')) return true;
+    return false;
+  }
+
+  String _deriveTitleFromSprintData({required Map<String, dynamic> action, required Map<String, dynamic> meta}) {
+    Map<String, dynamic>? data;
+    final raw = (action['sprintPerformanceData'] ??
+            action['sprint_performance_data'] ??
+            meta['sprintPerformanceData'] ??
+            meta['sprint_performance_data'])
+        ?.toString();
+    if (raw != null && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) data = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    if (data == null) {
+      final d = action['sprintReportData'] is Map
+          ? Map<String, dynamic>.from(action['sprintReportData'] as Map)
+          : (meta['sprintReportData'] is Map ? Map<String, dynamic>.from(meta['sprintReportData'] as Map) : null);
+      if (d != null && d.isNotEmpty) data = d;
+    }
+    if (data == null || data.isEmpty) return '';
+    final sprint = (data['sprint'] is Map) ? Map<String, dynamic>.from(data['sprint'] as Map) : const <String, dynamic>{};
+    final project = (data['project'] is Map)
+        ? Map<String, dynamic>.from(data['project'] as Map)
+        : (sprint['project'] is Map ? Map<String, dynamic>.from(sprint['project'] as Map) : const <String, dynamic>{});
+    final sprintName = (sprint['name'] ?? '').toString().trim();
+    final projectName = (project['name'] ?? '').toString().trim();
+    if (projectName.isNotEmpty && sprintName.isNotEmpty) return 'Sprint Sign-Off: $projectName — $sprintName';
+    if (sprintName.isNotEmpty) return 'Sprint Sign-Off: $sprintName';
+    return '';
   }
 
   bool _looksLikeFeedbackText(String s) {
@@ -383,7 +481,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
 
   SignOffReport _buildReportFromAction({required String reportId, required Map<String, dynamic> action}) {
     final meta = action['metadata'];
-    final metaMap = meta is Map ? Map<String, dynamic>.from(meta as Map) : const <String, dynamic>{};
+    final metaMap = meta is Map ? Map<String, dynamic>.from(meta) : const <String, dynamic>{};
     final suggestedTitle = _pickSuggestedTitle(action: action, meta: metaMap);
 
     final raw = (action['sprintPerformanceData'] ??
@@ -516,6 +614,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                       FilledButton(
                         onPressed: () async {
                           final sig = await signatureKey.currentState?.getSignature();
+                          if (!context.mounted) return;
                           Navigator.of(context).pop(sig);
                         },
                         child: const Text('Continue'),
@@ -530,6 +629,32 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       },
     );
     return result;
+  }
+
+  Future<bool> _promptForReportAuthorization({required String reportId}) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Authorize Report Download'),
+          content: const Text(
+            'You are about to generate and download the final report PDF. This runs in the background, and you can keep using the app.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Authorize'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
   }
 
   Future<void> _downloadTextPdf({required String title, required String content}) async {
@@ -592,25 +717,98 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                     children: actions.map((a) {
                       final type = (a['type'] ?? '').toString();
                       if (type != 'export_pdf') return const SizedBox.shrink();
+                      final rid = (a['reportId'] ?? a['report_id'] ?? a['id'])?.toString().trim() ?? '';
+                      final isDownloadingThis = rid.isNotEmpty && _downloadsInProgress.contains(rid);
                       return FilledButton.icon(
-                        onPressed: (_isSending || _isDownloading)
+                        onPressed: isDownloadingThis
                             ? null
                             : () async {
+                                final reportId = rid;
+                                if (reportId.isNotEmpty) {
+                                  setState(() => _downloadsInProgress.add(reportId));
+                                }
                                 try {
-                                  setState(() => _isDownloading = true);
-                                  await WidgetsBinding.instance.endOfFrame;
-                                  await _downloadAssistantPdfFromAction(a);
+                                  var report = _reportCache[reportId] ?? _buildReportFromAction(reportId: reportId, action: a);
+                                  final existingSig = report.digitalSignature?.trim() ?? '';
+                                  if (existingSig.isEmpty) {
+                                    final signature = await _promptForSignature(reportId: reportId);
+                                    if (signature != null && signature.trim().isNotEmpty) {
+                                      report = report.copyWith(digitalSignature: signature);
+                                      _reportCache[reportId] = report;
+                                      try {
+                                        unawaited(
+                                          ApiClient().post(
+                                            '/sign-off-reports/$reportId/signature',
+                                            body: {
+                                              'signatureData': signature,
+                                              'signatureType': 'manual',
+                                            },
+                                            timeout: const Duration(seconds: 2),
+                                          ),
+                                        );
+                                      } catch (_) {}
+                                      try {
+                                        BackendApiService().updateSignOffReport(
+                                          reportId,
+                                          {'digitalSignature': signature},
+                                          timeout: const Duration(seconds: 2),
+                                        );
+                                      } catch (_) {}
+                                    }
+                                  }
+
+                                  if (!mounted) return;
+                                  final authorized = await _promptForReportAuthorization(reportId: reportId);
+                                  if (!authorized) {
+                                    if (!mounted) return;
+                                    if (reportId.isNotEmpty) {
+                                      setState(() => _downloadsInProgress.remove(reportId));
+                                    }
+                                    return;
+                                  }
+
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Preparing your PDF in the background. You can keep using the app.'),
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+
+                                  Future<void>(() async {
+                                  try {
+                                    await WidgetsBinding.instance.endOfFrame;
+                                    await _downloadAssistantPdfFromAction(a);
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('PDF download started. Check your downloads.'),
+                                        duration: Duration(seconds: 3),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(e.toString())),
+                                    );
+                                  } finally {
+                                    if (mounted && reportId.isNotEmpty) {
+                                      setState(() => _downloadsInProgress.remove(reportId));
+                                    }
+                                  }
+                                  });
                                 } catch (e) {
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text(e.toString())),
                                   );
-                                } finally {
-                                  if (mounted) setState(() => _isDownloading = false);
+                                  if (reportId.isNotEmpty) {
+                                    setState(() => _downloadsInProgress.remove(reportId));
+                                  }
                                 }
                               },
                         icon: const Icon(Icons.picture_as_pdf),
-                        label: Text(_isDownloading ? 'Preparing…' : 'Download PDF'),
+                        label: Text(isDownloadingThis ? 'Preparing…' : 'Download PDF'),
                       );
                     }).toList(),
                   ),

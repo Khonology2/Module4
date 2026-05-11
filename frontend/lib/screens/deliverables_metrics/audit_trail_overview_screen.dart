@@ -92,7 +92,7 @@ class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
   void _handleAuditLogCreated(dynamic data) {
     try {
       if (data is! Map) return;
-      final log = Map<String, dynamic>.from(data as Map);
+      final log = Map<String, dynamic>.from(data);
       final id = log['id']?.toString() ?? '';
       if (id.isNotEmpty && _logs.any((e) => (e['id']?.toString() ?? '') == id)) {
         return;
@@ -110,42 +110,38 @@ class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
       _error = null;
     });
     try {
-      final resp = await _backend.getRealAuditLogs(skip: 0, limit: 200);
-      if (resp.isSuccess && resp.data != null) {
+      final responses = await Future.wait([
+        _backend.getRealAuditLogs(skip: 0, limit: 200, entityType: 'deliverable'),
+        _backend.getRealAuditLogs(skip: 0, limit: 200, entityType: 'signoff'),
+      ]);
+      final collected = <Map<String, dynamic>>[];
+      for (final resp in responses) {
+        if (!resp.isSuccess || resp.data == null) continue;
         final raw = resp.data;
         final List<dynamic> items = raw is Map
             ? (raw['audit_logs'] ?? raw['items'] ?? raw['logs'] ?? raw['data'] ?? [])
             : (raw is List ? raw : []);
-        
-        final allLogs = items.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-        
-        // Filter for deliverable related logs
-        // Note: Currently backend might not always populate entity_type, so we show all logs for now.
-        /*
-        allLogs = allLogs.where((log) {
-           final type = (log['entity_type'] ?? '').toString().toLowerCase();
-           final action = (log['action'] ?? '').toString().toLowerCase();
-           // Also check resource_type as seen in some backend code
-           final resourceType = (log['resource_type'] ?? '').toString().toLowerCase();
-           
-           return type.contains('deliverable') || 
-                  action.contains('deliverable') ||
-                  resourceType.contains('deliverable');
-        }).toList();
-        */
+        collected.addAll(
+          items.whereType<Map>().map((e) => e.cast<String, dynamic>()),
+        );
+      }
+      final deduped = <String, Map<String, dynamic>>{};
+      for (final log in collected) {
+        final id = (log['id'] ?? '').toString();
+        deduped[id.isEmpty ? '${log['action']}-${log['created_at']}' : id] = log;
+      }
+      final allLogs = deduped.values.toList()
+        ..sort((a, b) => (b['created_at'] ?? '').toString().compareTo((a['created_at'] ?? '').toString()));
 
+      if (allLogs.isNotEmpty) {
         setState(() {
-          // If we find specific deliverable logs, show them. Otherwise show all (fallback)
-          // but prioritizing the filter to be true to the "Deliverable Audit Trail" name.
-          // If filter is empty but allLogs is not, we might want to show all logs but maybe with a warning?
-          // For now, let's just show all logs because the backend might not be populating entity_type correctly yet for all actions.
-          _logs = allLogs; 
+          _logs = allLogs;
         });
         _hydrateUserNames(allLogs);
       } else {
         setState(() {
           _logs = [];
-          _error = resp.error ?? 'Failed to load audit logs';
+          _error = 'Failed to load audit logs';
         });
       }
     } catch (e) {
@@ -182,6 +178,8 @@ class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
                         final actor = _extractActorLabel(log);
                         final createdAt = log['created_at']?.toString() ?? '';
                         final entityType = log['entity_type'] ?? log['resource_type'] ?? '';
+                        final entityName = (log['entity_name'] ?? '').toString();
+                        final entityId = (log['entity_id'] ?? '').toString();
                         
                         return Card(
                           margin: const EdgeInsets.symmetric(vertical: 6),
@@ -192,6 +190,12 @@ class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('By: $actor'),
+                                if (entityName.isNotEmpty)
+                                  Text('Target: $entityName'),
+                                if (entityType.toString().isNotEmpty || entityId.isNotEmpty)
+                                  Text(
+                                    'Entity: ${entityType.toString().isEmpty ? 'unknown' : entityType}${entityId.isNotEmpty ? ' • $entityId' : ''}',
+                                  ),
                                 if (createdAt.isNotEmpty) Text(createdAt),
                               ],
                             ),

@@ -5,12 +5,10 @@ import '../models/project.dart';
 import '../models/deliverable.dart';
 import '../models/sprint.dart';
 import '../models/user.dart';
-import '../models/user_role.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_data_service.dart';
-import '../services/backend_api_service.dart';
 import '../providers/service_providers.dart';
 
 class ProjectWorkspaceScreen extends ConsumerStatefulWidget {

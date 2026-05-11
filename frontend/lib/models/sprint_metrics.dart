@@ -133,35 +133,89 @@ class SprintMetrics {
       'uatNotes': uatNotes,
       'recordedAt': recordedAt.toIso8601String(),
       'recordedBy': recordedBy,
+      'sprint_id': sprintId,
+      'committed_points': committedPoints,
+      'completed_points': completedPoints,
+      'carried_over_points': carriedOverPoints,
+      'test_pass_rate': testPassRate,
+      'defects_opened': defectsOpened,
+      'defects_closed': defectsClosed,
+      'critical_defects': criticalDefects,
+      'high_defects': highDefects,
+      'medium_defects': mediumDefects,
+      'low_defects': lowDefects,
+      'code_review_completion': codeReviewCompletion,
+      'documentation_status': documentationStatus,
+      'points_added': pointsAddedDuringSprint,
+      'points_removed': pointsRemovedDuringSprint,
+      'uat_notes': uatNotes,
+      'recorded_at': recordedAt.toIso8601String(),
+      'recorded_by': recordedBy,
     };
   }
 
   factory SprintMetrics.fromJson(Map<String, dynamic> json) {
+    dynamic _pick(List<String> keys) {
+      for (final k in keys) {
+        if (json.containsKey(k) && json[k] != null) return json[k];
+      }
+      return null;
+    }
+
+    String _pickString(List<String> keys, {String fallback = ''}) {
+      final v = _pick(keys);
+      if (v == null) return fallback;
+      return v.toString();
+    }
+
+    int _pickInt(List<String> keys, {int fallback = 0}) {
+      final v = _pick(keys);
+      if (v is int) return v;
+      return int.tryParse(v?.toString() ?? '') ?? fallback;
+    }
+
+    double _pickDouble(List<String> keys, {double fallback = 0.0}) {
+      final v = _pick(keys);
+      if (v is double) return v;
+      if (v is int) return v.toDouble();
+      return double.tryParse(v?.toString() ?? '') ?? fallback;
+    }
+
+    DateTime _pickDateTime(List<String> keys) {
+      final v = _pick(keys);
+      final s = v?.toString();
+      if (s == null || s.isEmpty) return DateTime.now();
+      return DateTime.tryParse(s) ?? DateTime.now();
+    }
+
+    final sprintId = _pickString(['sprintId', 'sprint_id'], fallback: '');
+    final id = _pickString(['id', 'metricId', 'metric_id'], fallback: DateTime.now().millisecondsSinceEpoch.toString());
+
     return SprintMetrics(
-      id: json['id'],
-      sprintId: json['sprintId'],
-      committedPoints: json['committedPoints'] is int ? json['committedPoints'] : int.tryParse(json['committedPoints']?.toString() ?? '') ?? 0,
-      completedPoints: json['completedPoints'] is int ? json['completedPoints'] : int.tryParse(json['completedPoints']?.toString() ?? '') ?? 0,
-      carriedOverPoints: json['carriedOverPoints'] is int ? json['carriedOverPoints'] : int.tryParse(json['carriedOverPoints']?.toString() ?? '') ?? 0,
-      testPassRate: json['testPassRate'] is double ? json['testPassRate'] : double.tryParse(json['testPassRate']?.toString() ?? '') ?? 0.0,
-      defectsOpened: json['defectsOpened'] is int ? json['defectsOpened'] : int.tryParse(json['defectsOpened']?.toString() ?? '') ?? 0,
-      defectsClosed: json['defectsClosed'] is int ? json['defectsClosed'] : int.tryParse(json['defectsClosed']?.toString() ?? '') ?? 0,
-      criticalDefects: json['criticalDefects'] is int ? json['criticalDefects'] : int.tryParse(json['criticalDefects']?.toString() ?? '') ?? 0,
-      highDefects: json['highDefects'] is int ? json['highDefects'] : int.tryParse(json['highDefects']?.toString() ?? '') ?? 0,
-      mediumDefects: json['mediumDefects'] is int ? json['mediumDefects'] : int.tryParse(json['mediumDefects']?.toString() ?? '') ?? 0,
-      lowDefects: json['lowDefects'] is int ? json['lowDefects'] : int.tryParse(json['lowDefects']?.toString() ?? '') ?? 0,
-      codeReviewCompletion: json['codeReviewCompletion'] is double ? json['codeReviewCompletion'] : double.tryParse(json['codeReviewCompletion']?.toString() ?? '') ?? 0.0,
-      documentationStatus: json['documentationStatus'] is double ? json['documentationStatus'] : double.tryParse(json['documentationStatus']?.toString() ?? '') ?? 0.0,
-      risks: json['risks'],
-      mitigations: json['mitigations'],
-      scopeChanges: json['scopeChanges'],
-      pointsAddedDuringSprint: json['pointsAddedDuringSprint'] ?? 0,
-      pointsRemovedDuringSprint: json['pointsRemovedDuringSprint'] ?? 0,
-      blockers: json['blockers'],
-      decisions: json['decisions'],
-      uatNotes: json['uatNotes'],
-      recordedAt: DateTime.parse(json['recordedAt']),
-      recordedBy: json['recordedBy'],
+      id: id,
+      sprintId: sprintId,
+      committedPoints: _pickInt(['committedPoints', 'committed_points']),
+      completedPoints: _pickInt(['completedPoints', 'completed_points']),
+      carriedOverPoints: _pickInt(['carriedOverPoints', 'carried_over_points']),
+      testPassRate: _pickDouble(['testPassRate', 'test_pass_rate']),
+      defectsOpened: _pickInt(['defectsOpened', 'defects_opened']),
+      defectsClosed: _pickInt(['defectsClosed', 'defects_closed']),
+      criticalDefects: _pickInt(['criticalDefects', 'critical_defects']),
+      highDefects: _pickInt(['highDefects', 'high_defects']),
+      mediumDefects: _pickInt(['mediumDefects', 'medium_defects']),
+      lowDefects: _pickInt(['lowDefects', 'low_defects']),
+      codeReviewCompletion: _pickDouble(['codeReviewCompletion', 'code_review_completion']),
+      documentationStatus: _pickDouble(['documentationStatus', 'documentation_status']),
+      risks: _pick(['risks'])?.toString(),
+      mitigations: _pick(['mitigations'])?.toString(),
+      scopeChanges: _pick(['scopeChanges', 'scope_changes'])?.toString(),
+      pointsAddedDuringSprint: _pickInt(['pointsAddedDuringSprint', 'points_added', 'points_added_during_sprint']),
+      pointsRemovedDuringSprint: _pickInt(['pointsRemovedDuringSprint', 'points_removed', 'points_removed_during_sprint']),
+      blockers: _pick(['blockers'])?.toString(),
+      decisions: _pick(['decisions'])?.toString(),
+      uatNotes: _pick(['uatNotes', 'uat_notes'])?.toString(),
+      recordedAt: _pickDateTime(['recordedAt', 'recorded_at', 'created_at', 'updated_at']),
+      recordedBy: _pickString(['recordedBy', 'recorded_by', 'created_by'], fallback: ''),
     );
   }
 

@@ -186,18 +186,7 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
     if (_selectedAction.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select an action (Approve or Request Changes)'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    if (_selectedAction == 'changeRequest' &&
-        _changeRequestController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please provide details for the change request'),
+          content: Text('Please select an action (Approve, Request Changes, or Reject)'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -255,13 +244,27 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
           );
         }
       } else if (_selectedAction == 'changeRequest') {
+        String? signature = _capturedSignature;
+        signature ??= await _signatureKey.currentState?.getSignature();
+        if (signature == null || signature.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Digital signature is required to request changes for this report.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
         // If using token-based access, pass token in request
         final reportId = widget.reviewToken != null && widget.reportId.isEmpty
             ? _report?.id ?? ''
             : widget.reportId;
         final response = await backendService.requestSignOffChanges(
           reportId,
-          _changeRequestController.text,
+          _changeRequestController.text.isNotEmpty ? _changeRequestController.text : null,
+          signature,
           reviewToken: widget.reviewToken,
         );
         if (response.isSuccess && mounted) {
@@ -279,6 +282,47 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
             SnackBar(
               content:
                   Text('Failed to submit change request: ${response.error}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else if (_selectedAction == 'reject') {
+        String? signature = _capturedSignature;
+        signature ??= await _signatureKey.currentState?.getSignature();
+        if (signature == null || signature.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Digital signature is required to reject this report.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+        final reportId = widget.reviewToken != null && widget.reportId.isEmpty
+            ? _report?.id ?? ''
+            : widget.reportId;
+        final response = await backendService.rejectSignOffReport(
+          reportId,
+          _commentController.text.isNotEmpty ? _commentController.text : null,
+          signature,
+          reviewToken: widget.reviewToken,
+        );
+        if (response.isSuccess && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Report rejected successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          setState(() {
+            _report = _report?.copyWith(status: ReportStatus.rejected);
+          });
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to reject report: ${response.error}'),
               backgroundColor: Colors.red,
             ),
           );
@@ -690,6 +734,24 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                     activeColor: Colors.orange,
                   ),
                 ),
+                Expanded(
+                  child: RadioListTile<String>(
+                    title: const Text('Reject',
+                        style: TextStyle(color: Colors.white)),
+                    subtitle: const Text('Reject the report',
+                        style: TextStyle(color: Colors.grey)),
+                    value: 'reject',
+                    // ignore: deprecated_member_use
+                    groupValue: _selectedAction,
+                    // ignore: deprecated_member_use
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedAction = value!;
+                      });
+                    },
+                    activeColor: Colors.red,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -708,20 +770,13 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
               TextFormField(
                 controller: _changeRequestController,
                 decoration: const InputDecoration(
-                  labelText: 'Change Request Details *',
+                  labelText: 'Change Request Details (Optional)',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.edit),
                   hintText:
                       'List the required changes (e.g.,\n1. Update charts\n2. Fix typo in summary)',
                 ),
                 maxLines: 6,
-                validator: (value) {
-                  if (_selectedAction == 'changeRequest' &&
-                      (value?.isEmpty ?? true)) {
-                    return 'Please provide change request details';
-                  }
-                  return null;
-                },
               ),
               const SizedBox(height: 16),
             ],
@@ -766,7 +821,9 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _selectedAction == 'approve'
                       ? Colors.green
-                      : Colors.orange,
+                      : _selectedAction == 'reject'
+                          ? Colors.red
+                          : Colors.orange,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
                 child: _isSubmitting
@@ -774,7 +831,9 @@ class _ClientReviewScreenState extends ConsumerState<ClientReviewScreen> {
                     : Text(
                         _selectedAction == 'approve'
                             ? 'Approve Report'
-                            : 'Submit Change Request',
+                            : _selectedAction == 'reject'
+                                ? 'Reject Report'
+                                : 'Submit Change Request',
                         style: const TextStyle(fontSize: 16),
                       ),
               ),

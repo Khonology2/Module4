@@ -1,7 +1,11 @@
 const { Sequelize, Op } = require('sequelize');
-const { AuditLog, User, Deliverable, Sprint, Signoff, Notification } = require('../models');
+const { AuditLog, User, Deliverable, Sprint, Signoff, Notification, sequelize } = require('../models');
 const os = require('os');
 const process = require('process');
+
+function normalizeStatus(value) {
+  return String(value || '').toLowerCase().replace(/[\s_-]+/g, '');
+}
 
 class AnalyticsService {
   constructor() {
@@ -44,6 +48,7 @@ class AnalyticsService {
         user_activity: await this._getUserActivityMetrics(),
         system_usage: await this._getSystemUsageMetrics(),
         project_metrics: await this._getProjectMetrics(),
+        signoff_reports: await this._getSignoffMetrics(),
         performance: await this._getPerformanceMetrics(),
         timestamp: new Date().toISOString()
       };
@@ -65,6 +70,7 @@ class AnalyticsService {
     const metrics = this.metricsCache;
     const userActivity = metrics.user_activity || {};
     const projectMetrics = metrics.project_metrics || {};
+    const signoffMetrics = metrics.signoff_reports || {};
 
     // Convert to frontend-expected format
     const flatMetrics = {
@@ -82,10 +88,17 @@ class AnalyticsService {
       pending_deliverables: projectMetrics.deliverable_status?.pending || 0,
       completed_deliverables: projectMetrics.deliverable_status?.completed || 0,
       overdue_deliverables: projectMetrics.deliverable_status?.overdue || 0,
+      draft_reports: signoffMetrics.draft_reports || 0,
+      submitted_reports: signoffMetrics.submitted_reports || 0,
+      approved_reports: signoffMetrics.approved_reports || 0,
+      change_requested_reports: signoffMetrics.change_requested_reports || 0,
+      total_reports: signoffMetrics.total_reports || 0,
+      avg_signoff_days: signoffMetrics.avg_signoff_days || 0,
       
       // System metrics
       system_usage: metrics.system_usage || {},
       performance: metrics.performance || {},
+      user_activity: userActivity,
       timestamp: metrics.timestamp || ''
     };
 
@@ -114,10 +127,12 @@ class AnalyticsService {
         usersByRole[item.role] = parseInt(item.get('count'));
       });
 
+      const signoffMetrics = await this._getSignoffMetrics();
       return {
         total_users: totalUsers,
         users_by_role: usersByRole,
-        active_users_24h: activeUsers
+        active_users_24h: activeUsers,
+        avg_review_time: signoffMetrics.avg_review_time_hours || 0,
       };
     } catch (error) {
       console.error('Error getting user activity metrics:', error);
@@ -202,15 +217,97 @@ class AnalyticsService {
         sprintStatusObj[item.status] = parseInt(item.get('count'));
       });
 
+      const signoffMetrics = await this._getSignoffMetrics();
       return {
         total_deliverables: totalDeliverables,
         total_sprints: totalSprints,
         deliverable_status: deliverableStatusObj,
-        sprint_status: sprintStatusObj
+        sprint_status: sprintStatusObj,
+        signoff_reports: signoffMetrics,
       };
     } catch (error) {
       console.error('Error getting project metrics:', error);
       return {};
+    }
+  }
+
+  async _getSignoffMetrics() {
+    try {
+      await sequelize.query(
+        "CREATE TABLE IF NOT EXISTS sign_off_reports (\n" +
+          "  id SERIAL PRIMARY KEY,\n" +
+          "  deliverable_id VARCHAR(255),\n" +
+          "  created_by VARCHAR(255),\n" +
+          "  status VARCHAR(50) DEFAULT 'draft',\n" +
+          "  content JSONB,\n" +
+          "  created_at TIMESTAMP DEFAULT NOW(),\n" +
+          "  updated_at TIMESTAMP DEFAULT NOW()\n" +
+          ")"
+      );
+      const rows = await sequelize.query(
+        'SELECT id, status, content, created_at, updated_at FROM sign_off_reports',
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+      const metrics = {
+        total_reports: rows.length,
+        draft_reports: 0,
+        submitted_reports: 0,
+        approved_reports: 0,
+        change_requested_reports: 0,
+        rejected_reports: 0,
+        avg_signoff_days: 0,
+        avg_review_time_hours: 0,
+      };
+      const reviewDurationsHours = [];
+      const reviewDurationsDays = [];
+      for (const row of rows) {
+        const status = normalizeStatus(row.status);
+        if (status === 'draft') metrics.draft_reports += 1;
+        else if (status === 'submitted') metrics.submitted_reports += 1;
+        else if (status === 'approved') metrics.approved_reports += 1;
+        else if (status === 'changerequested') metrics.change_requested_reports += 1;
+        else if (status === 'rejected') metrics.rejected_reports += 1;
+        let content = row.content || {};
+        if (typeof content === 'string') {
+          try {
+            content = JSON.parse(content);
+          } catch (_) {
+            content = {};
+          }
+        }
+        const submittedAt = content.submittedAt || content.submitted_at || row.created_at;
+        const reviewedAt = content.approvedAt || content.approved_at || content.reviewedAt || content.reviewed_at;
+        if (submittedAt && reviewedAt) {
+          const start = new Date(submittedAt);
+          const end = new Date(reviewedAt);
+          if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end >= start) {
+            const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+            reviewDurationsHours.push(hours);
+            reviewDurationsDays.push(hours / 24);
+          }
+        }
+      }
+      if (reviewDurationsHours.length > 0) {
+        metrics.avg_review_time_hours = Number(
+          (reviewDurationsHours.reduce((sum, value) => sum + value, 0) / reviewDurationsHours.length).toFixed(1)
+        );
+        metrics.avg_signoff_days = Number(
+          (reviewDurationsDays.reduce((sum, value) => sum + value, 0) / reviewDurationsDays.length).toFixed(1)
+        );
+      }
+      return metrics;
+    } catch (error) {
+      console.error('Error getting sign-off metrics:', error);
+      return {
+        total_reports: 0,
+        draft_reports: 0,
+        submitted_reports: 0,
+        approved_reports: 0,
+        change_requested_reports: 0,
+        rejected_reports: 0,
+        avg_signoff_days: 0,
+        avg_review_time_hours: 0,
+      };
     }
   }
 

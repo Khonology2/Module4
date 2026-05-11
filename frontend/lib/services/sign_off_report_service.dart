@@ -348,7 +348,7 @@ class SignOffReportService {
   }
 
   // Request changes
-  Future<ApiResponse> requestChanges(String reportId, String changeRequestDetails) async {
+  Future<ApiResponse> requestChanges(String reportId, {String? changeRequestDetails, required String digitalSignature}) async {
     try {
       final token = _authService.accessToken;
       if (token == null) {
@@ -362,7 +362,8 @@ class SignOffReportService {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'changeRequestDetails': changeRequestDetails,
+          if (changeRequestDetails != null) 'changeRequestDetails': changeRequestDetails,
+          'digitalSignature': digitalSignature,
         }),
       );
 
@@ -375,6 +376,37 @@ class SignOffReportService {
       }
     } catch (e) {
       return ApiResponse.error('Error requesting changes: $e');
+    }
+  }
+
+  Future<ApiResponse> rejectReport(String reportId, {String? comment, required String digitalSignature}) async {
+    try {
+      final token = _authService.accessToken;
+      if (token == null) {
+        return ApiResponse.error('Not authenticated');
+      }
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/$reportId/reject'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          if (comment != null) 'comment': comment,
+          'digitalSignature': digitalSignature,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return ApiResponse.success(data, response.statusCode);
+      } else {
+        final data = jsonDecode(response.body);
+        return ApiResponse.error(data['error'] ?? 'Failed to reject report');
+      }
+    } catch (e) {
+      return ApiResponse.error('Error rejecting report: $e');
     }
   }
 

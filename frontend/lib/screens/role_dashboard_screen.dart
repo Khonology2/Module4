@@ -15,6 +15,7 @@ import '../models/notification_item.dart';
 import '../models/deliverable.dart';
 import '../screens/deliverables_metrics/deliverables_metrics_screen.dart';
 import '../widgets/sprint_performance_chart.dart';
+import '../widgets/signature_capture_widget.dart';
 import '../theme/flownet_theme.dart';
 import '../providers/service_providers.dart';
 import 'package:http/http.dart' as http;
@@ -3545,7 +3546,36 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   Future<void> _approveReport(String reportId) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final resp = await _reportService.approveReport(reportId);
+      final signatureKey = GlobalKey<SignatureCaptureWidgetState>();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Digital Signature'),
+            content: SizedBox(
+              width: 520,
+              child: SignatureCaptureWidget(
+                key: signatureKey,
+                allowSignatureReuse: true,
+                showAuditInfo: true,
+                reportId: reportId,
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => context.pop(false), child: const Text('Cancel')),
+              ElevatedButton(onPressed: () => context.pop(true), child: const Text('Approve')),
+            ],
+          );
+        },
+      );
+      if (confirmed != true) return;
+      final signature = await signatureKey.currentState?.getSignature();
+      if (signature == null || signature.trim().isEmpty) {
+        messenger.showSnackBar(const SnackBar(content: Text('Digital signature is required')));
+        return;
+      }
+
+      final resp = await _reportService.approveReport(reportId, digitalSignature: signature);
       if (resp.isSuccess) {
         setState(() {
           _pendingReports = _pendingReports
@@ -3570,7 +3600,46 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   Future<void> _requestChanges(String reportId, String details) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final resp = await _reportService.requestChanges(reportId, details);
+      if (details.trim().isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Change request details are required')),
+        );
+        return;
+      }
+      final signatureKey = GlobalKey<SignatureCaptureWidgetState>();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Digital Signature'),
+            content: SizedBox(
+              width: 520,
+              child: SignatureCaptureWidget(
+                key: signatureKey,
+                allowSignatureReuse: true,
+                showAuditInfo: true,
+                reportId: reportId,
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => context.pop(false), child: const Text('Cancel')),
+              ElevatedButton(onPressed: () => context.pop(true), child: const Text('Continue')),
+            ],
+          );
+        },
+      );
+      if (confirmed != true) return;
+      final signature = await signatureKey.currentState?.getSignature();
+      if (signature == null || signature.trim().isEmpty) {
+        messenger.showSnackBar(const SnackBar(content: Text('Digital signature is required')));
+        return;
+      }
+
+      final resp = await _reportService.requestChanges(
+        reportId,
+        changeRequestDetails: details.isNotEmpty ? details : null,
+        digitalSignature: signature,
+      );
       if (resp.isSuccess) {
         setState(() {
           _pendingReports = _pendingReports
@@ -3702,7 +3771,9 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           content: TextField(
             onChanged: (v) => details = v,
             decoration: const InputDecoration(
-                border: OutlineInputBorder(), labelText: 'Details'),
+                border: OutlineInputBorder(),
+                labelText: 'Change Request Details',
+                helperText: 'Required'),
             maxLines: 4,
           ),
           actions: [
@@ -3715,7 +3786,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         );
       },
     );
-    if (confirmed == true && details.trim().isNotEmpty) {
+    if (confirmed == true) {
       await _requestChanges(id, details.trim());
     }
   }
@@ -3883,7 +3954,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   void _handleAuditLogCreated(dynamic data) {
     try {
       if (data is! Map) return;
-      final log = Map<String, dynamic>.from(data as Map);
+      final log = Map<String, dynamic>.from(data);
       final id = log['id']?.toString() ?? '';
       if (id.isNotEmpty && _auditLogs.any((e) => (e['id']?.toString() ?? '') == id)) {
         return;

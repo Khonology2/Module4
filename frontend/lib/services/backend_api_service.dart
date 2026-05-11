@@ -330,8 +330,8 @@ class BackendApiService {
     return resp;
   }
 
-  Future<ApiResponse> getSignOffReport(String reportId) async {
-    return await _apiClient.get('/sign-off-reports/$reportId');
+  Future<ApiResponse> getSignOffReport(String reportId, {Duration? timeout}) async {
+    return await _apiClient.get('/sign-off-reports/$reportId', timeout: timeout);
   }
 
   Future<ApiResponse> createSignOffReport(Map<String, dynamic> reportData) async {
@@ -346,9 +346,9 @@ class BackendApiService {
     return resp;
   }
 
-  Future<ApiResponse> updateSignOffReport(String reportId, Map<String, dynamic> updates) async {
+  Future<ApiResponse> updateSignOffReport(String reportId, Map<String, dynamic> updates, {Duration? timeout}) async {
     debugPrint('🔵 Updating sign-off report $reportId: $updates');
-    return await _apiClient.put('/sign-off-reports/$reportId', body: updates);
+    return await _apiClient.put('/sign-off-reports/$reportId', body: updates, timeout: timeout);
   }
 
   Future<ApiResponse> deleteSignOffReport(String reportId) async {
@@ -380,10 +380,11 @@ class BackendApiService {
     return resp;
   }
 
-  Future<ApiResponse> requestSignOffChanges(String reportId, String changeRequest, {String? reviewToken, String? clientId}) async {
+  Future<ApiResponse> requestSignOffChanges(String reportId, String? changeRequest, String digitalSignature, {String? reviewToken, String? clientId}) async {
     debugPrint('🔵 Requesting changes to report: $reportId');
     final body = {
-      'changeRequestDetails': changeRequest,
+      if (changeRequest != null) 'changeRequestDetails': changeRequest,
+      'digitalSignature': digitalSignature,
       if (clientId != null) 'clientId': clientId,
     };
     // If token provided, add it to query
@@ -391,6 +392,21 @@ class BackendApiService {
     final resp = await _apiClient.post('/sign-off-reports/$reportId/request-changes', body: body, queryParams: queryParams);
     if (resp.isSuccess) {
       try { await _updateCachedReportStatus(reportId, 'change_requested'); } catch (_) {}
+    }
+    return resp;
+  }
+
+  Future<ApiResponse> rejectSignOffReport(String reportId, String? comment, String digitalSignature, {String? reviewToken, String? clientId}) async {
+    debugPrint('🔵 Rejecting report: $reportId');
+    final body = {
+      if (comment != null) 'comment': comment,
+      'digitalSignature': digitalSignature,
+      if (clientId != null) 'clientId': clientId,
+    };
+    final queryParams = reviewToken != null ? {'token': reviewToken} : null;
+    final resp = await _apiClient.post('/sign-off-reports/$reportId/reject', body: body, queryParams: queryParams);
+    if (resp.isSuccess) {
+      try { await _updateCachedReportStatus(reportId, 'rejected'); } catch (_) {}
     }
     return resp;
   }
@@ -417,7 +433,7 @@ class BackendApiService {
       if (temperature != null) 'temperature': temperature,
       if (maxTokens != null) 'max_tokens': maxTokens,
     };
-    final resp = await _apiClient.post('/ai/chat', body: body);
+    final resp = await _apiClient.post('/ai/chat', body: body, timeout: const Duration(seconds: 90));
     if (resp.statusCode == 429) {
       int seconds = 2;
       try {
@@ -431,7 +447,7 @@ class BackendApiService {
         }
       } catch (_) {}
       await Future.delayed(Duration(seconds: seconds));
-      return await _apiClient.post('/ai/chat', body: body);
+      return await _apiClient.post('/ai/chat', body: body, timeout: const Duration(seconds: 90));
     }
     return resp;
   }
@@ -664,7 +680,14 @@ class BackendApiService {
   }
 
   // Audit logs endpoint (real implementation)
-  Future<ApiResponse> getRealAuditLogs({int skip = 0, int limit = 100, String? action, String? userId}) async {
+  Future<ApiResponse> getRealAuditLogs({
+    int skip = 0,
+    int limit = 100,
+    String? action,
+    String? userId,
+    String? entityType,
+    String? entityId,
+  }) async {
     final queryParams = <String, String>{
       'skip': skip.toString(),
       'limit': limit.toString(),
@@ -674,6 +697,12 @@ class BackendApiService {
     }
     if (userId != null && userId.isNotEmpty) {
       queryParams['user_id'] = userId;
+    }
+    if (entityType != null && entityType.isNotEmpty) {
+      queryParams['entity_type'] = entityType;
+    }
+    if (entityId != null && entityId.isNotEmpty) {
+      queryParams['entity_id'] = entityId;
     }
     
     return await _apiClient.get('/audit-logs', queryParams: queryParams);
@@ -894,8 +923,15 @@ final firstName = userData['first_name'] ?? userData['firstName'] ?? userData['f
     if (!response.isSuccess || response.data == null) return [];
     
     try {
-      final List<dynamic> items = response.data!['data'] ?? response.data!['metrics'] ?? [];
-      return items.map((item) => SprintMetrics.fromJson(item)).toList();
+      final raw = response.data;
+      final dynamic extracted = raw is Map ? (raw['data'] ?? raw['metrics'] ?? raw['items'] ?? raw) : raw;
+      final List<dynamic> items = extracted is List
+          ? extracted
+          : (extracted is Map ? <dynamic>[extracted] : const <dynamic>[]);
+      return items
+          .whereType<Map>()
+          .map((item) => SprintMetrics.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
     } catch (e) {
       debugPrint('Error parsing sprint metrics: $e');
       return [];
