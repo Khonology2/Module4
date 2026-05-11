@@ -130,8 +130,6 @@ class AppIcons {
           width: size,
           height: size,
           fit: fit,
-          color: color,
-          colorBlendMode: color != null ? BlendMode.srcIn : null,
           errorBuilder: (context, error, stackTrace) {
             final altPath = assetPath.startsWith('frontend/')
                 ? assetPath.replaceFirst('frontend/', '')
@@ -141,8 +139,6 @@ class AppIcons {
               width: size,
               height: size,
               fit: fit,
-              color: color,
-              colorBlendMode: color != null ? BlendMode.srcIn : null,
               errorBuilder: (context, error, stackTrace) {
                 return Icon(
                   getIcon(iconName, fallbackIcon: fallbackIcon),
