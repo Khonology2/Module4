@@ -3522,7 +3522,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
 
   void _computeTeamMetrics() {
     if (!mounted) return;
-    setState(() => _isLoadingTeamMetrics = true);
     try {
       final int totalDeliverables = _dashboardDeliverables.length;
       int completed = 0;
@@ -3585,13 +3584,11 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       };
       if (mounted) {
         setState(() {
-          _teamMetrics = m;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _teamMetrics = {});
+      if (mounted) {};
     } finally {
-      if (mounted) setState(() => _isLoadingTeamMetrics = false);
     }
   }
 
