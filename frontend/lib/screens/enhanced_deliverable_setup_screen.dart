@@ -404,8 +404,9 @@ class _EnhancedDeliverableSetupScreenState
       return;
     }
 
-    // Check if blocked by readiness gate
-    if (_currentReadinessStatus == ReadinessStatus.red &&
+    // Amber and red both require explicit internal approval before proceeding.
+    if ((_currentReadinessStatus == ReadinessStatus.red ||
+            _currentReadinessStatus == ReadinessStatus.amber) &&
         !_hasInternalApproval) {
       _showReadinessDialog();
       return;
@@ -646,7 +647,7 @@ class _EnhancedDeliverableSetupScreenState
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-                'The deliverable is not ready for submission. Please complete the required items:'),
+                'This deliverable needs internal approval before it can be created. Complete the missing items or request an override:'),
             const SizedBox(height: 16),
             ..._readinessItems
                 .where((item) => item.isRequired && !item.isCompleted)
@@ -661,6 +662,17 @@ class _EnhancedDeliverableSetupScreenState
         ),
         actions: [
           TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _requestInternalApproval(
+                _currentReadinessStatus == ReadinessStatus.red
+                    ? 'Requesting internal approval because critical readiness issues remain.'
+                    : 'Requesting internal approval because acknowledged readiness issues remain.',
+              );
+            },
+            child: const Text('Request Internal Approval'),
+          ),
+          TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('OK'),
           ),
@@ -672,12 +684,13 @@ class _EnhancedDeliverableSetupScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: FlownetColors.charcoalBlack,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Create Deliverable'),
-        backgroundColor: FlownetColors.charcoalBlack,
+        backgroundColor: Colors.transparent,
         foregroundColor: FlownetColors.pureWhite,
         centerTitle: false,
+        elevation: 0,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -1169,7 +1182,9 @@ class _EnhancedDeliverableSetupScreenState
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: (_isSubmitting ||
-                          (_currentReadinessStatus == ReadinessStatus.red &&
+                          ((_currentReadinessStatus == ReadinessStatus.red ||
+                                  _currentReadinessStatus ==
+                                      ReadinessStatus.amber) &&
                               !_hasInternalApproval))
                       ? null
                       : _submitDeliverable,
@@ -1190,7 +1205,9 @@ class _EnhancedDeliverableSetupScreenState
                           _currentReadinessStatus == ReadinessStatus.green
                               ? 'Create Deliverable'
                               : _currentReadinessStatus == ReadinessStatus.amber
-                                  ? 'Create with Acknowledged Issues'
+                                  ? (_hasInternalApproval
+                                      ? 'Create with Internal Approval'
+                                      : 'Internal Approval Required')
                                   : _hasInternalApproval
                                       ? 'Create with Internal Approval'
                                       : 'Complete Required Items First',

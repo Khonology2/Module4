@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
 const { Signoff, AuditLog, Deliverable, Sprint, User, sequelize } = require('../models');
 const { QueryTypes, Op } = require('sequelize');
 const { verifyToken } = require('../utils/authUtils');
 const { optionalAuthenticateToken } = require('../middleware/auth');
 const { isSprintCompletedStatus } = require('../services/sprintCarryOverService');
+const PDFDocument = require('pdfkit');
 
 function safeParseJson(text) {
   try { return JSON.parse(text); } catch (_) { return {}; }
@@ -56,6 +59,152 @@ async function validateCompletedSprintIds(sprintIds) {
   }
 
   return null;
+}
+
+async function buildSprintReportDataBySprintIds(sprintIds) {
+  const raw = Array.isArray(sprintIds) ? sprintIds : (sprintIds == null ? [] : [sprintIds]);
+  const ids = raw
+    .map((v) => String(v || '').trim())
+    .filter((v) => v.length > 0);
+  if (ids.length === 0) return null;
+  try {
+    const numericIds = Array.from(new Set(ids))
+      .map((v) => parseInt(v, 10))
+      .filter((n) => Number.isFinite(n));
+    if (numericIds.length === 0) return null;
+    const sprints = await Sprint.findAll({
+      where: { id: { [Op.in]: numericIds } },
+      order: [['start_date', 'ASC'], ['created_at', 'ASC']],
+    });
+    if (!sprints || sprints.length === 0) return null;
+    const performanceMetrics = await generatePerformanceMetrics(numericIds);
+    const totalCommitted = performanceMetrics.reduce((sum, item) => sum + Number(item.committed_points || 0), 0);
+    const totalCompleted = performanceMetrics.reduce((sum, item) => sum + Number(item.completed_points || 0), 0);
+    const totalCarried = performanceMetrics.reduce((sum, item) => sum + Number(item.carried_over_points || 0), 0);
+    const totalOpened = performanceMetrics.reduce((sum, item) => sum + Number(item.defects_opened || 0), 0);
+    const totalClosed = performanceMetrics.reduce((sum, item) => sum + Number(item.defects_closed || 0), 0);
+    const avgPassRate = performanceMetrics.length > 0
+      ? Math.round(
+          performanceMetrics.reduce((sum, item) => sum + Number(item.test_pass_rate || 0), 0) / performanceMetrics.length
+        )
+      : 0;
+    const firstSprint = sprints[0];
+    const lastSprint = sprints[sprints.length - 1];
+    const scopeChanges = performanceMetrics.map((item) => ({
+      sprintId: item.sprintId,
+      sprintName: item.name,
+      pointsAdded: Number(item.points_added || 0),
+      pointsRemoved: Number(item.points_removed || 0),
+      indicator: item.scope_change_indicator || 'No change',
+    }));
+    return {
+      project: firstSprint && firstSprint.project_id ? { id: firstSprint.project_id } : null,
+      sprint: {
+        id: sprints.length === 1 ? String(firstSprint.id) : ids.join(','),
+        name: sprints.length === 1
+          ? (firstSprint.name || `Sprint ${firstSprint.id}`)
+          : `${sprints.length} Linked Sprints`,
+        startDate: firstSprint && firstSprint.start_date ? new Date(firstSprint.start_date).toISOString() : null,
+        endDate: lastSprint && lastSprint.end_date ? new Date(lastSprint.end_date).toISOString() : null,
+        status: sprints.every((s) => isSprintCompletedStatus(s.status)) ? 'completed' : 'mixed',
+        sprintCount: sprints.length,
+      },
+      summary: {
+        sprintCount: sprints.length,
+        totalCommittedPoints: totalCommitted,
+        totalCompletedPoints: totalCompleted,
+        totalCarriedOverPoints: totalCarried,
+        totalDefectsOpened: totalOpened,
+        totalDefectsClosed: totalClosed,
+        averageTestPassRate: avgPassRate,
+        scopeChanges,
+      },
+      team: null,
+      deliverables: [],
+      performanceMetrics,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeReportStatusValue(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (!raw) return 'draft';
+  if (raw === 'underreview') return 'under_review';
+  if (raw === 'changerequested') return 'change_requested';
+  return raw;
+}
+
+function effectiveReportTimestamp(content, row) {
+  const c = content || {};
+  return (
+    c.approvedAt ||
+    c.approved_at ||
+    c.reviewedAt ||
+    c.reviewed_at ||
+    c.submittedAt ||
+    c.submitted_at ||
+    row.updated_at ||
+    row.created_at ||
+    null
+  );
+}
+
+function buildReportVersionEntry(content, row, reason, actor) {
+  const c = content || {};
+  return {
+    version: Number(c.currentVersion || 1),
+    status: row && row.status ? String(row.status) : normalizeReportStatusValue(c.status),
+    reportTitle: c.reportTitle || c.report_title || 'Untitled Report',
+    savedAt: new Date().toISOString(),
+    savedBy: actor && actor.id ? String(actor.id) : null,
+    savedByName: actor && actor.name ? actor.name : null,
+    savedByRole: actor && actor.role ? (roleDisplayValue(actor.role) || actor.role) : null,
+    reason: reason || 'updated',
+    snapshot: {
+      reportContent: c.reportContent || c.report_content || '',
+      sprintIds: c.sprintIds || c.sprint_ids || [],
+      sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data || null,
+      sprintReportData: c.sprintReportData || c.sprint_report_data || null,
+      knownLimitations: c.knownLimitations || c.known_limitations || null,
+      nextSteps: c.nextSteps || c.next_steps || null,
+      clientComment: c.clientComment || c.client_comment || null,
+      changeRequestDetails: c.changeRequestDetails || c.change_request_details || null,
+    },
+  };
+}
+
+function appendReportVersion(content, row, reason, actor) {
+  const current = content || {};
+  const history = Array.isArray(current.versionHistory) ? [...current.versionHistory] : [];
+  history.unshift(buildReportVersionEntry(current, row || {}, reason, actor));
+  return {
+    ...current,
+    currentVersion: Number(current.currentVersion || 0) + 1,
+    versionHistory: history.slice(0, 25),
+  };
+}
+
+async function recordReportAudit({ action, reportId, reportTitle, actor, details }) {
+  try {
+    const payload = {
+      action,
+      user_id: actor && actor.id ? actor.id : null,
+      user_email: actor && actor.email ? actor.email : null,
+      user_role: actor && actor.role ? (roleDisplayValue(actor.role) || actor.role) : null,
+      entity_type: 'signoff',
+      entity_id: String(reportId),
+      entity_name: reportTitle || 'Sign-Off Report',
+      created_at: new Date(),
+    };
+    if (details && typeof details === 'object') {
+      payload.details = details;
+    }
+    await AuditLog.create(payload);
+  } catch (auditErr) {
+    console.error(`Error creating audit log for ${action}:`, auditErr);
+  }
 }
 
 function normalizeRoleValue(r) {
@@ -221,6 +370,10 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
+    const roleNorm = normalizeRoleValue(req.user && req.user.role);
+    if (roleNorm !== 'deliverylead') {
+      return res.status(403).json({ error: 'Only delivery leads can prepare sprint sign-off reports' });
+    }
     const { sprintId } = req.params;
     const note = (req.body && req.body.note) ? String(req.body.note) : null;
     const { Sprint, Project, Deliverable, User } = require('../models');
@@ -241,6 +394,39 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
     });
     if (!sprint) {
       return res.status(404).json({ error: 'Sprint not found' });
+    }
+    if (!isSprintCompletedStatus(sprint.status)) {
+      return res.status(400).json({ error: 'Sprint must be completed before creating a sprint sign-off report' });
+    }
+    const sprintJson = (sprint && typeof sprint.toJSON === 'function') ? sprint.toJSON() : sprint;
+    const isPresent = (v) => v !== null && v !== undefined && String(v).trim() !== '';
+    const pick = (...keys) => {
+      for (const k of keys) {
+        if (sprintJson && Object.prototype.hasOwnProperty.call(sprintJson, k) && isPresent(sprintJson[k])) {
+          return sprintJson[k];
+        }
+      }
+      return null;
+    };
+    const hasRequiredOnSprint =
+      isPresent(pick('test_pass_rate', 'testPassRate')) &&
+      isPresent(pick('defects_opened', 'defectsOpened')) &&
+      isPresent(pick('defects_closed', 'defectsClosed')) &&
+      isPresent(pick('code_review_completion', 'codeReviewCompletion')) &&
+      isPresent(pick('documentation_status', 'documentationStatus'));
+
+    if (!hasRequiredOnSprint) {
+      try {
+        const [metricsRows] = await sequelize.query(
+          `SELECT 1 FROM sprint_metrics WHERE sprint_id = $1 ORDER BY recorded_at DESC LIMIT 1`,
+          { bind: [sprintId] }
+        );
+        if (!metricsRows || metricsRows.length === 0) {
+          return res.status(400).json({ error: 'Sprint metrics must be completed before creating a sprint sign-off report' });
+        }
+      } catch (_) {
+        return res.status(400).json({ error: 'Sprint metrics must be completed before creating a sprint sign-off report' });
+      }
     }
     const allProjectSprints = sprint.project_id
       ? await Sprint.findAll({ where: { project_id: sprint.project_id }, attributes: ['id', 'status'] })
@@ -320,17 +506,42 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
     const progressPercent = total > 0 ? Math.round(sumProgress / total) : 0;
     const completionRate = total > 0 ? Math.round((counts.completed / total) * 100) : 0;
 
-    const teamMap = new Map();
-    for (const d of rawDeliverables) {
-      const o = d.owner || null;
-      if (o && o.id != null) {
-        const uid = String(o.id);
-        if (!teamMap.has(uid)) {
-          teamMap.set(uid, { id: uid, name: ownerDisplay(o), email: o.email || null, role: o.role || null });
-        }
-      }
+    const { ProjectMember } = require('../models');
+    const deliverablesByOwner = new Map();
+    for (const d of deliverables) {
+      const ownerId = d.ownerId ? String(d.ownerId) : null;
+      if (!ownerId) continue;
+      const list = deliverablesByOwner.get(ownerId) || [];
+      list.push(d);
+      deliverablesByOwner.set(ownerId, list);
     }
-    const team = Array.from(teamMap.values()).filter((m) => m.name || m.email);
+
+    let team = [];
+    try {
+      if (sprint.project_id) {
+        const members = await ProjectMember.findAll({
+          where: { project_id: sprint.project_id },
+          include: [{ model: User, as: 'user', attributes: ['id', 'email', 'first_name', 'last_name', 'role'] }],
+        });
+        team = members.map((pm) => {
+          const u = pm.user || null;
+          const uid = u && u.id != null ? String(u.id) : null;
+          const workList = uid ? (deliverablesByOwner.get(uid) || []) : [];
+          const work = workList.length === 0
+            ? 'No sprint deliverables assigned'
+            : workList.map((d) => `${d.name} (${d.status || 'unknown'})`).join(', ');
+          return {
+            id: uid || '',
+            name: u ? ownerDisplay(u) : null,
+            email: u && u.email ? String(u.email) : null,
+            role: pm.role || (u && u.role ? String(u.role) : null),
+            work,
+          };
+        }).filter((m) => m.name || m.email);
+      }
+    } catch (_) {
+      team = [];
+    }
 
     const health = (counts.overdue > 0)
       ? 'critical'
@@ -404,7 +615,8 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
       reportLines.push('None');
     } else {
       for (const m of team) {
-        reportLines.push(`- ${fmt(m.name)} | ${fmt(m.email)} | ${fmt(m.role)}`);
+        const work = m.work ? String(m.work) : '';
+        reportLines.push(`- ${fmt(m.name)} | ${fmt(m.email)} | ${fmt(m.role)}${work ? ' | Work: ' + work : ''}`);
       }
     }
     reportLines.push('');
@@ -422,16 +634,35 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
     reportLines.push('SIGN-OFF NOTES');
     reportLines.push(note && note.trim() ? note.trim() : '-');
 
-    const content = {
+    const sprintPerformanceData = JSON.stringify([{
+      id: String(sprint.id),
+      name: sprintDetails.name,
+      status: sprint.status || null,
+      start_date: sprintDetails.startDate,
+      end_date: sprintDetails.endDate,
+      planned_points: sprint.planned_points ?? 0,
+      committed_points: sprint.committed_points ?? 0,
+      completed_points: sprint.completed_points ?? 0,
+      carried_over_points: sprint.carried_over_points ?? 0,
+      points_added: sprint.added_during_sprint ?? 0,
+      points_removed: sprint.removed_during_sprint ?? 0,
+      test_pass_rate: sprint.test_pass_rate ?? 0,
+      defects_opened: sprint.defects_opened ?? 0,
+      defects_closed: sprint.defects_closed ?? 0,
+      code_review_completion: sprint.code_review_completion ?? 0,
+      documentation_status: sprint.documentation_status ?? null,
+    }]);
+
+    let content = {
       reportTitle: `Sprint Report: ${sprint.name || 'Sprint ' + sprintId}`,
       reportContent: reportLines.join('\n'),
       sprintIds: [String(sprintId)],
-      sprintPerformanceData: '',
+      sprintPerformanceData,
       sprintReportData: {
         project: projectDetails,
         sprint: sprintDetails,
         summary,
-        team,
+        team: { members: team },
         deliverables,
       },
       preparedBy: actor.id,
@@ -439,6 +670,7 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
       preparedByRole: actorRole,
       status: 'draft',
     };
+    content = appendReportVersion(content, { status: 'draft' }, 'created_from_sprint', actor);
 
     const dialect = (sequelize && typeof sequelize.getDialect === 'function') ? sequelize.getDialect() : '';
     const contentExpr = dialect === 'postgres' ? '$3::jsonb' : '$3';
@@ -455,6 +687,7 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
       reportContent: (c.reportContent || c.report_content || ''),
       sprintIds: c.sprintIds || c.sprint_ids || [],
       sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+      sprintReportData: c.sprintReportData || c.sprint_report_data || null,
       status: row.status || 'draft',
       preparedBy: c.preparedBy || c.prepared_by,
       preparedByName: c.preparedByName || c.prepared_by_name,
@@ -469,6 +702,13 @@ router.post('/from-sprint/:sprintId', async (req, res) => {
         created_by: report.createdBy
       });
     }
+    await recordReportAudit({
+      action: 'created',
+      reportId: report.id,
+      reportTitle: report.reportTitle,
+      actor,
+      details: { sprint_ids: [String(sprintId)], version: content.currentVersion || 1 },
+    });
     return res.status(201).json(report);
   } catch (error) {
     console.error('Error creating sprint sign-off report:', error);
@@ -509,7 +749,7 @@ router.get('/', async (req, res) => {
     
     await ensureReportsTable();
     
-    const { deliverableId, status } = req.query;
+    const { deliverableId, status, search, projectId, sprintId, from, to } = req.query;
     let results;
     try {
       const normalizeStatus = (s) => {
@@ -572,6 +812,34 @@ router.get('/', async (req, res) => {
     }
     const usersById = userIds.size > 0 ? await User.findAll({ where: { id: [...userIds] } }) : [];
     const usersByEmail = emails.size > 0 ? await User.findAll({ where: { email: [...emails] } }) : [];
+    const numericDeliverableIds = [...new Set(rawRows
+      .map((r) => parseInt(r.deliverable_id, 10))
+      .filter((n) => Number.isFinite(n)))];
+    const deliverablesById = new Map();
+    const projectsById = new Map();
+    if (numericDeliverableIds.length > 0) {
+      const linkedDeliverables = await Deliverable.findAll({
+        where: { id: { [Op.in]: numericDeliverableIds } },
+        attributes: ['id', 'title', 'status', 'project_id'],
+      });
+      for (const deliverable of linkedDeliverables) {
+        deliverablesById.set(String(deliverable.id), deliverable);
+      }
+      const projectIds = [...new Set(linkedDeliverables
+        .map((d) => d.project_id)
+        .filter(Boolean)
+        .map((v) => String(v)))];
+      if (projectIds.length > 0) {
+        const { Project } = require('../models');
+        const projects = await Project.findAll({
+          where: { id: { [Op.in]: projectIds } },
+          attributes: ['id', 'name', 'key'],
+        });
+        for (const project of projects) {
+          projectsById.set(String(project.id), project);
+        }
+      }
+    }
     const userNameMap = new Map();
     const userRoleMap = new Map();
     for (const u of usersById) {
@@ -597,9 +865,16 @@ router.get('/', async (req, res) => {
         const reviewedBy = c.reviewedBy || c.reviewed_by;
         const approvedBy = c.approvedBy || c.approved_by;
         const preparedBy = c.preparedBy || c.prepared_by || (row.created_by || '').toString();
+        const linkedDeliverable = deliverablesById.get((row.deliverable_id || '').toString()) || null;
+        const linkedProject = linkedDeliverable && linkedDeliverable.project_id
+          ? projectsById.get(String(linkedDeliverable.project_id)) || null
+          : null;
         return {
           id: row.id,
           deliverableId: (row.deliverable_id || '').toString(),
+          deliverableTitle: linkedDeliverable ? linkedDeliverable.title : null,
+          projectId: linkedDeliverable && linkedDeliverable.project_id ? String(linkedDeliverable.project_id) : null,
+          projectName: linkedProject ? linkedProject.name : null,
           reportTitle: (c.reportTitle || c.report_title || 'Untitled Report'),
           reportContent: (c.reportContent || c.report_content || ''),
           sprintIds: c.sprintIds || c.sprint_ids || [],
@@ -607,6 +882,12 @@ router.get('/', async (req, res) => {
           knownLimitations: c.knownLimitations || c.known_limitations,
           nextSteps: c.nextSteps || c.next_steps,
           status: row.status || 'draft',
+          updatedAt: row.updated_at,
+          effectiveAt: effectiveReportTimestamp(c, row),
+          isArchived: Boolean(c.isArchived),
+          archivedAt: c.archivedAt || null,
+          currentVersion: Number(c.currentVersion || 0),
+          versionHistory: Array.isArray(c.versionHistory) ? c.versionHistory : [],
           preparedBy: preparedBy,
           preparedByName:
             c.preparedByName ||
@@ -686,7 +967,51 @@ router.get('/', async (req, res) => {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
     }
-    if (reports.length === 0) {
+    const normalizedStatusFilter = String(status || '').trim()
+      ? normalizeReportStatusValue(status)
+      : '';
+    const searchTerm = String(search || '').trim().toLowerCase();
+    const fromDate = from ? new Date(String(from)) : null;
+    const toDate = to ? new Date(String(to)) : null;
+    if (normalizedStatusFilter) {
+      reports = reports.filter((report) => normalizeReportStatusValue(report.status) === normalizedStatusFilter);
+    }
+    if (projectId) {
+      reports = reports.filter((report) => String(report.projectId || '') === String(projectId));
+    }
+    if (sprintId) {
+      reports = reports.filter((report) => Array.isArray(report.sprintIds) && report.sprintIds.map(String).includes(String(sprintId)));
+    }
+    if (searchTerm) {
+      reports = reports.filter((report) => {
+        const haystack = [
+          report.reportTitle,
+          report.reportContent,
+          report.deliverableTitle,
+          report.projectName,
+          report.changeRequestDetails,
+          report.clientComment,
+          report.createdByName,
+          report.preparedByName,
+        ]
+          .map((value) => String(value || '').toLowerCase())
+          .join(' ');
+        return haystack.includes(searchTerm);
+      });
+    }
+    if (fromDate instanceof Date && !Number.isNaN(fromDate.getTime())) {
+      reports = reports.filter((report) => {
+        const ts = new Date(report.effectiveAt || report.createdAt || report.updatedAt || 0);
+        return !Number.isNaN(ts.getTime()) && ts >= fromDate;
+      });
+    }
+    if (toDate instanceof Date && !Number.isNaN(toDate.getTime())) {
+      reports = reports.filter((report) => {
+        const ts = new Date(report.effectiveAt || report.createdAt || report.updatedAt || 0);
+        return !Number.isNaN(ts.getTime()) && ts <= toDate;
+      });
+    }
+    if (rawRows.length === 0) {
       try {
         const signoffs = await Signoff.findAll({
           where: { entity_type: 'deliverable' },
@@ -759,6 +1084,10 @@ router.get('/:id', async (req, res) => {
       const reviewedBy = c.reviewedBy || c.reviewed_by;
       const approvedBy = c.approvedBy || c.approved_by;
       const preparedBy = c.preparedBy || c.prepared_by || (row.created_by || '').toString();
+      const sprintIds = c.sprintIds || c.sprint_ids || [];
+      const sprintReportDataFromContent = c.sprintReportData || c.sprint_report_data || null;
+      const sprintReportData =
+        sprintReportDataFromContent != null ? sprintReportDataFromContent : await buildSprintReportDataBySprintIds(sprintIds);
       const extraIds = [];
       if (looksLikeUserId(submittedBy)) extraIds.push(String(submittedBy));
       if (looksLikeUserId(reviewedBy)) extraIds.push(String(reviewedBy));
@@ -788,8 +1117,9 @@ router.get('/:id', async (req, res) => {
         deliverableId: (row.deliverable_id || '').toString(),
         reportTitle: (c.reportTitle || c.report_title || 'Untitled Report'),
         reportContent: (c.reportContent || c.report_content || ''),
-        sprintIds: c.sprintIds || c.sprint_ids || [],
+        sprintIds,
         sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+        sprintReportData,
         knownLimitations: c.knownLimitations || c.known_limitations,
         nextSteps: c.nextSteps || c.next_steps,
         preparedBy: preparedBy,
@@ -834,6 +1164,11 @@ router.get('/:id', async (req, res) => {
           null,
         clientComment: c.clientComment || c.client_comment,
         changeRequestDetails: c.changeRequestDetails || c.change_request_details,
+        versionHistory: Array.isArray(c.versionHistory) ? c.versionHistory : [],
+        currentVersion: Number(c.currentVersion || 0),
+        isArchived: Boolean(c.isArchived),
+        archivedAt: c.archivedAt || null,
+        sealedAt: c.sealedAt || null,
         approvedAt: c.approvedAt || c.approved_at,
         approvedBy: approvedBy,
         approvedByName:
@@ -911,11 +1246,15 @@ router.post('/', async (req, res) => {
       const actor = await resolveActorIdentity({ userId: String(req.user.id), email: req.user.email });
       const actorRole = actor.role ? String(actor.role) : (req.user && req.user.role ? String(req.user.role) : null);
       const normalizedStatus = (typeof status === 'string' && status.trim().length > 0) ? status.trim() : 'draft';
-      const content = {
+      const sprintReportData = await buildSprintReportDataBySprintIds(sprintIds);
+      let content = {
         reportTitle: reportTitle.trim(),
         reportContent: reportContent.trim(),
         sprintIds: sprintIds || [],
-        sprintPerformanceData,
+        sprintPerformanceData: sprintPerformanceData || (Array.isArray(sprintIds) && sprintIds.length > 0
+          ? JSON.stringify(await generatePerformanceMetrics(sprintIds))
+          : null),
+        sprintReportData,
         knownLimitations,
         nextSteps,
         status: normalizedStatus,
@@ -923,6 +1262,7 @@ router.post('/', async (req, res) => {
         preparedByName: actor.name,
         preparedByRole: actorRole
       };
+      content = appendReportVersion(content, { status: normalizedStatus }, 'created', actor);
       const dialect = (sequelize && typeof sequelize.getDialect === 'function') ? sequelize.getDialect() : '';
       const contentExpr = dialect === 'postgres' ? '$4::jsonb' : '$4';
       const [results] = await sequelize.query(
@@ -938,6 +1278,7 @@ router.post('/', async (req, res) => {
         reportContent: (c.reportContent || c.report_content || ''),
         sprintIds: c.sprintIds || c.sprint_ids || [],
         sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+        sprintReportData: c.sprintReportData || c.sprint_report_data || null,
         knownLimitations: c.knownLimitations || c.known_limitations,
         nextSteps: c.nextSteps || c.next_steps,
         status: row.status || normalizedStatus,
@@ -956,6 +1297,17 @@ router.post('/', async (req, res) => {
           created_by: report.createdBy
         });
       }
+      await recordReportAudit({
+        action: 'created',
+        reportId: report.id,
+        reportTitle: report.reportTitle,
+        actor,
+        details: {
+          deliverable_id: report.deliverableId,
+          sprint_ids: report.sprintIds,
+          version: content.currentVersion || 1,
+        },
+      });
       return res.status(201).json(report);
     }
     const signoffData = req.body;
@@ -981,9 +1333,9 @@ router.put('/:id', async (req, res) => {
         return res.status(401).json({ error: 'Authentication required' });
       }
       await ensureReportsTable();
-      const updates = req.body || {};
+      const updates = { ...(req.body || {}) };
       const [existing] = await sequelize.query(
-        `SELECT id, created_by, status FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
+        `SELECT id, created_by, status, deliverable_id, content, created_at, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
         { bind: [id] }
       );
       if (!existing || existing.length === 0) {
@@ -1009,10 +1361,29 @@ router.put('/:id', async (req, res) => {
           return res.status(400).json(sprintValidation);
         }
       }
+      if (nextSprintIds != null) {
+        const sprintReportData = await buildSprintReportDataBySprintIds(nextSprintIds);
+        updates.sprintReportData = sprintReportData;
+        updates.sprintPerformanceData = JSON.stringify(await generatePerformanceMetrics(nextSprintIds));
+      }
+
+      const currentRow = existing[0];
+      const currentContent = currentRow && currentRow.content
+        ? (typeof currentRow.content === 'string' ? safeParseJson(currentRow.content) : currentRow.content)
+        : {};
+      const actor = await resolveActorIdentity({ userId: String(req.user.id), email: req.user.email });
+      let mergedContent = {
+        ...currentContent,
+        ...updates,
+      };
+      if (updates.status != null) {
+        mergedContent.status = updates.status;
+      }
+      mergedContent = appendReportVersion(mergedContent, currentRow, 'updated', actor);
 
       const [results] = await sequelize.query(
-        `UPDATE sign_off_reports SET status = COALESCE($2, status), content = COALESCE(content, '{}'::jsonb) || $3::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
-        { bind: [id, updates.status ?? null, JSON.stringify(updates)] }
+        `UPDATE sign_off_reports SET status = COALESCE($2, status), content = $3::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
+        { bind: [id, updates.status ?? null, JSON.stringify(mergedContent)] }
       );
       if (!results || results.length === 0) {
         return res.status(404).json({ error: 'Report not found' });
@@ -1026,6 +1397,7 @@ router.put('/:id', async (req, res) => {
         reportContent: (c.reportContent || c.report_content || ''),
         sprintIds: c.sprintIds || c.sprint_ids || [],
         sprintPerformanceData: c.sprintPerformanceData || c.sprint_performance_data,
+        sprintReportData: c.sprintReportData || c.sprint_report_data || null,
         knownLimitations: c.knownLimitations || c.known_limitations,
         nextSteps: c.nextSteps || c.next_steps,
         status: row.status || 'draft',
@@ -1043,6 +1415,16 @@ router.put('/:id', async (req, res) => {
           status: report.status
         });
       }
+      await recordReportAudit({
+        action: 'updated',
+        reportId: report.id,
+        reportTitle: report.reportTitle,
+        actor,
+        details: {
+          updated_fields: Object.keys(updates),
+          version: mergedContent.currentVersion || null,
+        },
+      });
       return res.json(report);
     }
     const updateData = req.body;
@@ -1144,16 +1526,47 @@ router.post('/:id/approve', async (req, res) => {
       
       // Seal check: Prevent re-approval
       const [existing] = await sequelize.query(
-        `SELECT status FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
+        `SELECT id, deliverable_id, created_by, status, content, created_at, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
         { bind: [id] }
       );
       if (existing && existing.length > 0 && existing[0].status === 'approved') {
         return res.status(403).json({ error: 'Report is already approved and sealed.' });
       }
+      const currentRow = existing[0];
+      const currentContent = currentRow && currentRow.content
+        ? (typeof currentRow.content === 'string' ? safeParseJson(currentRow.content) : currentRow.content)
+        : {};
+      let mergedContent = {
+        ...currentContent,
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: actorId ?? approvedBy,
+        reviewedByName: actorName,
+        reviewedByRole: actorRole,
+        reviewedByEmail: actorEmail,
+        approvedAt: new Date().toISOString(),
+        approvedBy: actorId ?? approvedBy,
+        approvedByName: actorName,
+        approvedByRole: actorRole,
+        approvedByEmail: actorEmail,
+        clientComment: comment ?? null,
+        digitalSignature: digitalSignature ?? null,
+        clientEmail: clientEmail || actorEmail,
+        clientName: clientName ?? actorName,
+        clientRole: clientRole ?? actorRole,
+        sealedAt: new Date().toISOString(),
+        sealedBy: actorId ?? approvedBy,
+        status: 'approved',
+      };
+      mergedContent = appendReportVersion(
+        mergedContent,
+        { ...currentRow, status: 'approved' },
+        'approved',
+        { id: actorId ?? approvedBy, email: actorEmail, name: actorName, role: actorRole }
+      );
 
       const [results] = await sequelize.query(
-        `UPDATE sign_off_reports SET status = $2, content = COALESCE(content, '{}'::jsonb) || jsonb_build_object('reviewedAt', NOW(), 'reviewedBy', $3::text, 'reviewedByName', $4::text, 'reviewedByRole', $5::text, 'reviewedByEmail', $6::text, 'approvedAt', NOW(), 'approvedBy', $3::text, 'approvedByName', $4::text, 'approvedByRole', $5::text, 'approvedByEmail', $6::text, 'clientComment', $7::text, 'digitalSignature', $8::text, 'clientEmail', $9::text, 'clientName', $10::text, 'clientRole', $11::text), updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
-        { bind: [id, 'approved', (actorId ?? approvedBy), actorName, actorRole, actorEmail, comment ?? null, digitalSignature ?? null, clientEmail || actorEmail, (clientName ?? actorName), (clientRole ?? actorRole)] }
+        `UPDATE sign_off_reports SET status = $2, content = $3::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
+        { bind: [id, 'approved', JSON.stringify(mergedContent)] }
       );
       if (!results || results.length === 0) {
         return res.status(404).json({ error: 'Report not found' });
@@ -1214,26 +1627,18 @@ router.post('/:id/approve', async (req, res) => {
         }
       } catch (_) {}
       // Create Audit Log
-      try {
-        const { AuditLog } = require('../models');
-        await AuditLog.create({
-          action: 'approved',
-          user_id: actorId,
-          user_email: actorEmail,
-          user_role: actorRole,
-          entity_type: 'signoff',
-          entity_id: report.id.toString(),
-          entity_name: report.reportTitle,
-          details: { 
-            comment: comment ?? null,
-            digital_signature: digitalSignature ? 'Signed' : null,
-            actor_name: actorName
-          },
-          created_at: new Date()
-        });
-      } catch (auditErr) {
-        console.error('Error creating audit log for approval:', auditErr);
-      }
+      await recordReportAudit({
+        action: 'approved',
+        reportId: report.id,
+        reportTitle: report.reportTitle,
+        actor: { id: actorId, email: actorEmail, name: actorName, role: actorRole },
+        details: {
+          comment: comment ?? null,
+          digital_signature: digitalSignature ? 'Signed' : null,
+          actor_name: actorName,
+          version: mergedContent.currentVersion || null,
+        },
+      });
 
       if (global.realtimeEvents) {
         global.realtimeEvents.emit('report_approved', {
@@ -1301,9 +1706,24 @@ router.post('/:id/submit', async (req, res) => {
       }
       const originalTitle = (curContent && (curContent.reportTitle || curContent.report_title)) ? (curContent.reportTitle || curContent.report_title) : 'Untitled Report';
       const sanitizedTitle = sanitizeReportTitle(originalTitle);
+      let mergedContent = {
+        ...curContent,
+        submittedAt: new Date().toISOString(),
+        submittedBy: submitterId,
+        submittedByName: submitterName,
+        submittedByRole: submitterRole,
+        submittedByEmail: submitterEmail,
+        reportTitle: sanitizedTitle,
+      };
+      mergedContent = appendReportVersion(
+        mergedContent,
+        { ...cur, status: 'submitted' },
+        'submitted',
+        { id: submitterId, email: submitterEmail, name: submitterName, role: submitterRole }
+      );
       const [results] = await sequelize.query(
-        `UPDATE sign_off_reports SET status = $2, content = COALESCE(content, '{}'::jsonb) || jsonb_build_object('submittedAt', NOW(), 'submittedBy', $3::text, 'submittedByName', $4::text, 'submittedByRole', $5::text, 'submittedByEmail', $6::text, 'reportTitle', $7::text), updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
-        { bind: [id, 'submitted', submitterId, submitterName, submitterRole, submitterEmail, sanitizedTitle] }
+        `UPDATE sign_off_reports SET status = $2, content = $3::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
+        { bind: [id, 'submitted', JSON.stringify(mergedContent)] }
       );
       if (!results || results.length === 0) {
         return res.status(404).json({ error: 'Report not found' });
@@ -1327,23 +1747,13 @@ router.post('/:id/submit', async (req, res) => {
         submittedByName: c.submittedByName || c.submitted_by_name || submitterName,
         submittedByRole: c.submittedByRole || c.submitted_by_role || submitterRole
       };
-      // Create Audit Log
-      try {
-        const { AuditLog } = require('../models');
-        await AuditLog.create({
-          action: 'submitted',
-          user_id: submitterId,
-          user_email: submitterEmail,
-          user_role: submitterRole,
-          entity_type: 'signoff',
-          entity_id: report.id.toString(),
-          entity_name: report.reportTitle,
-          details: { status: 'submitted', actor_name: submitterName },
-          created_at: new Date()
-        });
-      } catch (auditErr) {
-        console.error('Error creating audit log for submission:', auditErr);
-      }
+      await recordReportAudit({
+        action: 'submitted',
+        reportId: report.id,
+        reportTitle: report.reportTitle,
+        actor: { id: submitterId, email: submitterEmail, name: submitterName, role: submitterRole },
+        details: { status: 'submitted', actor_name: submitterName, version: mergedContent.currentVersion || null },
+      });
 
       if (global.realtimeEvents) {
         global.realtimeEvents.emit('report_submitted', {
@@ -1418,6 +1828,178 @@ router.get('/:id/signatures', async (req, res) => {
   } catch (error) {
     console.error('Error fetching report signatures:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/:id/pdf', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const base = req.baseUrl || '';
+    if (!base.endsWith('/sign-off-reports')) {
+      return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    await ensureReportsTable();
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const [results] = await sequelize.query(
+      `SELECT id, deliverable_id, created_by, status, content, created_at, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
+      { bind: [id] }
+    );
+    if (!results || results.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    const row = results[0];
+    const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
+    const pdfActor = req.user
+      ? await resolveActorIdentity({
+          userId: req.user && req.user.id ? String(req.user.id) : null,
+          email: req.user && req.user.email ? String(req.user.email) : null,
+        })
+      : { id: null, email: null, name: 'Authenticated User', role: null };
+    await recordReportAudit({
+      action: 'viewed',
+      reportId: row.id,
+      reportTitle: c.reportTitle || c.report_title || 'Untitled Report',
+      actor: pdfActor,
+      details: { access: 'pdf_export' },
+    });
+
+    const title = sanitizeReportTitle(c.reportTitle || c.report_title || 'Sign-Off Report') || 'Sign-Off Report';
+    const safeName = String(title).replace(/[^a-z0-9-_]+/gi, '_').replace(/_+/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName || 'report'}_${id}.pdf"`);
+
+    const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    doc.pipe(res);
+
+    const pageX = doc.page.margins.left;
+    const pageY = doc.page.margins.top;
+    const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+    const headerH = 110;
+    const barH = 28;
+
+    const bgPath = path.resolve(__dirname, '../../../frontend/assets/images/khono_bg.png');
+    const iconPath = path.resolve(__dirname, '../../../frontend/assets/Sprints.png');
+
+    if (fs.existsSync(bgPath)) {
+      doc.image(bgPath, pageX, pageY, { width: pageW, height: headerH });
+    } else {
+      const grad = doc.linearGradient(pageX, pageY, pageX + pageW, pageY);
+      grad.stop(0, '#1f0505');
+      grad.stop(1, '#0a0a0a');
+      doc.save();
+      doc.fill(grad).rect(pageX, pageY, pageW, headerH).fill();
+      doc.restore();
+    }
+
+    doc.fillColor('#c70000').fontSize(28).text('K H O N O L O G Y', pageX + 22, pageY + 26, {
+      width: pageW - 120,
+      lineBreak: false,
+    });
+    doc.fillColor('#ffffff').fontSize(18).text('SPRINT SIGN-OFF REPORT', pageX + 22, pageY + 62, {
+      width: pageW - 120,
+      lineBreak: false,
+    });
+
+    const circleR = 32;
+    const circleCx = pageX + pageW - 22 - circleR;
+    const circleCy = pageY + 55;
+    doc.save();
+    doc.fillColor('#ffffff').circle(circleCx, circleCy, circleR).fill();
+    doc.restore();
+
+    if (fs.existsSync(iconPath)) {
+      doc.save();
+      doc.circle(circleCx, circleCy, circleR - 1).clip();
+      doc.image(iconPath, circleCx - (circleR - 10), circleCy - (circleR - 10), {
+        width: (circleR - 10) * 2,
+        height: (circleR - 10) * 2,
+      });
+      doc.restore();
+    }
+
+    doc.save();
+    doc.fillColor('#c70000').rect(pageX, pageY + headerH, pageW, barH).fill();
+    doc.restore();
+
+    const createdAt = row.created_at ? new Date(row.created_at) : null;
+    const dateLineValue = createdAt
+      ? `${createdAt.getDate()}/${createdAt.getMonth() + 1}/${createdAt.getFullYear()}`
+      : '';
+
+    doc.font('Helvetica-Bold');
+    doc.fillColor('#ffffff').fontSize(11);
+    const barTextY = pageY + headerH + 9;
+    const barPadX = 12;
+    const leftW = Math.floor(pageW * 0.72);
+    const rightW = pageW - (barPadX * 2) - leftW;
+    doc.text(`Title: ${title}`, pageX + barPadX, barTextY, { width: leftW, lineBreak: false, ellipsis: true });
+    doc.text(`Date: ${dateLineValue}`, pageX + barPadX + leftW, barTextY, { width: rightW, align: 'right', lineBreak: false });
+    doc.font('Helvetica');
+
+    const afterHeaderY = pageY + headerH + barH + 14;
+    doc.x = pageX;
+    doc.y = afterHeaderY;
+
+    doc.fillColor('#333').fontSize(10);
+    doc.fontSize(10).fillColor('#333').text(`Status: ${row.status || 'draft'}`);
+    doc.text(`Deliverable ID: ${row.deliverable_id || ''}`);
+    doc.text(`Created: ${createdAt ? createdAt.toISOString().slice(0, 10) : ''}`);
+    doc.moveDown(0.8);
+
+    const writeSection = (heading, body) => {
+      const text = String(body || '').trim();
+      if (!text) return;
+      doc.fillColor('#8B0000').fontSize(12).text(heading);
+      doc.moveDown(0.2);
+      doc.fillColor('#111').fontSize(10).text(text, { lineGap: 2 });
+      doc.moveDown(0.8);
+    };
+
+    writeSection('Report Content', c.reportContent || c.report_content || '');
+    writeSection('Known Limitations', c.knownLimitations || c.known_limitations || '');
+    writeSection('Next Steps', c.nextSteps || c.next_steps || '');
+
+    const signatures = Array.isArray(c.signatures) ? c.signatures : [];
+    if (signatures.length > 0) {
+      doc.fillColor('#8B0000').fontSize(12).text('Signatures');
+      doc.moveDown(0.4);
+
+      for (const s of signatures) {
+        const signer = String(s.signer_name || 'Unknown').trim();
+        const role = String(s.signer_role || '').trim();
+        const when = s.signed_at || row.updated_at || null;
+        doc.fillColor('#111').fontSize(10).text(`• ${signer}${role ? ' (' + role + ')' : ''}${when ? ' — ' + when : ''}`);
+
+        const rawSig = String(s.signature_data || '').trim();
+        if (rawSig) {
+          const base64 = rawSig.includes('base64,') ? rawSig.split('base64,').pop() : rawSig;
+          try {
+            const buf = Buffer.from(base64, 'base64');
+            if (buf.length > 0) {
+              const x = doc.x + 12;
+              const y = doc.y + 6;
+              doc.image(buf, x, y, { width: 180, height: 80, fit: [180, 80] });
+              doc.moveDown(4.2);
+            } else {
+              doc.moveDown(0.3);
+            }
+          } catch (_) {
+            doc.moveDown(0.3);
+          }
+        } else {
+          doc.moveDown(0.3);
+        }
+      }
+    }
+
+    doc.end();
+  } catch (error) {
+    console.error('Error generating report PDF:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1689,6 +2271,10 @@ router.post('/:id/request-changes', async (req, res) => {
         ...curC,
         changeRequestHistory: history,
         changeRequestDetails: changeRequestDetails ?? null,
+        actionItems: String(changeRequestDetails || '')
+          .split(/\r?\n+/g)
+          .map((line) => String(line || '').replace(/^[-*]\s*/, '').trim())
+          .filter(Boolean),
         reviewedAt: new Date().toISOString(),
         reviewedBy: reviewedBy ? String(reviewedBy) : (curC.reviewedBy || null),
         reviewedByName: actorName,
@@ -1696,11 +2282,18 @@ router.post('/:id/request-changes', async (req, res) => {
         reviewedByEmail: actorEmail,
         clientEmail: clientEmail || actorEmail || curC.clientEmail || null,
         clientName: clientName || actorName || curC.clientName || null,
-        clientRole: clientRole || actorRole || curC.clientRole || null
+        clientRole: clientRole || actorRole || curC.clientRole || null,
+        status: 'change_requested',
       };
+      const versionedContent = appendReportVersion(
+        merged,
+        { ...cur, status: 'change_requested' },
+        'change_requested',
+        { id: actorId, email: actorEmail, name: actorName, role: actorRole }
+      );
       const [results] = await sequelize.query(
         `UPDATE sign_off_reports SET status = $2, content = $3::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
-        { bind: [id, 'change_requested', JSON.stringify(merged)] }
+        { bind: [id, 'change_requested', JSON.stringify(versionedContent)] }
       );
       const row = results[0];
       const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
@@ -1810,29 +2403,362 @@ router.post('/:id/request-changes', async (req, res) => {
         });
       }
 
-      // Create Audit Log
-      try {
-        const { AuditLog } = require('../models');
-        await AuditLog.create({
-          action: 'request_changes',
-          user_id: actorId,
-          user_email: actorEmail,
-          user_role: actorRole,
-          entity_type: 'signoff',
-          entity_id: report.id.toString(),
-          entity_name: report.reportTitle,
-          details: { change_request_details: changeRequestDetails, actor_name: actorName },
-          created_at: new Date()
-        });
-      } catch (auditErr) {
-        console.error('Error creating audit log for change request:', auditErr);
-      }
+      await recordReportAudit({
+        action: 'request_changes',
+        reportId: report.id,
+        reportTitle: report.reportTitle,
+        actor: { id: actorId, email: actorEmail, name: actorName, role: actorRole },
+        details: {
+          change_request_details: changeRequestDetails,
+          actor_name: actorName,
+          version: versionedContent.currentVersion || null,
+        },
+      });
 
       return res.json(report);
     }
     return res.status(404).json({ error: 'Endpoint not found' });
   } catch (error) {
     console.error('Error requesting changes:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/reject', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const base = req.baseUrl || '';
+    if (!base.endsWith('/sign-off-reports')) {
+      return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    await ensureReportsTable();
+    const { comment, digitalSignature, clientId } = req.body || {};
+    const reviewToken = extractReviewToken(req);
+    let actorSeed = null;
+    let actorEmailSeed = null;
+    if (reviewToken) {
+      if (reviewToken.reportId !== id.toString()) {
+        return res.status(403).json({ error: 'Token is not valid for this report' });
+      }
+      actorSeed = clientId || reviewToken.clientEmail;
+      actorEmailSeed = reviewToken.clientEmail;
+    } else if (req.user) {
+      actorSeed = req.user.id;
+      actorEmailSeed = req.user.email || null;
+    }
+    const actorIdentity = await resolveActorIdentity({
+      userId: actorSeed ? String(actorSeed) : null,
+      email: actorEmailSeed,
+    });
+    const actor = {
+      id: actorIdentity.id || actorSeed || null,
+      email: actorIdentity.email || actorEmailSeed || null,
+      name: actorIdentity.name || 'Client Reviewer',
+      role: actorIdentity.role || 'clientReviewer',
+    };
+    const [existing] = await sequelize.query(
+      `SELECT id, deliverable_id, created_by, status, content, created_at, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
+      { bind: [id] }
+    );
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    const cur = existing[0];
+    if (String(cur.status || '') === 'approved') {
+      return res.status(403).json({ error: 'Report is already approved and sealed.' });
+    }
+    const curContent = typeof cur.content === 'string' ? safeParseJson(cur.content) : (cur.content || {});
+    let merged = {
+      ...curContent,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: actor.id ? String(actor.id) : null,
+      reviewedByName: actor.name,
+      reviewedByRole: roleDisplayValue(actor.role) || actor.role || null,
+      reviewedByEmail: actor.email || null,
+      digitalSignature: digitalSignature ?? null,
+      rejectionComment: comment || 'Rejected by client reviewer',
+      status: 'rejected',
+    };
+    merged = appendReportVersion(merged, { ...cur, status: 'rejected' }, 'rejected', actor);
+    const [results] = await sequelize.query(
+      `UPDATE sign_off_reports SET status = $2, content = $3::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
+      { bind: [id, 'rejected', JSON.stringify(merged)] }
+    );
+    const row = results[0];
+    const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
+    const report = {
+      id: row.id,
+      deliverableId: (row.deliverable_id || '').toString(),
+      reportTitle: c.reportTitle || c.report_title || 'Untitled Report',
+      status: row.status || 'rejected',
+      rejectionComment: c.rejectionComment || null,
+    };
+    try {
+      const did = parseInt(row.deliverable_id, 10);
+      if (Number.isFinite(did)) {
+        const { Deliverable, Notification, User } = require('../models');
+        const deliverable = await Deliverable.findByPk(did);
+        if (deliverable) {
+          await deliverable.update({ status: 'change_requested' });
+        }
+        const recipients = new Set();
+        if (row.created_by) recipients.add(String(row.created_by));
+        if (deliverable && deliverable.owner_id) recipients.add(String(deliverable.owner_id));
+        if (deliverable && deliverable.assigned_to) recipients.add(String(deliverable.assigned_to));
+        if (deliverable && deliverable.project_id) {
+          const team = await User.findAll({
+            where: {
+              is_active: true,
+              role: { [Op.in]: ['deliveryLead', 'scrumMaster', 'developer', 'qaEngineer', 'projectManager'] },
+            },
+          });
+          for (const user of team) {
+            if (user.id) recipients.add(String(user.id));
+          }
+        }
+        if (Notification && recipients.size > 0) {
+          await Notification.bulkCreate(
+            [...recipients].map((recipientId) => ({
+              recipient_id: recipientId,
+              sender_id: actor.id || null,
+              type: 'change_request',
+              message: `Report rejected: "${report.reportTitle}"`,
+              payload: { report_id: report.id, deliverable_id: did, comment: report.rejectionComment },
+              is_read: false,
+              created_at: new Date(),
+            }))
+          );
+        }
+      }
+    } catch (_) {}
+    await recordReportAudit({
+      action: 'rejected',
+      reportId: report.id,
+      reportTitle: report.reportTitle,
+      actor,
+      details: { comment: report.rejectionComment, version: merged.currentVersion || null },
+    });
+    if (global.realtimeEvents) {
+      global.realtimeEvents.emit('report_rejected', report);
+    }
+    return res.json(report);
+  } catch (error) {
+    console.error('Error rejecting report:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/seal', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const base = req.baseUrl || '';
+    if (!base.endsWith('/sign-off-reports')) {
+      return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    await ensureReportsTable();
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const actor = await resolveActorIdentity({ userId: String(req.user.id), email: req.user.email });
+    const [existing] = await sequelize.query(
+      `SELECT id, deliverable_id, created_by, status, content, created_at, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
+      { bind: [id] }
+    );
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    const cur = existing[0];
+    if (String(cur.status || '') !== 'approved') {
+      return res.status(409).json({ error: 'Only approved reports can be sealed' });
+    }
+    const curContent = typeof cur.content === 'string' ? safeParseJson(cur.content) : (cur.content || {});
+    let merged = {
+      ...curContent,
+      sealedAt: curContent.sealedAt || new Date().toISOString(),
+      sealedBy: curContent.sealedBy || actor.id || null,
+      sealedByName: curContent.sealedByName || actor.name || null,
+      sealedByRole: curContent.sealedByRole || (roleDisplayValue(actor.role) || actor.role || null),
+    };
+    merged = appendReportVersion(merged, cur, 'sealed', actor);
+    const [results] = await sequelize.query(
+      `UPDATE sign_off_reports SET content = $2::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
+      { bind: [id, JSON.stringify(merged)] }
+    );
+    const row = results[0];
+    const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
+    await recordReportAudit({
+      action: 'sealed',
+      reportId: row.id,
+      reportTitle: c.reportTitle || c.report_title || 'Untitled Report',
+      actor,
+      details: { version: merged.currentVersion || null },
+    });
+    return res.json({ success: true, reportId: String(row.id), sealedAt: c.sealedAt, sealedBy: c.sealedBy });
+  } catch (error) {
+    console.error('Error sealing report:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/archive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const base = req.baseUrl || '';
+    if (!base.endsWith('/sign-off-reports')) {
+      return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    await ensureReportsTable();
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const actor = await resolveActorIdentity({ userId: String(req.user.id), email: req.user.email });
+    const [existing] = await sequelize.query(
+      `SELECT id, deliverable_id, created_by, status, content, created_at, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
+      { bind: [id] }
+    );
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    const cur = existing[0];
+    if (!['approved', 'rejected'].includes(String(cur.status || ''))) {
+      return res.status(409).json({ error: 'Only completed review reports can be archived' });
+    }
+    const curContent = typeof cur.content === 'string' ? safeParseJson(cur.content) : (cur.content || {});
+    let merged = {
+      ...curContent,
+      isArchived: true,
+      archivedAt: new Date().toISOString(),
+      archivedBy: actor.id || null,
+      archivedByName: actor.name || null,
+      archivedByRole: roleDisplayValue(actor.role) || actor.role || null,
+    };
+    merged = appendReportVersion(merged, cur, 'archived', actor);
+    const [results] = await sequelize.query(
+      `UPDATE sign_off_reports SET content = $2::jsonb, updated_at = NOW() WHERE ${reportsIdWhere(1)} RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
+      { bind: [id, JSON.stringify(merged)] }
+    );
+    const row = results[0];
+    const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
+    await recordReportAudit({
+      action: 'archived',
+      reportId: row.id,
+      reportTitle: c.reportTitle || c.report_title || 'Untitled Report',
+      actor,
+      details: { archived_at: c.archivedAt, version: merged.currentVersion || null },
+    });
+    return res.json({ success: true, reportId: String(row.id), archivedAt: c.archivedAt });
+  } catch (error) {
+    console.error('Error archiving report:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/remind', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const base = req.baseUrl || '';
+    if (!base.endsWith('/sign-off-reports')) {
+      return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    await ensureReportsTable();
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const actor = await resolveActorIdentity({ userId: String(req.user.id), email: req.user.email });
+    const [existing] = await sequelize.query(
+      `SELECT id, deliverable_id, created_by, status, content, created_at, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
+      { bind: [id] }
+    );
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    const row = existing[0];
+    const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
+    const { Notification, User } = require('../models');
+    const recipients = await User.findAll({
+      where: {
+        role: { [Op.in]: ['clientReviewer', 'ClientReviewer', 'clientreviewer'] },
+        is_active: true,
+      },
+    });
+    if (Notification && recipients.length > 0) {
+      await Notification.bulkCreate(
+        recipients.map((recipient) => ({
+          recipient_id: recipient.id,
+          sender_id: actor.id || null,
+          type: 'approval',
+          message: `Reminder: Review "${c.reportTitle || c.report_title || 'Sign-Off Report'}"`,
+          payload: { report_id: id, deliverable_id: row.deliverable_id, reason: 'manual_reminder' },
+          is_read: false,
+          created_at: new Date(),
+        }))
+      );
+    }
+    await recordReportAudit({
+      action: 'reminder_sent',
+      reportId: id,
+      reportTitle: c.reportTitle || c.report_title || 'Sign-Off Report',
+      actor,
+      details: { recipient_count: recipients.length },
+    });
+    return res.json({ success: true, recipientCount: recipients.length });
+  } catch (error) {
+    console.error('Error sending reminder:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/escalate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const base = req.baseUrl || '';
+    if (!base.endsWith('/sign-off-reports')) {
+      return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    await ensureReportsTable();
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const actor = await resolveActorIdentity({ userId: String(req.user.id), email: req.user.email });
+    const [existing] = await sequelize.query(
+      `SELECT id, deliverable_id, created_by, status, content, created_at, updated_at FROM sign_off_reports WHERE ${reportsIdWhere(1)}`,
+      { bind: [id] }
+    );
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    const row = existing[0];
+    const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
+    const { Notification, User } = require('../models');
+    const admins = await User.findAll({
+      where: {
+        role: { [Op.in]: ['systemAdmin', 'SystemAdmin', 'deliveryLead', 'DeliveryLead', 'admin'] },
+        is_active: true,
+      },
+    });
+    if (Notification && admins.length > 0) {
+      await Notification.bulkCreate(
+        admins.map((admin) => ({
+          recipient_id: admin.id,
+          sender_id: actor.id || null,
+          type: 'escalation',
+          message: `ESCALATION: "${c.reportTitle || c.report_title || 'Sign-Off Report'}" needs attention`,
+          payload: { report_id: id, deliverable_id: row.deliverable_id, reason: 'manual_escalation' },
+          is_read: false,
+          created_at: new Date(),
+        }))
+      );
+    }
+    await recordReportAudit({
+      action: 'escalated',
+      reportId: id,
+      reportTitle: c.reportTitle || c.report_title || 'Sign-Off Report',
+      actor,
+      details: { recipient_count: admins.length },
+    });
+    return res.json({ success: true, recipientCount: admins.length });
+  } catch (error) {
+    console.error('Error escalating report:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2135,7 +3061,11 @@ router.get('/client-review/:token', async (req, res) => {
       approvedAt: c.approvedAt || c.approved_at || null,
       approvedBy: c.approvedBy || c.approved_by || null,
       changeRequestDetails: c.changeRequestDetails || c.change_request_details || null,
-      digitalSignature: c.digitalSignature || c.digital_signature || null
+      digitalSignature: c.digitalSignature || c.digital_signature || null,
+      versionHistory: Array.isArray(c.versionHistory) ? c.versionHistory : [],
+      currentVersion: Number(c.currentVersion || 0),
+      isArchived: Boolean(c.isArchived),
+      archivedAt: c.archivedAt || null,
     };
     
     res.json({

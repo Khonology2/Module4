@@ -87,8 +87,12 @@ class _DeliverablesListScreenState extends State<DeliverablesListScreen> {
   Widget build(BuildContext context) {
     final canCreate = AuthService().canCreateDeliverable();
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('All Deliverables'),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

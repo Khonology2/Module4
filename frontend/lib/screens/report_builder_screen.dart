@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../utils/date_utils.dart' as app_date_utils;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:convert';
@@ -225,7 +224,7 @@ WidgetsBinding.instance.addPostFrameCallback((_) {
   }
 
   String formatDate(DateTime date) {
-    return app_date_utils.DateUtils.formatDate(date);
+    return '${date.day}/${date.month}/${date.year}';
   }
 
 Future<void> _generateTitleSuggestion() async {

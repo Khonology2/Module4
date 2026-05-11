@@ -14,7 +14,7 @@ class ApiClient {
   ApiClient._internal();
 
 static String get _baseUrlWithVersion => Environment.apiBaseUrl;
-  static const Duration _timeout = Duration(seconds: 90); // Increased timeout for Render cold starts
+  static const Duration _timeout = Duration(seconds: 20);
 
   bool _initialized = false;
   String? _accessToken;
@@ -44,6 +44,9 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     await _loadStoredTokens();
     DebugHelper.logEnvironmentInfo();
     debugPrint('API Client initialized with base URL: $_baseUrlWithVersion');
+    debugPrint('DEBUG: Environment.apiBaseUrl = ${Environment.apiBaseUrl}');
+    debugPrint('DEBUG: Environment.isRenderDeployed = ${Environment.isRenderDeployed}');
+    debugPrint('FINAL DEBUG: _baseUrlWithVersion = $_baseUrlWithVersion');
     _initialized = true;
   }
 
@@ -128,7 +131,12 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   }
 
   // HTTP Methods
-  Future<ApiResponse> get(String endpoint, {Map<String, String>? queryParams, bool requireAuth = true}) async {
+  Future<ApiResponse> get(
+    String endpoint, {
+    Map<String, String>? queryParams,
+    bool requireAuth = true,
+    Duration? timeout,
+  }) async {
     // BYPASSES DISABLED: Backend is now working correctly on Render
     // The deployed app should use real API calls to backend-532p.onrender.com
 
@@ -145,10 +153,16 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
     }
 
-    return await _makeRequest('GET', endpoint, queryParams: queryParams);
+    return await _makeRequest('GET', endpoint, queryParams: queryParams, timeout: timeout);
   }
 
-  Future<ApiResponse> post(String endpoint, {Map<String, dynamic>? body, Map<String, String>? queryParams, bool requireAuth = true}) async {
+  Future<ApiResponse> post(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    Map<String, String>? queryParams,
+    bool requireAuth = true,
+    Duration? timeout,
+  }) async {
     // BYPASSES DISABLED: Backend is now working correctly on Render
     // The deployed app should use real API calls to backend-532p.onrender.com
 
@@ -157,22 +171,67 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       // The token will be in query params, so we'll make a special request
       return await _makeTokenBasedRequest('POST', endpoint, body: body, queryParams: queryParams);
     }
-    if (!requireAuth) {
-      return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams, includeAuth: false);
+    return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams, timeout: timeout);
+  }
+
+  Future<ApiResponse> put(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    Map<String, String>? queryParams,
+    Duration? timeout,
+  }) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+    return await _makeRequest('PUT', endpoint, body: body, queryParams: queryParams, timeout: timeout);
+  }
+
+  Future<ApiResponse> delete(
+    String endpoint, {
+    Map<String, String>? queryParams,
+    Duration? timeout,
+  }) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+    return await _makeRequest('DELETE', endpoint, queryParams: queryParams, timeout: timeout);
+  }
+
+  Future<Uint8List> getBytes(
+    String endpoint, {
+    Map<String, String>? queryParams,
+    bool requireAuth = true,
+    Duration? timeout,
+    Map<String, String>? headers,
+  }) async {
+    if (requireAuth) {
+      if (isAuthenticated && !_isTokenValid()) {
+        final refreshed = await _refreshAccessToken();
+        if (!refreshed) {
+          throw Exception('Authentication expired. Please login again.');
+        }
+      }
     }
-    return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams);
-  }
 
-  Future<ApiResponse> put(String endpoint, {Map<String, dynamic>? body, Map<String, String>? queryParams}) async {
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
-    return await _makeRequest('PUT', endpoint, body: body, queryParams: queryParams);
-  }
+    String url = '$_baseUrlWithVersion$endpoint';
+    if (queryParams != null && queryParams.isNotEmpty) {
+      final uri = Uri.parse(url);
+      url = uri.replace(queryParameters: queryParams).toString();
+    }
 
-  Future<ApiResponse> delete(String endpoint, {Map<String, String>? queryParams}) async {
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
-    return await _makeRequest('DELETE', endpoint, queryParams: queryParams);
+    final reqHeaders = <String, String>{
+      'Accept': 'application/pdf',
+      if (headers != null) ...headers,
+    };
+    if (requireAuth && _accessToken != null) {
+      reqHeaders['Authorization'] = 'Bearer $_accessToken';
+    }
+
+    final effectiveTimeout = timeout ?? _timeout;
+    final resp = await http.get(Uri.parse(url), headers: reqHeaders).timeout(effectiveTimeout);
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return resp.bodyBytes;
+    }
+    final msg = resp.body.isNotEmpty ? resp.body : 'Request failed (${resp.statusCode})';
+    throw Exception(msg);
   }
 
   // Multipart file upload method
@@ -255,6 +314,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     Map<String, dynamic>? body,
     Map<String, String>? queryParams,
     bool includeAuth = true,
+    Duration? timeout,
   }) async {
     try {
       // Check if token needs refresh
@@ -283,44 +343,40 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         headers['Authorization'] = 'Bearer $_accessToken';
       }
 
+      final headersForLog = Map<String, String>.from(headers);
+      if (headersForLog.containsKey('Authorization')) {
+        headersForLog['Authorization'] = 'Bearer ***';
+      }
+      debugPrint('Request Headers: $headersForLog');
+
       // Make request
       http.Response response;
+      final effectiveTimeout = timeout ?? _timeout;
       switch (method.toUpperCase()) {
         case 'GET':
-          response = await http.get(Uri.parse(url), headers: headers).timeout(_timeout);
+          response = await http.get(Uri.parse(url), headers: headers).timeout(effectiveTimeout);
           break;
         case 'POST':
+          debugPrint('🌐 API POST to: $url');
+          debugPrint('📤 POST body: ${body != null ? jsonEncode(body) : 'null'}');
           response = await http.post(
             Uri.parse(url),
             headers: headers,
             body: body != null ? jsonEncode(body) : null,
-          ).timeout(_timeout);
+          ).timeout(effectiveTimeout);
           break;
         case 'PUT':
           response = await http.put(
             Uri.parse(url),
             headers: headers,
             body: body != null ? jsonEncode(body) : null,
-          ).timeout(_timeout);
+          ).timeout(effectiveTimeout);
           break;
         case 'DELETE':
-          response = await http.delete(Uri.parse(url), headers: headers).timeout(_timeout);
+          response = await http.delete(Uri.parse(url), headers: headers).timeout(effectiveTimeout);
           break;
         default:
           throw Exception('Unsupported HTTP method: $method');
-      }
-
-      if (response.statusCode == 401 && includeAuth && _refreshToken != null) {
-        final refreshed = await _refreshAccessToken();
-        if (refreshed) {
-          return await _makeRequest(
-            method,
-            endpoint,
-            body: body,
-            queryParams: queryParams,
-            includeAuth: includeAuth,
-          );
-        }
       }
 
       return _handleResponse(response);

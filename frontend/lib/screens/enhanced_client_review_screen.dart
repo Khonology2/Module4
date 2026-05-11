@@ -12,6 +12,7 @@ import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/flownet_logo.dart';
+import '../widgets/signature_capture_widget.dart';
 
 class EnhancedClientReviewScreen extends ConsumerStatefulWidget {
   final String reportId;
@@ -30,6 +31,8 @@ class _EnhancedClientReviewScreenState
     extends ConsumerState<EnhancedClientReviewScreen> {
   final _commentController = TextEditingController();
   final _changeRequestController = TextEditingController();
+  final GlobalKey<SignatureCaptureWidgetState> _signatureKey =
+      GlobalKey<SignatureCaptureWidgetState>();
 
   SignOffReport? _report;
   Deliverable? _deliverable;
@@ -180,13 +183,7 @@ class _EnhancedClientReviewScreenState
       return;
     }
     if (_selectedAction.isEmpty) {
-      _showErrorDialog('Please select an action (Approve or Request Changes)');
-      return;
-    }
-
-    if (_selectedAction == 'changeRequest' &&
-        _changeRequestController.text.isEmpty) {
-      _showErrorDialog('Please provide details for the change request');
+      _showErrorDialog('Please select an action (Approve, Request Changes, or Reject)');
       return;
     }
 
@@ -196,11 +193,16 @@ class _EnhancedClientReviewScreenState
 
     try {
       final backendService = BackendApiService();
+      final signature = await _signatureKey.currentState?.getSignature();
+      if (signature == null || signature.isEmpty) {
+        if (mounted) _showErrorDialog('Digital signature is required to submit your decision.');
+        return;
+      }
       if (_selectedAction == 'approve') {
         final response = await backendService.approveSignOffReport(
           widget.reportId,
           _commentController.text.isNotEmpty ? _commentController.text : null,
-          null,
+          signature,
         );
         if (response.isSuccess) {
           await _loadReportData();
@@ -210,10 +212,11 @@ class _EnhancedClientReviewScreenState
         } else if (mounted) {
           _showErrorDialog('Failed to approve report: ${response.error}');
         }
-      } else {
+      } else if (_selectedAction == 'changeRequest') {
         final response = await backendService.requestSignOffChanges(
           widget.reportId,
-          _changeRequestController.text,
+          _changeRequestController.text.isNotEmpty ? _changeRequestController.text : null,
+          signature,
         );
         if (response.isSuccess) {
           await _loadReportData();
@@ -223,6 +226,20 @@ class _EnhancedClientReviewScreenState
         } else if (mounted) {
           _showErrorDialog(
               'Failed to submit change request: ${response.error}');
+        }
+      } else {
+        final response = await backendService.rejectSignOffReport(
+          widget.reportId,
+          _commentController.text.isNotEmpty ? _commentController.text : null,
+          signature,
+        );
+        if (response.isSuccess) {
+          await _loadReportData();
+          if (mounted) {
+            _showSuccessDialog('Report rejected successfully!');
+          }
+        } else if (mounted) {
+          _showErrorDialog('Failed to reject report: ${response.error}');
         }
       }
     } catch (e) {
@@ -313,7 +330,7 @@ class _EnhancedClientReviewScreenState
         },
         {
           'role': 'user',
-          'content': '${_report!.reportTitle}\n${_report!.reportContent}'
+          'content': '${_report!.displayTitle}\n${_report!.reportContent}'
         }
       ];
       final resp =
@@ -346,7 +363,7 @@ class _EnhancedClientReviewScreenState
         {
           'role': 'user',
           'content':
-              '${_report!.reportTitle}\n${_report!.reportContent}\nFocus on gaps, risks, and necessary updates.'
+              '${_report!.displayTitle}\n${_report!.reportContent}\nFocus on gaps, risks, and necessary updates.'
         }
       ];
       final resp =
@@ -446,7 +463,7 @@ class _EnhancedClientReviewScreenState
       final approvedAt = report.approvedAt ?? report.reviewedAt;
       final approver = report.approvedBy ?? report.reviewedBy ?? 'Client';
       final when =
-          approvedAt != null ? _formatDateTime(approvedAt) : 'Unknown time';
+          approvedAt != null ? _formatDate(approvedAt) : 'Unknown time';
       message = 'Approved by $approver on $when';
     } else if (report.status == ReportStatus.changeRequested) {
       final details = report.changeRequestDetails ??
@@ -543,12 +560,8 @@ class _EnhancedClientReviewScreenState
                     'Due Date', _formatDate(_deliverable!.dueDate)),
                 const SizedBox(width: 24),
                 _buildHeaderItem('Submitted By', () {
-                  final name =
-                      (_report?.submittedByName ?? _report?.submittedBy ?? '')
-                          .toString()
-                          .trim();
-                  final role =
-                      (_report?.submittedByRole ?? '').toString().trim();
+                  final name = (_report?.submittedByName ?? _report?.submittedBy ?? '').toString().trim();
+                  final role = (_report?.submittedByRole ?? '').toString().trim();
                   if (name.isEmpty) return '—';
                   if (role.isEmpty) return name;
                   return '$name ($role)';
@@ -937,6 +950,25 @@ class _EnhancedClientReviewScreenState
                     activeColor: Colors.orange,
                   ),
                 ),
+                Expanded(
+                  child: RadioListTile<String>(
+                    title: const Text('Reject',
+                        style: TextStyle(color: Colors.white)),
+                    subtitle: const Text(
+                        'Reject the report',
+                        style: TextStyle(color: Colors.grey)),
+                    value: 'reject',
+                    // ignore: deprecated_member_use
+                    groupValue: _selectedAction,
+                    // ignore: deprecated_member_use
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedAction = value!;
+                      });
+                    },
+                    activeColor: Colors.red,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -967,19 +999,12 @@ class _EnhancedClientReviewScreenState
               TextFormField(
                 controller: _changeRequestController,
                 decoration: const InputDecoration(
-                  labelText: 'Change Request Details *',
+                  labelText: 'Change Request Details (Optional)',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.edit),
                   hintText: 'Describe the required changes...',
                 ),
                 maxLines: 4,
-                validator: (value) {
-                  if (_selectedAction == 'changeRequest' &&
-                      (value?.isEmpty ?? true)) {
-                    return 'Please provide change request details';
-                  }
-                  return null;
-                },
               ),
               Align(
                 alignment: Alignment.centerRight,
@@ -1107,49 +1132,12 @@ class _EnhancedClientReviewScreenState
                   ),
             ),
             const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: FlownetColors.slate,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: FlownetColors.electricBlue),
-              ),
-              child: Column(
-                children: [
-                  const Icon(
-                    Icons.draw,
-                    color: Colors.grey,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Digital Signature',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'By submitting this review, you digitally sign and approve this deliverable',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Timestamp: ${DateTime.now().toIso8601String()}',
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
+            SignatureCaptureWidget(
+              key: _signatureKey,
+              existingSignature: _report?.digitalSignature,
+              allowSignatureReuse: true,
+              showAuditInfo: true,
+              reportId: _report?.id,
             ),
             const SizedBox(height: 16),
 
@@ -1161,7 +1149,9 @@ class _EnhancedClientReviewScreenState
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _selectedAction == 'approve'
                       ? Colors.green
-                      : Colors.orange,
+                      : _selectedAction == 'reject'
+                          ? Colors.red
+                          : Colors.orange,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
                 child: _isSubmitting
@@ -1169,7 +1159,9 @@ class _EnhancedClientReviewScreenState
                     : Text(
                         _selectedAction == 'approve'
                             ? 'Approve Deliverable'
-                            : 'Submit Change Request',
+                            : _selectedAction == 'reject'
+                                ? 'Reject Report'
+                                : 'Submit Change Request',
                         style: const TextStyle(fontSize: 16),
                       ),
               ),
@@ -1220,12 +1212,6 @@ class _EnhancedClientReviewScreenState
   }
 
   String _formatDate(DateTime date) {
-    final tz = date.toUtc().add(const Duration(hours: 2));
-    String two(int n) => n < 10 ? '0$n' : '$n';
-    return '${two(tz.day)}/${two(tz.month)}/${tz.year}';
-  }
-
-  String _formatDateTime(DateTime date) {
     final tz = date.toUtc().add(const Duration(hours: 2));
     String two(int n) => n < 10 ? '0$n' : '$n';
     return '${two(tz.day)}/${two(tz.month)}/${tz.year} ${two(tz.hour)}:${two(tz.minute)}';

@@ -22,16 +22,15 @@ class Environment {
       return baseUrlFromEnv;
     }
 
-// Explicit localhost/browser-local should always use local backend.
+    // Explicit localhost/browser-local should always use local backend.
     if (isLocalDevelopment) {
       return 'http://localhost:8000/api/v1';
     }
 
-    // Fallback to production or localhost
+    // Fallback to the deployed backend for production-like hosts.
     if (isProduction || isRenderDeployed) {
       return 'https://flow-space.onrender.com/api/v1';
     }
-
     return 'http://localhost:8000/api/v1';
   }
 

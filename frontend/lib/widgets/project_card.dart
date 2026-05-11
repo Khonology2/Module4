@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'glass_card.dart';
-import '../utils/date_utils.dart' as app_date_utils;
 
 class ProjectCard extends StatelessWidget {
   final Map<String, dynamic> project;
@@ -30,7 +29,7 @@ class ProjectCard extends StatelessWidget {
       if (value == null || value.isEmpty) return '';
       try {
         final date = DateTime.parse(value);
-        return app_date_utils.DateUtils.formatDate(date);
+        return '${date.day}/${date.month}/${date.year}';
       } catch (_) {
         return value;
       }

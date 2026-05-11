@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/backend_api_service.dart';
+import '../../services/realtime_service.dart';
+import '../../services/user_data_service.dart';
 
 class AuditTrailOverviewScreen extends StatefulWidget {
   const AuditTrailOverviewScreen({super.key});
@@ -10,7 +12,10 @@ class AuditTrailOverviewScreen extends StatefulWidget {
 
 class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
   final BackendApiService _backend = BackendApiService();
+  final RealtimeService _realtimeService = RealtimeService();
+  final UserDataService _userDataService = UserDataService();
   List<Map<String, dynamic>> _logs = [];
+  final Map<String, String> _userNameById = {};
   bool _isLoading = false;
   String? _error;
 
@@ -18,6 +23,85 @@ class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
   void initState() {
     super.initState();
     _loadLogs();
+    Future.microtask(() => _realtimeService.initialize());
+    _realtimeService.offAll('audit_log_created');
+    _realtimeService.on('audit_log_created', _handleAuditLogCreated);
+  }
+
+  @override
+  void dispose() {
+    _realtimeService.offAll('audit_log_created');
+    super.dispose();
+  }
+
+  String _extractUserId(Map<String, dynamic> log) {
+    final uid = log['user_id']?.toString() ?? log['userId']?.toString();
+    if (uid != null && uid.isNotEmpty) return uid;
+    final userObj = log['user'];
+    if (userObj is Map) {
+      final id = userObj['id']?.toString();
+      if (id != null && id.isNotEmpty) return id;
+    }
+    return '';
+  }
+
+  String _extractActorLabel(Map<String, dynamic> log) {
+    final direct = (log['actor_name'] ??
+            log['actorName'] ??
+            log['user_name'] ??
+            log['userName'] ??
+            log['user_email'] ??
+            log['userEmail'])
+        ?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct.trim();
+
+    final userObj = log['user'];
+    if (userObj is Map) {
+      final first = userObj['first_name']?.toString() ?? userObj['firstName']?.toString() ?? '';
+      final last = userObj['last_name']?.toString() ?? userObj['lastName']?.toString() ?? '';
+      final email = userObj['email']?.toString() ?? '';
+      final name = ('$first $last').trim();
+      if (name.isNotEmpty) return name;
+      if (email.isNotEmpty) return email;
+    }
+
+    final userId = _extractUserId(log);
+    final cached = userId.isNotEmpty ? _userNameById[userId] : null;
+    if (cached != null && cached.isNotEmpty) return cached;
+    return 'System';
+  }
+
+  Future<void> _hydrateUserNames(Iterable<Map<String, dynamic>> logs) async {
+    final ids = logs
+        .map(_extractUserId)
+        .where((id) => id.isNotEmpty && !_userNameById.containsKey(id))
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return;
+
+    await Future.wait(ids.map((id) async {
+      final user = await _userDataService.getUserById(id);
+      final name = user?.name.trim() ?? '';
+      if (name.isEmpty) return;
+      _userNameById[id] = name;
+    }));
+
+    if (mounted) setState(() {});
+  }
+
+  void _handleAuditLogCreated(dynamic data) {
+    try {
+      if (data is! Map) return;
+      final log = Map<String, dynamic>.from(data);
+      final id = log['id']?.toString() ?? '';
+      if (id.isNotEmpty && _logs.any((e) => (e['id']?.toString() ?? '') == id)) {
+        return;
+      }
+      setState(() {
+        _logs = [log, ..._logs];
+      });
+      _hydrateUserNames([log]);
+    } catch (_) {}
   }
 
   Future<void> _loadLogs() async {
@@ -26,41 +110,38 @@ class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
       _error = null;
     });
     try {
-      final resp = await _backend.getRealAuditLogs(skip: 0, limit: 200);
-      if (resp.isSuccess && resp.data != null) {
+      final responses = await Future.wait([
+        _backend.getRealAuditLogs(skip: 0, limit: 200, entityType: 'deliverable'),
+        _backend.getRealAuditLogs(skip: 0, limit: 200, entityType: 'signoff'),
+      ]);
+      final collected = <Map<String, dynamic>>[];
+      for (final resp in responses) {
+        if (!resp.isSuccess || resp.data == null) continue;
         final raw = resp.data;
         final List<dynamic> items = raw is Map
             ? (raw['audit_logs'] ?? raw['items'] ?? raw['logs'] ?? raw['data'] ?? [])
             : (raw is List ? raw : []);
-        
-        final allLogs = items.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-        
-        // Filter for deliverable related logs
-        // Note: Currently backend might not always populate entity_type, so we show all logs for now.
-        /*
-        allLogs = allLogs.where((log) {
-           final type = (log['entity_type'] ?? '').toString().toLowerCase();
-           final action = (log['action'] ?? '').toString().toLowerCase();
-           // Also check resource_type as seen in some backend code
-           final resourceType = (log['resource_type'] ?? '').toString().toLowerCase();
-           
-           return type.contains('deliverable') || 
-                  action.contains('deliverable') ||
-                  resourceType.contains('deliverable');
-        }).toList();
-        */
+        collected.addAll(
+          items.whereType<Map>().map((e) => e.cast<String, dynamic>()),
+        );
+      }
+      final deduped = <String, Map<String, dynamic>>{};
+      for (final log in collected) {
+        final id = (log['id'] ?? '').toString();
+        deduped[id.isEmpty ? '${log['action']}-${log['created_at']}' : id] = log;
+      }
+      final allLogs = deduped.values.toList()
+        ..sort((a, b) => (b['created_at'] ?? '').toString().compareTo((a['created_at'] ?? '').toString()));
 
+      if (allLogs.isNotEmpty) {
         setState(() {
-          // If we find specific deliverable logs, show them. Otherwise show all (fallback)
-          // but prioritizing the filter to be true to the "Deliverable Audit Trail" name.
-          // If filter is empty but allLogs is not, we might want to show all logs but maybe with a warning?
-          // For now, let's just show all logs because the backend might not be populating entity_type correctly yet for all actions.
-          _logs = allLogs; 
+          _logs = allLogs;
         });
+        _hydrateUserNames(allLogs);
       } else {
         setState(() {
           _logs = [];
-          _error = resp.error ?? 'Failed to load audit logs';
+          _error = 'Failed to load audit logs';
         });
       }
     } catch (e) {
@@ -94,9 +175,11 @@ class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
                       itemBuilder: (context, index) {
                         final log = _logs[index];
                         final action = (log['action'] ?? log['event'] ?? log['type'] ?? 'Log').toString();
-                        final actor = (log['actor'] ?? log['user'] ?? '').toString();
+                        final actor = _extractActorLabel(log);
                         final createdAt = log['created_at']?.toString() ?? '';
                         final entityType = log['entity_type'] ?? log['resource_type'] ?? '';
+                        final entityName = (log['entity_name'] ?? '').toString();
+                        final entityId = (log['entity_id'] ?? '').toString();
                         
                         return Card(
                           margin: const EdgeInsets.symmetric(vertical: 6),
@@ -107,6 +190,12 @@ class _AuditTrailOverviewScreenState extends State<AuditTrailOverviewScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('By: $actor'),
+                                if (entityName.isNotEmpty)
+                                  Text('Target: $entityName'),
+                                if (entityType.toString().isNotEmpty || entityId.isNotEmpty)
+                                  Text(
+                                    'Entity: ${entityType.toString().isEmpty ? 'unknown' : entityType}${entityId.isNotEmpty ? ' • $entityId' : ''}',
+                                  ),
                                 if (createdAt.isNotEmpty) Text(createdAt),
                               ],
                             ),

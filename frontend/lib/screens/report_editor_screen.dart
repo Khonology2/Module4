@@ -61,6 +61,9 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
       GlobalKey<SignatureCaptureWidgetState>();
   bool _useAiAssist = false; // AI assistance toggle
   bool _isAiGenerating = false;
+  bool get _isSprintBased =>
+      (widget.reportId != null && (_existingReport?.deliverableId.trim().isEmpty ?? true)) ||
+      (widget.reportId == null && (widget.deliverableId == null || widget.deliverableId!.trim().isEmpty));
 
   @override
   void initState() {
@@ -164,35 +167,12 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
           final createdBy = data['createdBy']?.toString() ?? '';
 
           // Set _existingReport with proper status
-          _existingReport = SignOffReport(
-            id: reportId.isNotEmpty ? reportId : 'unknown',
-            deliverableId: deliverableId.isNotEmpty ? deliverableId : 'unknown',
-            reportTitle: data['reportTitle']?.toString() ?? '',
-            reportContent: data['reportContent']?.toString() ?? '',
-            sprintIds: (data['sprintIds'] as List?)
-                    ?.map((e) => e.toString())
-                    .toList() ??
-                [],
-            status: status == 'submitted'
-                ? ReportStatus.submitted
-                : ReportStatus.draft,
-            preparedBy: data['preparedBy']?.toString(),
-            preparedByName: data['preparedByName']?.toString(),
-            submittedBy: data['submittedBy']?.toString(),
-            submittedByName: data['submittedByName']?.toString(),
-            reviewedBy: data['reviewedBy']?.toString(),
-            reviewedByName: data['reviewedByName']?.toString(),
-            approvedBy: data['approvedBy']?.toString(),
-            approvedByName: data['approvedByName']?.toString(),
-            digitalSignature: data['digitalSignature']?.toString(),
-            createdAt: DateTime.tryParse(data['createdAt']?.toString() ?? '') ??
-                DateTime.now(),
-            createdBy: createdBy.isNotEmpty ? createdBy : 'unknown',
-            submittedAt: data['submittedAt'] != null
-                ? DateTime.tryParse(data['submittedAt']!.toString())
-                : null,
-            changeRequestDetails: data['changeRequestDetails']?.toString(),
-            sprintPerformanceData: data['sprintPerformanceData']?.toString(),
+          final parsed = SignOffReport.fromJson(data);
+          _existingReport = parsed.copyWith(
+            id: reportId.isNotEmpty ? reportId : parsed.id,
+            deliverableId: deliverableId.isNotEmpty ? deliverableId : parsed.deliverableId,
+            status: status == 'submitted' ? ReportStatus.submitted : ReportStatus.draft,
+            createdBy: createdBy.isNotEmpty ? createdBy : parsed.createdBy,
           );
 
           debugPrint('📋 Report loaded successfully');
@@ -202,13 +182,8 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
             _selectedDeliverableId = data['deliverableId']?.toString() ??
                 data['deliverable_id']?.toString();
 
-            // Try to load content from nested 'content' field first, then from direct fields
-            final reportTitle = content['reportTitle']?.toString() ??
-                data['reportTitle']?.toString() ??
-                '';
-            final reportContent = content['reportContent']?.toString() ??
-                data['reportContent']?.toString() ??
-                '';
+            final reportTitle = _existingReport?.displayTitle ?? '';
+            final reportContent = _existingReport?.reportContent ?? '';
             final knownLimitations = content['knownLimitations']?.toString() ??
                 data['knownLimitations']?.toString() ??
                 '';
@@ -427,12 +402,21 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
       return;
     }
 
-    // Check deliverable selection
-    if (_selectedDeliverableId == null) {
+    // Check deliverable selection (deliverable-based reports) or sprint selection (sprint-based reports)
+    if (!_isSprintBased && _selectedDeliverableId == null) {
       debugPrint('❌ No deliverable selected');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a deliverable'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    if (_isSprintBased && _selectedSprintIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a completed sprint'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -484,7 +468,7 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
         // Create new report
         debugPrint('✨ Creating new report...');
         final createData = {
-          'deliverableId': _selectedDeliverableId!,
+          if (!_isSprintBased) 'deliverableId': _selectedDeliverableId!,
           'reportTitle': _titleController.text,
           'reportContent': _contentController.text,
           if (_selectedSprintIds.isNotEmpty) 'sprintIds': _selectedSprintIds,
@@ -1047,30 +1031,6 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                     ),
                   ],
 
-                  // Add Use Saved Signature button for text signatures (simple working version)
-                  const SizedBox(height: 8),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                              '✅ Text signature save and reuse is now working! Signatures are saved persistently and will be available after login/restart. The "Use Saved Signature" button shows your saved text signatures.'),
-                          backgroundColor: Colors.green,
-                          duration: Duration(seconds: 4),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.history, size: 16),
-                    label: const Text('Use Saved Signature',
-                        style: TextStyle(fontSize: 12)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue[700],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                    ),
-                  ),
-
                   const SizedBox(height: 16),
 
                   // Save signature option
@@ -1534,16 +1494,55 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                       const SizedBox(height: 24),
                     ],
 
-                    // Deliverable Selection
+                    if (_isSprintBased) ...[
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        initialValue: _selectedSprintIds.isNotEmpty ? _selectedSprintIds.first : null,
+                        decoration: const InputDecoration(
+                          labelText: 'Completed Sprint *',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.flag),
+                          helperText: 'Select the completed sprint this report is for',
+                        ),
+                        items: _sprints
+                            .where((s) {
+                              final status = (s['status'] ?? '').toString().toLowerCase();
+                              return status == 'completed' || status == 'done' || status == 'closed';
+                            })
+                            .map<DropdownMenuItem<String>>((s) {
+                              final id = (s['id'] ?? '').toString();
+                              final name = (s['name'] ?? 'Sprint').toString();
+                              return DropdownMenuItem<String>(
+                                value: id,
+                                child: Text(name, overflow: TextOverflow.ellipsis, maxLines: 1),
+                              );
+                            })
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedSprintIds = (value == null || value.isEmpty) ? <String>[] : <String>[value];
+                          });
+                        },
+                        validator: (value) {
+                          if (!_isSprintBased) return null;
+                          if (value == null || value.isEmpty) return 'Please select a sprint';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Deliverable Selection (deliverable-based reports only)
                     // TEMPORARY: Bypass loading check for debugging
-                    _isLoadingDeliverables && _deliverables.isEmpty
-                        ? const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        : Column(
+                    if (!_isSprintBased)
+                      _isLoadingDeliverables && _deliverables.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: CircularProgressIndicator(),
+                              ),
+                            )
+                          : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
@@ -1727,7 +1726,7 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                               ),
                             ],
                           ),
-                    const SizedBox(height: 16),
+                    if (!_isSprintBased) const SizedBox(height: 16),
 
                     // Prepared By (Author) Selection
                     if (_users.isNotEmpty) ...[
@@ -1853,7 +1852,7 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
                     const SizedBox(height: 16),
 
                     // Sprint Selection (Multi-select)
-                    if (_sprints.isNotEmpty) ...[
+                    if (!_isSprintBased && _sprints.isNotEmpty) ...[
                       const Text(
                         'Link Sprints (Optional)',
                         style: TextStyle(

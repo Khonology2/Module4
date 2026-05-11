@@ -1,12 +1,12 @@
-// ignore_for_file: prefer_const_constructors, unused_import, unused_field
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../theme/flownet_theme.dart';
 import '../services/auth_service.dart';
-import '../services/backend_api_service.dart';
-import '../widgets/background_image.dart';
+import '../providers/service_providers.dart';
 import '../utils/app_icons.dart';
-import '../widgets/sidebar_version_display.dart';
+import 'background_image.dart';
+import 'sidebar_version_display.dart';
 
 class _NavItem {
   final String label;
@@ -38,102 +38,202 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
 
   List<_NavItem> get _navItems {
     final authService = AuthService();
+    final userRole = authService.currentUser?.role.toString().toLowerCase() ?? '';
 
-    final userRole =
-        authService.currentUser?.role.toString().toLowerCase() ?? '';
-
-    final isAdminLike =
-        userRole.contains('admin') || userRole.contains('system');
-
-    List<_NavItem> items;
-
+    final isAdminLike = userRole.contains('admin') || userRole.contains('system');
     if (isAdminLike) {
-      items = const [
-        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
-        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
-        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
-        _NavItem(label: 'Users', icon: Icons.people_outline, iconName: 'users', route: '/users'),
-        _NavItem(label: 'Roles', icon: Icons.admin_panel_settings_outlined, iconName: 'roles', route: '/roles'),
-        _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository'),
-        _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository'),
-      ];
-    } else if (userRole.contains('project')) {
-      items = const [
-        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
-        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
-        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
-        _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository'),
-        _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository'),
-      ];
-    } else if (userRole.contains('delivery')) {
-      items = const [
-        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
-        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
-        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
-        _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository'),
-        _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository'),
-      ];
-    } else if (userRole.contains('team')) {
-      items = const [
-        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
-        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
-        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
-        _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository'),
-        _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository'),
-      ];
-    } else {
-      // Default/fallback for unknown roles
-      items = const [
-        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
-        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
-        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
+      // Match the new system admin sidebar layout and ordering.
+      return const [
+        _NavItem(
+          label: 'Dashboard',
+          icon: Icons.dashboard_outlined,
+          iconName: 'dashboard',
+          route: '/dashboard',
+        ),
+        _NavItem(
+          label: 'Projects',
+          icon: Icons.folder_outlined,
+          iconName: 'projects',
+          route: '/projects',
+        ),
+        _NavItem(
+          label: 'Sprints',
+          icon: Icons.timer_outlined,
+          iconName: 'sprints',
+          route: '/sprint-console',
+        ),
+        _NavItem(
+          label: 'Deliverables',
+          icon: Icons.assignment_outlined,
+          iconName: 'deliverables',
+          route: '/deliverables-overview',
+        ),
+        _NavItem(
+          label: 'Timeline',
+          icon: Icons.calendar_today_outlined,
+          iconName: 'timeline',
+          route: '/timeline',
+        ),
+        _NavItem(
+          label: 'Approval Requests',
+          icon: Icons.assignment_outlined,
+          iconName: 'approval_requests',
+          route: '/approval-requests',
+        ),
+        _NavItem(
+          label: 'Repository',
+          icon: Icons.folder_outlined,
+          iconName: 'repository',
+          route: '/repository',
+        ),
+        _NavItem(
+          label: 'Reports',
+          icon: Icons.assessment_outlined,
+          iconName: 'reports',
+          route: '/report-repository',
+        ),
+        _NavItem(
+          label: 'User Management',
+          icon: Icons.admin_panel_settings_outlined,
+          iconName: 'role_management',
+          route: '/role-management',
+        ),
       ];
     }
 
-    final roleSpecific = <_NavItem>[];
-    if (authService.hasPermission('view_all_deliverables')) {
-      roleSpecific.addAll([
-        const _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository', requiredPermission: 'view_all_deliverables'),
-        const _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository', requiredPermission: 'view_all_deliverables'),
+    // Role-based navigation items
+    final List<_NavItem> allItems = [
+      const _NavItem(
+        label: 'Dashboard',
+        icon: Icons.dashboard_outlined,
+        iconName: 'dashboard',
+        route: '/dashboard',
+        requiredPermission: null,
+      ),
+      const _NavItem(
+        label: 'Projects',
+        icon: Icons.folder_outlined,
+        iconName: 'projects',
+        route: '/projects',
+        requiredPermission: null,
+      ),
+      const _NavItem(
+        label: 'Sprints',
+        icon: Icons.timer_outlined,
+        iconName: 'sprints',
+        route: '/sprint-console',
+        requiredPermission: 'view_sprints',
+      ),
+      const _NavItem(
+        label: 'Deliverables',
+        icon: Icons.assignment_outlined,
+        iconName: 'deliverables',
+        route: '/deliverables-overview',
+        requiredPermission: null,
+      ),
+      const _NavItem(
+        label: 'Timeline',
+        icon: Icons.calendar_today_outlined,
+        iconName: 'timeline',
+        route: '/timeline',
+        requiredPermission: null,
+      ),
+    ];
+
+    // Role-specific items
+    final List<_NavItem> roleSpecificItems = [];
+
+    if (userRole.contains('delivery') || userRole.contains('project')) {
+      // Delivery/Project managers get project-related access
+      roleSpecificItems.addAll([
+        const _NavItem(
+          label: 'Approval Requests',
+          icon: Icons.assignment_outlined,
+          iconName: 'approval_requests',
+          route: '/approval-requests',
+          requiredPermission: 'view_approvals',
+        ),
+        const _NavItem(
+          label: 'Repository',
+          icon: Icons.folder_outlined,
+          iconName: 'repository',
+          route: '/repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+        const _NavItem(
+          label: 'Reports',
+          icon: Icons.assessment_outlined,
+          iconName: 'reports',
+          route: '/report-repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+      ]);
+    } else if (userRole.contains('client')) {
+      // Client reviewers get focused access
+      roleSpecificItems.addAll([
+        const _NavItem(
+          label: 'Approval Requests',
+          icon: Icons.assignment_outlined,
+          iconName: 'approval_requests',
+          route: '/approval-requests',
+          requiredPermission: 'view_approvals',
+        ),
+        const _NavItem(
+          label: 'Repository',
+          icon: Icons.folder_outlined,
+          iconName: 'repository',
+          route: '/repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
+        const _NavItem(
+          label: 'Reports',
+          icon: Icons.assessment_outlined,
+          iconName: 'reports',
+          route: '/report-repository',
+          requiredPermission: 'view_all_deliverables',
+        ),
       ]);
     }
 
-    items = [...items, ...roleSpecific];
+    // Combine core items with role-specific items
+    final combinedItems = [...allItems, ...roleSpecificItems];
 
-    return items.where((item) {
+    // Filter items based on user permissions
+    return combinedItems.where((item) {
+      // Special flag: hide from sidebar even if user has permission
+      if (item.requiredPermission == 'HIDE_FROM_SIDEBAR') return false;
+      
+      // Client users should not see Projects and Deliverables
+      if (userRole.contains('client') && 
+          (item.label == 'Projects' || item.label == 'Deliverables')) {
+        return false;
+      }
+      
       if (item.requiredPermission == null) return true;
       return authService.hasPermission(item.requiredPermission!);
     }).toList();
   }
 
-  void _handleLogout(BuildContext context) async {
-    final apiService = BackendApiService();
-    await apiService.signOut();
-    if (context.mounted) {
-      context.go('/login');
-    }
-  }
-
-  Widget _buildThemeToggleButton(bool isDarkMode) {
-    return FloatingActionButton(
-      mini: true,
-      onPressed: () {
-        // TODO: Implement theme toggle
-      },
-      backgroundColor: Colors.white.withValues(alpha: 0.9),
-      child: Icon(
-        isDarkMode ? Icons.light_mode : Icons.dark_mode,
-        color: isDarkMode ? Colors.black : Colors.black87,
-        size: 16,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width > 768;
-    final routeLocation = GoRouterState.of(context).uri.path;
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final sidebarColor =
+        isDarkMode ? FlownetColors.surface : FlownetColors.pureWhite;
+    final sidebarTextColor = isDarkMode ? Colors.white : Colors.black;
+
+    String routeLocation = '/';
+    try {
+      final router = GoRouter.maybeOf(context);
+      final uri = router?.routeInformationProvider.value.uri;
+      if (uri != null) {
+        routeLocation = uri.path;
+      } else {
+        routeLocation = ModalRoute.of(context)?.settings.name ?? '/';
+      }
+    } catch (_) {
+      routeLocation = ModalRoute.of(context)?.settings.name ?? '/';
+    }
+    final isDesktop = MediaQuery.of(context).size.width > 768;
 
     if (isDesktop) {
       return Scaffold(
@@ -177,7 +277,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
         floatingActionButton:
             routeLocation == '/dashboard' ? null : _buildThemeToggleButton(isDarkMode),
         drawer: Drawer(
-          backgroundColor: Colors.black,
+          backgroundColor: sidebarColor,
           child: Column(
             children: [
               // Drawer header
@@ -186,15 +286,15 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                 decoration: const BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
-                      color: Color(0xFF333333),
+                      color: FlownetColors.coolGray,
                       width: 0.5,
                     ),
                   ),
                 ),
                 child: Row(
                   children: [
-                    Image.network(
-                      'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/images/flownet_logo.png',
+                    Image.asset(
+                      'assets/images/flownet_logo.png',
                       height: 32,
                       width: 32,
                     ),
@@ -203,7 +303,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                       child: Text(
                         'Flow-Space',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: sidebarTextColor,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -211,7 +311,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                     ),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, color: Colors.white),
+                      icon: Icon(Icons.close, color: sidebarTextColor),
                     ),
                   ],
                 ),
@@ -236,7 +336,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
       itemBuilder: (context, index) {
         final isDarkMode = Theme.of(context).brightness == Brightness.dark;
         final sidebarTextColor = isDarkMode ? Colors.white : Colors.black;
-        final sidebarSubtleText = isDarkMode ? Colors.white70 : Colors.black87;
+        final sidebarSubtleText = isDarkMode ? FlownetColors.textSecondary : Colors.black87;
         final item = _navItems[index];
         final active = routeLocation.startsWith(item.route);
 
@@ -249,10 +349,12 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: ListTile(
-            leading: Icon(
-              item.icon,
-              color: active ? sidebarTextColor : sidebarSubtleText,
+            leading: AppIcons.getIconWidget(
+              item.iconName,
+              fallbackIcon: item.icon,
+              isActive: active,
               size: 20,
+              color: active ? sidebarTextColor : sidebarSubtleText,
             ),
             title: Text(
               item.label,
@@ -372,31 +474,58 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     String routeLocation,
   ) {
     final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final Color activeColor = isDarkMode ? Colors.white : Colors.black;
-    final Color inactiveColor = isDarkMode ? Colors.white70 : Colors.black54;
-
+    final Color navText = isDarkMode ? Colors.white : const Color(0xFF141414);
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      height: 32,
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
-        color: active ? activeColor.withValues(alpha: 0.08) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        color: active ? const Color(0xFFD70E0E) : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
       ),
-      child: ListTile(
-        dense: true,
-        leading: Icon(
-          item.icon,
-          color: active ? activeColor : inactiveColor,
-          size: 20,
-        ),
-        title: Text(
-          item.label,
-          style: TextStyle(
-            color: active ? activeColor : inactiveColor,
-            fontSize: 13,
-            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+      child: GestureDetector(
+        onTap: () {
+          if (!routeLocation.startsWith(item.route)) {
+            context.go(item.route);
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE9E9E9),
+                  shape: BoxShape.circle,
+                ),
+                clipBehavior: Clip.antiAlias,
+                alignment: Alignment.center,
+                child: AppIcons.getIconWidget(
+                  item.iconName,
+                  fallbackIcon: item.icon,
+                  isActive: false,
+                  size: 16,
+                  visualScale: 2.2,
+                  fit: BoxFit.cover,
+                  color: const Color(0xFF121212),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  item.label,
+                  style: TextStyle(
+                    color: active ? Colors.white : navText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         ),
-        onTap: () => context.go(item.route),
       ),
     );
   }
@@ -405,39 +534,87 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     required String label,
     required String iconName,
     required IconData fallbackIcon,
-    String? route,
-    VoidCallback? onTap,
     required String currentRoute,
     required Color textColor,
+    String? route,
+    VoidCallback? onTap,
   }) {
-    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final bool active = route != null && currentRoute.startsWith(route);
-    final Color activeColor = isDarkMode ? Colors.white : Colors.black;
-    final Color inactiveColor = isDarkMode ? Colors.white70 : Colors.black54;
-
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      height: 36,
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
       decoration: BoxDecoration(
-        color: active ? activeColor.withValues(alpha: 0.08) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        color: active ? const Color(0xFFD70E0E) : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
       ),
-      child: ListTile(
-        dense: true,
-        leading: Icon(
-          fallbackIcon,
-          color: active ? activeColor : inactiveColor,
-          size: 18,
-        ),
-        title: Text(
-          label,
-          style: TextStyle(
-            color: active ? activeColor : inactiveColor,
-            fontSize: 12,
-            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+      child: GestureDetector(
+        onTap: () {
+          if (onTap != null) {
+            onTap();
+            return;
+          }
+          if (route != null && !currentRoute.startsWith(route)) {
+            context.go(route);
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE9E9E9),
+                  shape: BoxShape.circle,
+                ),
+                clipBehavior: Clip.antiAlias,
+                alignment: Alignment.center,
+                child: AppIcons.getIconWidget(
+                  iconName,
+                  fallbackIcon: fallbackIcon,
+                  isActive: false,
+                  size: 16,
+                  visualScale: 2.2,
+                  fit: BoxFit.cover,
+                  color: const Color(0xFF121212),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: active ? Colors.white : textColor,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
         ),
-        onTap: onTap ?? (route != null ? () => context.go(route) : null),
       ),
     );
   }
+
+  Widget _buildThemeToggleButton(bool isDarkMode) {
+    return FloatingActionButton.small(
+      heroTag: null,
+      onPressed: () {
+        ProviderScope.containerOf(context, listen: false)
+            .read(themeProvider.notifier)
+            .toggleTheme();
+      },
+      backgroundColor: isDarkMode ? FlownetColors.surface : FlownetColors.pureWhite,
+      foregroundColor: isDarkMode ? Colors.white : Colors.black,
+      child: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
+    );
+  }
+
+  Future<void> _handleLogout(BuildContext ctx) async {
+    final router = GoRouter.of(ctx);
+    await AuthService().signOut();
+    if (!mounted) return;
+    router.go('/');
+  }
+
 }

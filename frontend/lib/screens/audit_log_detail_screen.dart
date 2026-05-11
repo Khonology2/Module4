@@ -62,7 +62,7 @@ class AuditLogDetailScreen extends StatelessWidget {
               ],
             ),
             const Divider(height: 24),
-            _buildInfoRow('User', logEntry.userEmail ?? logEntry.userId ?? 'Unknown'),
+            _buildInfoRow('User', logEntry.userName ?? logEntry.userEmail ?? logEntry.userId ?? 'Unknown'),
             if (logEntry.userRole != null) _buildInfoRow('Role', logEntry.userRole!),
             _buildInfoRow('Date', DateFormat('MMMM d, yyyy').format(logEntry.createdAt)),
             _buildInfoRow('Time', DateFormat('HH:mm:ss').format(logEntry.createdAt)),

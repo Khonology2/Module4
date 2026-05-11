@@ -338,13 +338,59 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     if (!mounted) return;
 
     try {
+      final messenger = ScaffoldMessenger.of(context);
       final auth = AuthService();
       if (!(auth.isTeamMember || auth.isDeliveryLead || auth.isSystemAdmin)) {
         _showSnackBar('You do not have permission to update sprint status',
             isError: true);
         return;
       }
-      final messenger = ScaffoldMessenger.of(context);
+
+      bool isCompletingStatus(String v) {
+        final n = v.toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
+        return n == 'completed' || n == 'done' || n == 'closed';
+      }
+
+      bool missingRequiredMetrics(Map<String, dynamic> s) {
+        final testPassRate = s['test_pass_rate'] ?? s['testPassRate'];
+        final defectsOpened = s['defects_opened'] ?? s['defectsOpened'];
+        final defectsClosed = s['defects_closed'] ?? s['defectsClosed'];
+        final codeReview = s['code_review_completion'] ?? s['codeReviewCompletion'];
+        final documentation = s['documentation_status'] ?? s['documentationStatus'];
+        return testPassRate == null ||
+            defectsOpened == null ||
+            defectsClosed == null ||
+            codeReview == null ||
+            documentation == null;
+      }
+
+      if (isCompletingStatus(newStatus)) {
+        try {
+          final sprintResp = await BackendApiService().getSprint(sprintId);
+          if (sprintResp.isSuccess && sprintResp.data != null) {
+            final raw = sprintResp.data;
+            final data = raw is Map && raw['data'] is Map
+                ? Map<String, dynamic>.from(raw['data'] as Map)
+                : (raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{});
+            if (missingRequiredMetrics(data)) {
+              if (!mounted) return;
+              _showSnackBar('Complete sprint metrics before marking the sprint as completed.', isError: true);
+              await context.push('/sprint-metrics/$sprintId');
+              final refreshed = await BackendApiService().getSprint(sprintId);
+              final rraw = refreshed.isSuccess ? refreshed.data : null;
+              final rdata = rraw is Map && rraw['data'] is Map
+                  ? Map<String, dynamic>.from(rraw['data'] as Map)
+                  : (rraw is Map ? Map<String, dynamic>.from(rraw) : <String, dynamic>{});
+              if (missingRequiredMetrics(rdata)) {
+                if (!mounted) return;
+                _showSnackBar('Sprint metrics are still incomplete. Sprint status was not changed.', isError: true);
+                return;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
       setState(() {
         _isLoading = true;
       });
@@ -470,7 +516,7 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return AppScaffold(
-        useBackgroundImage: false,
+        useBackgroundImage: true,
         centered: false,
         body: Center(
           child: CircularProgressIndicator(
@@ -482,7 +528,7 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     }
 
     return AppScaffold(
-      useBackgroundImage: false,
+      useBackgroundImage: true,
       centered: false,
       body: _buildBody(),
     );

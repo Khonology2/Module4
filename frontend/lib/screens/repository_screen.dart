@@ -825,7 +825,6 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        heroTag: 'repository_upload_document_fab',
         onPressed: _uploadDocument,
         backgroundColor: FlownetColors.crimsonRed,
         child: const Icon(Icons.add, color: FlownetColors.pureWhite),

@@ -7,7 +7,6 @@ import '../services/auth_service.dart';
 import '../services/jira_service.dart';
 import '../services/deliverable_service.dart';
 import '../models/deliverable.dart';
-import '../utils/date_utils.dart' as app_date_utils;
 import '../theme/flownet_theme.dart';
 import '../widgets/sprint_board_widget.dart';
 import '../widgets/app_scaffold.dart';
@@ -16,7 +15,7 @@ class SprintBoardScreen extends ConsumerStatefulWidget {
   final String sprintId;
   final String sprintName;
   final String? projectKey;
-
+  
   const SprintBoardScreen({
     super.key,
     required this.sprintId,
@@ -32,12 +31,12 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
   final SprintDatabaseService _databaseService = SprintDatabaseService();
   final DeliverableService _deliverableService = DeliverableService();
   late RealtimeService _realtime;
-
+  
   // Data
   List<JiraIssue> _issues = [];
   List<Deliverable> _deliverables = [];
   Map<String, dynamic>? _sprintDetails;
-
+  
   // UI State
   bool _isLoading = false;
 
@@ -48,6 +47,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
     _setupRealtime();
   }
 
+
   Future<void> _loadSprintData() async {
     setState(() {
       _isLoading = true;
@@ -55,9 +55,8 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
 
     try {
       // Load sprint details
-      final sprintDetails =
-          await _databaseService.getSprintDetails(widget.sprintId);
-
+      final sprintDetails = await _databaseService.getSprintDetails(widget.sprintId);
+      
       if (mounted) {
         setState(() {
           _sprintDetails = sprintDetails;
@@ -91,82 +90,62 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
   void _setupRealtime() {
     _realtime = RealtimeService();
     _realtime.initialize(authToken: AuthService().accessToken);
-    _realtime.on('deliverable_created',
-        (data) => _loadDeliverablesForSprint(widget.sprintId));
-    _realtime.on('deliverable_updated',
-        (data) => _loadDeliverablesForSprint(widget.sprintId));
-    _realtime.on('deliverable_deleted',
-        (data) => _loadDeliverablesForSprint(widget.sprintId));
+    _realtime.on('deliverable_created', (data) => _loadDeliverablesForSprint(widget.sprintId));
+    _realtime.on('deliverable_updated', (data) => _loadDeliverablesForSprint(widget.sprintId));
+    _realtime.on('deliverable_deleted', (data) => _loadDeliverablesForSprint(widget.sprintId));
   }
 
-  Future<void> _loadDeliverablesForSprint(String sprintId,
-      {String? projectId}) async {
+  Future<void> _loadDeliverablesForSprint(String sprintId, {String? projectId}) async {
     try {
       final project = _sprintDetails?['project'];
-      final pid = projectId ??
-          _sprintDetails?['project_id']?.toString() ??
-          _sprintDetails?['projectId']?.toString() ??
-          (project is Map ? project['id']?.toString() : null);
+      final pid = projectId ?? 
+                 _sprintDetails?['project_id']?.toString() ?? 
+                 _sprintDetails?['projectId']?.toString() ??
+                 (project is Map ? project['id']?.toString() : null);
+      
+      debugPrint('🔍 Fetching deliverables for sprint: $sprintId (project: $pid)');
 
-      debugPrint(
-          '🔍 Fetching deliverables for sprint: $sprintId (project: $pid)');
-
-      var response =
-          await _deliverableService.getDeliverablesForSprint(sprintId);
+      var response = await _deliverableService.getDeliverablesForSprint(sprintId);
       if (!response.isSuccess && pid != null && pid.isNotEmpty) {
         response = await _deliverableService.getDeliverables(projectId: pid);
       }
-
+      
       if (response.isSuccess && response.data != null) {
         final data = response.data;
         List<Deliverable> deliverables = [];
-
+        
         if (data is List) {
-          // If it's a raw list, we might need to parse it, but DeliverableService
+          // If it's a raw list, we might need to parse it, but DeliverableService 
           // usually returns {'deliverables': List<Deliverable>}
           try {
-            deliverables = data
-                .map((e) => e is Deliverable
-                    ? e
-                    : Deliverable.fromJson(Map<String, dynamic>.from(e)))
-                .toList();
+            deliverables = data.map((e) => e is Deliverable ? e : Deliverable.fromJson(Map<String, dynamic>.from(e))).toList();
           } catch (e) {
             debugPrint('❌ Error parsing deliverables list: $e');
           }
         } else if (data is Map) {
           final dynamic rawList = data['deliverables'] ?? data['data'] ?? [];
           if (rawList is List) {
-            deliverables = rawList
-                .map((e) => e is Deliverable
-                    ? e
-                    : Deliverable.fromJson(Map<String, dynamic>.from(e)))
-                .toList();
+            deliverables = rawList.map((e) => e is Deliverable ? e : Deliverable.fromJson(Map<String, dynamic>.from(e))).toList();
           }
         }
 
         if (deliverables.isNotEmpty) {
           deliverables = deliverables.where((d) {
-            final inSprint = d.sprintIds
-                .map((e) => e.toString())
-                .contains(sprintId.toString());
+            final inSprint = d.sprintIds.map((e) => e.toString()).contains(sprintId.toString());
             if (!inSprint) return false;
             if (pid == null || pid.isEmpty) return true;
             return (d.projectId ?? '').toString() == pid.toString();
           }).toList();
         }
-
+        
         if (mounted) {
           setState(() {
             _deliverables = deliverables;
             // Map deliverables to JiraIssue for the board widget
             _issues = deliverables.map((d) {
               // Generate a safe key from the ID
-              String key = d.id.length > 8
-                  ? d.id.substring(0, 8).toUpperCase()
-                  : d.id.toUpperCase();
-              if (key.isEmpty) {
-                key = 'DEL-${d.id.hashCode.toString().substring(0, 4)}';
-              }
+              String key = d.id.length > 8 ? d.id.substring(0, 8).toUpperCase() : d.id.toUpperCase();
+              if (key.isEmpty) key = 'DEL-${d.id.hashCode.toString().substring(0, 4)}';
 
               return JiraIssue(
                 id: d.id,
@@ -183,13 +162,11 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
             }).toList();
           });
         }
-
-        debugPrint(
-            '✅ Loaded ${_deliverables.length} deliverables for sprint $sprintId');
+        
+        debugPrint('✅ Loaded ${_deliverables.length} deliverables for sprint $sprintId');
       } else {
         debugPrint('❌ Failed to fetch deliverables: ${response.error}');
-        _showSnackBar('Failed to load deliverables: ${response.error}',
-            isError: true);
+        _showSnackBar('Failed to load deliverables: ${response.error}', isError: true);
       }
     } catch (e) {
       debugPrint('❌ Error loading deliverables: $e');
@@ -229,21 +206,20 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
     }
   }
 
-  Future<void> _handleIssueStatusChange(
-      JiraIssue issue, String newStatus) async {
+  Future<void> _handleIssueStatusChange(JiraIssue issue, String newStatus) async {
     try {
       final auth = AuthService();
       if (!auth.canEditDeliverable()) {
         _showSnackBar('You do not have permission to update deliverables');
         return;
       }
-
+      
       setState(() {
         _isLoading = true;
       });
 
       final newDeliverableStatus = _mapBoardStatusToDeliverable(newStatus);
-
+      
       // Update deliverable status in database
       final response = await _deliverableService.updateDeliverableStatus(
         issue.id,
@@ -271,7 +247,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
             );
             _isLoading = false;
           });
-
+          
           // Update sprint progress based on deliverables
           final total = _issues.length;
           final done = _issues.where((i) => i.status == 'Done').length;
@@ -300,8 +276,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
         setState(() {
           _isLoading = false;
         });
-        _showSnackBar('Failed to update deliverable status: ${response.error}',
-            isError: true);
+        _showSnackBar('Failed to update deliverable status: ${response.error}', isError: true);
       }
     } catch (e) {
       setState(() {
@@ -312,23 +287,21 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
   }
 
   void _showCreateDeliverableDialog() {
-    final projectId = _sprintDetails?['project_id']?.toString() ??
-        _sprintDetails?['projectId']?.toString();
+    final projectId = _sprintDetails?['project_id']?.toString() ?? _sprintDetails?['projectId']?.toString();
     final params = <String, String>{
       'sprintId': widget.sprintId,
       if (projectId != null && projectId.isNotEmpty) 'projectId': projectId,
     };
-    final uri =
-        Uri(path: '/enhanced-deliverable-setup', queryParameters: params);
+    final uri = Uri(path: '/enhanced-deliverable-setup', queryParameters: params);
     context.go(uri.toString());
   }
+
 
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor:
-            isError ? FlownetColors.crimsonRed : FlownetColors.electricBlue,
+        backgroundColor: isError ? FlownetColors.crimsonRed : FlownetColors.electricBlue,
       ),
     );
   }
@@ -348,16 +321,14 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
       decoration: BoxDecoration(
         color: FlownetColors.charcoalBlack.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: FlownetColors.electricBlue.withValues(alpha: 0.3)),
+        border: Border.all(color: FlownetColors.electricBlue.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.directions_run,
-                  color: FlownetColors.electricBlue, size: 32),
+              const Icon(Icons.directions_run, color: FlownetColors.electricBlue, size: 32),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -365,20 +336,18 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
                   children: [
                     Text(
                       widget.sprintName,
-                      style:
-                          Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                color: FlownetColors.pureWhite,
-                                fontWeight: FontWeight.bold,
-                              ),
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: FlownetColors.pureWhite,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     if (_sprintDetails != null) ...[
                       Text(
                         _sprintDetails!['description'] ?? 'No description',
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: FlownetColors.pureWhite
-                                  .withValues(alpha: 0.8),
-                            ),
+                          color: FlownetColors.pureWhite.withValues(alpha: 0.8),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       SingleChildScrollView(
@@ -394,14 +363,10 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
                                     .toString()
                                     .trim();
                                 if (raw.isEmpty) return 'Draft';
-                                if (raw.toLowerCase() == 'in_progress') {
-                                  return 'In Progress';
-                                }
+                                if (raw.toLowerCase() == 'in_progress') return 'In Progress';
                                 return raw;
                               })(),
-                              _getStatusColor((_sprintDetails!['status'] ??
-                                      _sprintDetails!['state'])
-                                  ?.toString()),
+                              _getStatusColor((_sprintDetails!['status'] ?? _sprintDetails!['state'])?.toString()),
                             ),
                             const SizedBox(width: 12),
                             if (_sprintDetails!['start_date'] != null)
@@ -431,17 +396,13 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
           Row(
             children: [
               DropdownButton<String>(
-                value: _normalizeSprintStatus(
-                    (_sprintDetails?['status'] ?? 'planning')?.toString()),
+                value: _normalizeSprintStatus((_sprintDetails?['status'] ?? 'planning')?.toString()),
                 items: const [
                   DropdownMenuItem(value: 'draft', child: Text('Draft')),
                   DropdownMenuItem(value: 'planning', child: Text('Planning')),
-                  DropdownMenuItem(
-                      value: 'in_progress', child: Text('In Progress')),
-                  DropdownMenuItem(
-                      value: 'completed', child: Text('Completed')),
-                  DropdownMenuItem(
-                      value: 'cancelled', child: Text('Cancelled')),
+                  DropdownMenuItem(value: 'in_progress', child: Text('In Progress')),
+                  DropdownMenuItem(value: 'completed', child: Text('Completed')),
+                  DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
                 ],
                 onChanged: (value) async {
                   if (value == null) return;
@@ -451,19 +412,13 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
                     return;
                   }
                   if (!(auth.isTeamMember || auth.isDeliveryLead)) {
-                    _showSnackBar(
-                        'You do not have permission to update sprint status',
-                        isError: true);
+                    _showSnackBar('You do not have permission to update sprint status', isError: true);
                     return;
                   }
-                  final oldStatus =
-                      (_sprintDetails?['status'] ?? '').toString();
+                  final oldStatus = (_sprintDetails?['status'] ?? '').toString();
                   final totalIssues = _issues.length;
-                  final completedIssues =
-                      _issues.where((issue) => issue.status == 'Done').length;
-                  final progress = totalIssues > 0
-                      ? (completedIssues / totalIssues) * 100
-                      : 0.0;
+                  final completedIssues = _issues.where((issue) => issue.status == 'Done').length;
+                  final progress = totalIssues > 0 ? (completedIssues / totalIssues) * 100 : 0.0;
                   final ok = await _databaseService.updateSprintStatusHttp(
                     sprintId: widget.sprintId,
                     status: value,
@@ -481,8 +436,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
                     });
                     _showSnackBar('Sprint status updated to $value');
                   } else {
-                    _showSnackBar('Failed to update sprint status',
-                        isError: true);
+                    _showSnackBar('Failed to update sprint status', isError: true);
                   }
                 },
               ),
@@ -555,24 +509,18 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
 
   Widget _buildSprintStats() {
     final totalIssues = _issues.length;
-    final completedIssues =
-        _issues.where((issue) => issue.status == 'Done').length;
-    final inProgressIssues =
-        _issues.where((issue) => issue.status == 'In Progress').length;
-    final progress =
-        totalIssues > 0 ? (completedIssues / totalIssues) * 100 : 0.0;
+    final completedIssues = _issues.where((issue) => issue.status == 'Done').length;
+    final inProgressIssues = _issues.where((issue) => issue.status == 'In Progress').length;
+    final progress = totalIssues > 0 ? (completedIssues / totalIssues) * 100 : 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        _buildStatItem('Progress', '${progress.toStringAsFixed(1)}%',
-            FlownetColors.electricBlue),
+        _buildStatItem('Progress', '${progress.toStringAsFixed(1)}%', FlownetColors.electricBlue),
         const SizedBox(height: 8),
-        _buildStatItem('Completed', '$completedIssues/$totalIssues',
-            FlownetColors.electricBlue),
+        _buildStatItem('Completed', '$completedIssues/$totalIssues', FlownetColors.electricBlue),
         const SizedBox(height: 8),
-        _buildStatItem(
-            'In Progress', '$inProgressIssues', FlownetColors.crimsonRed),
+        _buildStatItem('In Progress', '$inProgressIssues', FlownetColors.crimsonRed),
       ],
     );
   }
@@ -584,15 +532,15 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
         Text(
           value,
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: color,
-                fontWeight: FontWeight.bold,
-              ),
+            color: color,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         Text(
           label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: FlownetColors.pureWhite.withValues(alpha: 0.7),
-              ),
+            color: FlownetColors.pureWhite.withValues(alpha: 0.7),
+          ),
         ),
       ],
     );
@@ -622,16 +570,16 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
             Text(
               'No deliverables yet',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: FlownetColors.pureWhite.withValues(alpha: 0.7),
-                    fontWeight: FontWeight.bold,
-                  ),
+                color: FlownetColors.pureWhite.withValues(alpha: 0.7),
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 12),
             Text(
               'Create your first deliverable for this project',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: FlownetColors.pureWhite.withValues(alpha: 0.5),
-                  ),
+                color: FlownetColors.pureWhite.withValues(alpha: 0.5),
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -642,8 +590,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: FlownetColors.electricBlue,
                 foregroundColor: FlownetColors.pureWhite,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),
           ],
@@ -671,14 +618,21 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
   }
 
   String _formatDate(String dateString) {
-    return app_date_utils.DateUtils.formatDatabaseTimestampWithTime(dateString);
+    try {
+      final date = DateTime.parse(dateString);
+      final tz = date.toUtc().add(const Duration(hours: 2));
+      String two(int n) => n < 10 ? '0$n' : '$n';
+      return '${two(tz.day)}/${two(tz.month)}/${tz.year} ${two(tz.hour)}:${two(tz.minute)}';
+    } catch (e) {
+      return dateString;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const AppScaffold(
-        useBackgroundImage: false,
+        useBackgroundImage: true,
         body: Center(
           child: CircularProgressIndicator(
             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
@@ -690,7 +644,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
     final auth = AuthService();
     final canCreateDeliverable = auth.canCreateDeliverable();
     return AppScaffold(
-      useBackgroundImage: false,
+      useBackgroundImage: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -719,8 +673,7 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
             icon: const Icon(Icons.description_outlined, color: Colors.white),
             onPressed: () {
               final encodedName = Uri.encodeComponent(widget.sprintName);
-              context
-                  .push('/sprint-report/${widget.sprintId}?name=$encodedName');
+              context.push('/sprint-report/${widget.sprintId}?name=$encodedName');
             },
             tooltip: 'Sprint Report',
           ),
@@ -734,29 +687,28 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Sprint Header
-            _buildSprintHeader(),
-            const SizedBox(height: 32),
-
-            // Sprint Board
-            if (_issues.isNotEmpty)
-              SprintBoardWidget(
-                sprintId: widget.sprintId,
-                sprintName: widget.sprintName,
-                deliverables: _issues,
-                onDeliverableStatusChanged: _handleIssueStatusChange,
-              )
-            else
-              _buildEmptyBoard(),
-          ],
-        ),
-      ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Sprint Header
+                  _buildSprintHeader(),
+                  const SizedBox(height: 32),
+                  
+                  // Sprint Board
+                  if (_issues.isNotEmpty)
+                    SprintBoardWidget(
+                      sprintId: widget.sprintId,
+                      sprintName: widget.sprintName,
+                      deliverables: _issues,
+                      onDeliverableStatusChanged: _handleIssueStatusChange,
+                    )
+                  else
+                    _buildEmptyBoard(),
+                ],
+              ),
+            ),
       floatingActionButton: canCreateDeliverable
           ? FloatingActionButton.extended(
-              heroTag: 'sprint_board_create_deliverable_fab',
               onPressed: _showCreateDeliverableDialog,
               backgroundColor: FlownetColors.electricBlue,
               foregroundColor: FlownetColors.pureWhite,
@@ -767,3 +719,4 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
     );
   }
 }
+

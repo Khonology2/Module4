@@ -98,6 +98,8 @@ flutter:
     - assets/images/
     - assets/fonts/
     - assets/data/
+    - assets/fonts/fonts/poppins/
+    - assets/dashboard_team_member/
   fonts:
     - family: Poppins
       fonts:

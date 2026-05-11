@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../services/signature_service.dart';
 import '../services/api_client.dart';
 import '../models/user_signature.dart';
-import '../utils/date_utils.dart' as app_date_utils;
 import '../widgets/signature_capture_widget.dart';
 
 /// Screen for managing user signatures
@@ -374,7 +373,7 @@ class _SignatureManagementScreenState extends State<SignatureManagementScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return app_date_utils.DateUtils.formatDate(date);
+    return '${date.day}/${date.month}/${date.year}';
   }
 }
 

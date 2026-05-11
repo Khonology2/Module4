@@ -445,7 +445,7 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
       for (var log in _deliverable.auditLogs) {
         rows.add([
           log.createdAt.toString(),
-          log.userEmail ?? log.userId ?? 'Unknown',
+          log.userName ?? log.userEmail ?? log.userId ?? 'Unknown',
           log.action,
           log.changedFields?.join(', ') ?? '',
         ]);
@@ -508,7 +508,7 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
                 <String>['Timestamp', 'User', 'Action', 'Details'],
                 ..._deliverable.auditLogs.map((log) => [
                   DateFormat('yyyy-MM-dd HH:mm').format(log.createdAt),
-                  log.userEmail ?? 'Unknown',
+                  log.userName ?? log.userEmail ?? 'Unknown',
                   log.action,
                   log.changedFields?.join(', ') ?? '-',
                 ]),
@@ -842,20 +842,8 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
         const SizedBox(height: 16),
         DropTarget(
           onDragDone: (detail) => _handleDroppedFiles(detail.files),
-          onDragEntered: (detail) {
-            if (_isDragging) return;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              setState(() => _isDragging = true);
-            });
-          },
-          onDragExited: (detail) {
-            if (!_isDragging) return;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              setState(() => _isDragging = false);
-            });
-          },
+          onDragEntered: (detail) => setState(() => _isDragging = true),
+          onDragExited: (detail) => setState(() => _isDragging = false),
           child: Container(
             constraints: const BoxConstraints(minHeight: 100),
             decoration: BoxDecoration(
@@ -961,7 +949,7 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
-                    '${log.userEmail ?? 'Unknown'} • ${DateFormat('yyyy-MM-dd HH:mm').format(log.createdAt)}',
+                    '${log.userName ?? log.userEmail ?? 'Unknown'} • ${DateFormat('yyyy-MM-dd HH:mm').format(log.createdAt)}',
                     style: const TextStyle(fontSize: 12),
                   ),
                   trailing: IconButton(

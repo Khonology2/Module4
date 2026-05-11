@@ -18,6 +18,7 @@ class SignOffReport {
   final String reportContent;
   final List<String> sprintIds;
   final String? sprintPerformanceData;
+  final Map<String, dynamic>? sprintReportData;
   final String? knownLimitations;
   final String? nextSteps;
   final String? preparedBy;
@@ -41,8 +42,12 @@ class SignOffReport {
   final String? approvedBy;
   final String? approvedByName;
   final String? approvedByRole;
-
   final String? digitalSignature;
+  final int currentVersion;
+  final List<dynamic> versionHistory;
+  final bool isArchived;
+  final DateTime? archivedAt;
+  final DateTime? sealedAt;
 
   const SignOffReport({
     required this.id,
@@ -51,6 +56,7 @@ class SignOffReport {
     required this.reportContent,
     required this.sprintIds,
     this.sprintPerformanceData,
+    this.sprintReportData,
     this.knownLimitations,
     this.nextSteps,
     this.preparedBy,
@@ -75,31 +81,12 @@ class SignOffReport {
     this.approvedByName,
     this.approvedByRole,
     this.digitalSignature,
+    this.currentVersion = 0,
+    this.versionHistory = const [],
+    this.isArchived = false,
+    this.archivedAt,
+    this.sealedAt,
   });
-
-  static String sanitizeReportContent(String content) {
-    final raw = content;
-    if (raw.trim().isEmpty) return raw;
-    final lines = raw.split('\n');
-    final out = <String>[];
-    var skipping = false;
-    for (final line in lines) {
-      final t = line.trim().toUpperCase();
-      if (!skipping && t == 'PROJECT SPRINT TOTALS') {
-        skipping = true;
-        continue;
-      }
-      if (skipping) {
-        if (t == 'SPRINT SUMMARY') {
-          skipping = false;
-          out.add(line);
-        }
-        continue;
-      }
-      out.add(line);
-    }
-    return out.join('\n');
-  }
 
   SignOffReport copyWith({
     String? id,
@@ -108,6 +95,7 @@ class SignOffReport {
     String? reportContent,
     List<String>? sprintIds,
     String? sprintPerformanceData,
+    Map<String, dynamic>? sprintReportData,
     String? knownLimitations,
     String? nextSteps,
     String? preparedBy,
@@ -132,6 +120,11 @@ class SignOffReport {
     String? approvedByName,
     String? approvedByRole,
     String? digitalSignature,
+    int? currentVersion,
+    List<dynamic>? versionHistory,
+    bool? isArchived,
+    DateTime? archivedAt,
+    DateTime? sealedAt,
   }) {
     return SignOffReport(
       id: id ?? this.id,
@@ -140,6 +133,7 @@ class SignOffReport {
       reportContent: reportContent ?? this.reportContent,
       sprintIds: sprintIds ?? this.sprintIds,
       sprintPerformanceData: sprintPerformanceData ?? this.sprintPerformanceData,
+      sprintReportData: sprintReportData ?? this.sprintReportData,
       knownLimitations: knownLimitations ?? this.knownLimitations,
       nextSteps: nextSteps ?? this.nextSteps,
       preparedBy: preparedBy ?? this.preparedBy,
@@ -164,6 +158,11 @@ class SignOffReport {
       approvedByName: approvedByName ?? this.approvedByName,
       approvedByRole: approvedByRole ?? this.approvedByRole,
       digitalSignature: digitalSignature ?? this.digitalSignature,
+      currentVersion: currentVersion ?? this.currentVersion,
+      versionHistory: versionHistory ?? this.versionHistory,
+      isArchived: isArchived ?? this.isArchived,
+      archivedAt: archivedAt ?? this.archivedAt,
+      sealedAt: sealedAt ?? this.sealedAt,
     );
   }
 
@@ -175,6 +174,7 @@ class SignOffReport {
       'reportContent': reportContent,
       'sprintIds': sprintIds,
       'sprintPerformanceData': sprintPerformanceData,
+      'sprintReportData': sprintReportData,
       'knownLimitations': knownLimitations,
       'nextSteps': nextSteps,
       'preparedBy': preparedBy,
@@ -199,6 +199,11 @@ class SignOffReport {
       'approvedByName': approvedByName,
       'approvedByRole': approvedByRole,
       'digitalSignature': digitalSignature,
+      'currentVersion': currentVersion,
+      'versionHistory': versionHistory,
+      'isArchived': isArchived,
+      'archivedAt': archivedAt?.toIso8601String(),
+      'sealedAt': sealedAt?.toIso8601String(),
     };
   }
 
@@ -219,8 +224,85 @@ class SignOffReport {
 
     final String id = (json['id'] ?? json['report_id'] ?? '').toString();
     final String deliverableId = (json['deliverableId'] ?? json['deliverable_id'] ?? content['deliverableId'] ?? content['deliverable_id'] ?? '').toString();
-    final String reportTitle = (json['reportTitle'] ?? json['report_title'] ?? content['reportTitle'] ?? content['title'] ?? '').toString();
-    final String reportContent = sanitizeReportContent((json['reportContent'] ?? json['content_text'] ?? content['reportContent'] ?? content['content'] ?? '').toString());
+    final String rawReportTitle = (json['reportTitle'] ?? json['report_title'] ?? '').toString();
+    final String contentReportTitle = (content['reportTitle'] ?? '').toString();
+    final String contentTitle = (content['title'] ?? '').toString();
+
+    String? clientComment =
+        (json['clientComment'] ??
+                json['client_comment'] ??
+                json['clientFeedback'] ??
+                json['client_feedback'] ??
+                content['clientComment'] ??
+                content['client_comment'] ??
+                json['comments'] ??
+                json['comment'])
+            ?.toString();
+    String? changeRequestDetails =
+        (json['changeRequestDetails'] ?? json['change_request_details'] ?? content['changeRequestDetails'] ?? content['change_request_details'])
+            ?.toString();
+
+    final reviewFeedbacks = <String>[];
+    final reviewsRaw = json['reviews'] ?? content['reviews'];
+    if (reviewsRaw is List) {
+      for (final r in reviewsRaw) {
+        if (r is! Map) continue;
+        final m = Map<String, dynamic>.from(r);
+        final status = (m['reviewStatus'] ?? m['status'] ?? m['review_status'] ?? '').toString().toLowerCase();
+        final fb = (m['feedback'] ??
+                m['comment'] ??
+                m['clientComment'] ??
+                m['client_comment'] ??
+                m['changeRequestDetails'] ??
+                m['change_request_details'])
+            ?.toString();
+        if (fb == null || fb.trim().isEmpty) continue;
+        final v = fb.trim();
+        reviewFeedbacks.add(v);
+        if (status.contains('change')) {
+          changeRequestDetails ??= v;
+        } else {
+          clientComment ??= v;
+        }
+      }
+    }
+
+    String reportTitle = () {
+      int score(String s) {
+        final v = s.trim();
+        if (v.isEmpty) return -999;
+        int sc = 100;
+        if (!v.contains('\n')) sc += 30;
+        if (v.length <= 80) sc += 25;
+        if (v.length <= 120) sc += 10;
+        if (v.length > 160) sc -= 60;
+        if (v.contains('\n')) sc -= 90;
+        final lower = v.toLowerCase();
+        if (lower.contains('feedback') || lower.contains('comment') || lower.contains('approved') || lower.contains('request changes')) {
+          sc -= 40;
+        }
+        final feedbacks = <String>[
+          (clientComment ?? '').trim(),
+          (changeRequestDetails ?? '').trim(),
+          ...reviewFeedbacks,
+        ].where((e) => e.isNotEmpty).toList();
+        for (final c in feedbacks) {
+          if (v == c) sc -= 120;
+          if (c.length > 8 && v.contains(c)) sc -= 80;
+        }
+        sc -= (v.length ~/ 10);
+        return sc;
+      }
+
+      final candidates = <String>[contentReportTitle, rawReportTitle, contentTitle]
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (candidates.isEmpty) return '';
+      candidates.sort((a, b) => score(b).compareTo(score(a)));
+      return candidates.first;
+    }();
+    final String reportContent = (json['reportContent'] ?? json['content_text'] ?? content['reportContent'] ?? content['content'] ?? '').toString();
 
     List<String> sprintIds = [];
     final dynamic sIds = json['sprintIds'] ?? json['sprint_ids'] ?? content['sprintIds'] ?? content['sprints'];
@@ -228,7 +310,47 @@ class SignOffReport {
       sprintIds = sIds.map((e) => e.toString()).toList();
     }
 
-    final String? sprintPerformanceData = (json['sprintPerformanceData'] ?? content['sprintPerformanceData'])?.toString();
+    final String? sprintPerformanceData =
+        (json['sprintPerformanceData'] ?? content['sprintPerformanceData'])?.toString();
+    final dynamic sprintReportDataRaw =
+        json['sprintReportData'] ?? json['sprint_report_data'] ?? content['sprintReportData'] ?? content['sprint_report_data'];
+    Map<String, dynamic>? sprintReportData = () {
+      if (sprintReportDataRaw is Map) return Map<String, dynamic>.from(sprintReportDataRaw);
+      if (sprintReportDataRaw is String && sprintReportDataRaw.trim().isNotEmpty) {
+        try {
+          final decoded = jsonDecode(sprintReportDataRaw);
+          if (decoded is Map) return Map<String, dynamic>.from(decoded);
+        } catch (_) {}
+      }
+      return null;
+    }();
+    if ((sprintReportData == null || sprintReportData.isEmpty) && sprintPerformanceData != null && sprintPerformanceData.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(sprintPerformanceData);
+        if (decoded is Map) sprintReportData = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+
+    if (sprintReportData != null && sprintReportData.isNotEmpty) {
+      final sprint = sprintReportData['sprint'];
+      if (sprint is Map) {
+        final sprintName = (sprint['name'] ?? '').toString().trim();
+        if (sprintName.isNotEmpty) {
+          final titleLower = reportTitle.trim().toLowerCase();
+          final feedbackish = titleLower.contains('feedback') ||
+              titleLower.contains('comment') ||
+              titleLower.contains('change request') ||
+              titleLower.contains('requested change') ||
+              titleLower.startsWith('please ') ||
+              reportTitle.trim() == (clientComment ?? '').trim() ||
+              reportTitle.trim() == (changeRequestDetails ?? '').trim() ||
+              reviewFeedbacks.contains(reportTitle.trim());
+          if (feedbackish) {
+            reportTitle = sprintName;
+          }
+        }
+      }
+    }
     final String? knownLimitations = (json['knownLimitations'] ?? content['knownLimitations'] ?? content['limitations'])?.toString();
     final String? nextSteps = (json['nextSteps'] ?? content['nextSteps'])?.toString();
 
@@ -248,7 +370,27 @@ class SignOffReport {
             content['prepared_by_role'])
         ?.toString();
 
-    final String statusStr = (json['status'] ?? json['review_status'] ?? content['status'] ?? '').toString();
+    String normalizeStatus(String raw) {
+      final normalized = raw.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
+      switch (normalized) {
+        case 'submitted':
+          return 'submitted';
+        case 'underreview':
+          return 'underReview';
+        case 'approved':
+          return 'approved';
+        case 'changerequested':
+          return 'changeRequested';
+        case 'rejected':
+          return 'rejected';
+        default:
+          return 'draft';
+      }
+    }
+
+    final String statusStr = normalizeStatus(
+      (json['status'] ?? json['review_status'] ?? content['status'] ?? '').toString(),
+    );
     final ReportStatus status = ReportStatus.values.firstWhere(
       (e) => e.name == statusStr,
       orElse: () => ReportStatus.draft,
@@ -295,38 +437,6 @@ class SignOffReport {
             content['reviewed_by_role'])
         ?.toString();
 
-    String? clientComment = (json['clientComment'] ??
-            json['client_comment'] ??
-            content['clientComment'] ??
-            content['client_comment'] ??
-            json['comment'] ??
-            json['approvalComment'] ??
-            json['approval_comment'] ??
-            json['reviewComment'] ??
-            json['review_comment'] ??
-            json['comments'])
-        ?.toString();
-
-    String? changeRequestDetails = (json['changeRequestDetails'] ??
-            json['change_request_details'] ??
-            content['changeRequestDetails'] ??
-            content['change_request_details'] ??
-            json['feedback'])
-        ?.toString();
-
-    final dynamic reviewsRaw = json['reviews'] ?? content['reviews'];
-    if ((clientComment == null || clientComment.trim().isEmpty) ||
-        (changeRequestDetails == null || changeRequestDetails.trim().isEmpty)) {
-      if (reviewsRaw is List && reviewsRaw.isNotEmpty) {
-        final first = reviewsRaw.first;
-        if (first is Map) {
-          final m = Map<String, dynamic>.from(first);
-          clientComment ??= (m['comment'] ?? m['comments'] ?? m['clientComment'] ?? m['client_comment'])?.toString();
-          changeRequestDetails ??=
-              (m['changeRequestDetails'] ?? m['change_request_details'] ?? m['feedback'] ?? m['details'])?.toString();
-        }
-      }
-    }
     final List<dynamic>? changeRequestHistory = (json['changeRequestHistory'] ?? content['changeRequestHistory']);
 
     final String approvedAtStr = (json['approvedAt'] ?? json['approved_at'] ?? '').toString();
@@ -343,6 +453,20 @@ class SignOffReport {
             content['approved_by_role'])
         ?.toString();
     final String? digitalSignature = (json['digitalSignature'] ?? json['signature'] ?? content['digitalSignature'])?.toString();
+    final int currentVersion = int.tryParse(
+          (json['currentVersion'] ?? json['current_version'] ?? content['currentVersion'] ?? 0).toString(),
+        ) ??
+        0;
+    final List<dynamic> versionHistory =
+        (json['versionHistory'] ?? json['version_history'] ?? content['versionHistory'] ?? const []) as List<dynamic>;
+    final bool isArchived =
+        (json['isArchived'] ?? json['is_archived'] ?? content['isArchived'] ?? false) == true;
+    final String archivedAtStr =
+        (json['archivedAt'] ?? json['archived_at'] ?? content['archivedAt'] ?? '').toString();
+    final DateTime? archivedAt = archivedAtStr.isNotEmpty ? DateTime.tryParse(archivedAtStr) : null;
+    final String sealedAtStr =
+        (json['sealedAt'] ?? json['sealed_at'] ?? content['sealedAt'] ?? '').toString();
+    final DateTime? sealedAt = sealedAtStr.isNotEmpty ? DateTime.tryParse(sealedAtStr) : null;
 
     return SignOffReport(
       id: id,
@@ -351,6 +475,7 @@ class SignOffReport {
       reportContent: reportContent,
       sprintIds: sprintIds,
       sprintPerformanceData: sprintPerformanceData,
+      sprintReportData: sprintReportData,
       knownLimitations: knownLimitations,
       nextSteps: nextSteps,
       preparedBy: preparedBy,
@@ -375,6 +500,11 @@ class SignOffReport {
       approvedByName: approvedByName,
       approvedByRole: approvedByRole,
       digitalSignature: digitalSignature,
+      currentVersion: currentVersion,
+      versionHistory: versionHistory,
+      isArchived: isArchived,
+      archivedAt: archivedAt,
+      sealedAt: sealedAt,
     );
   }
 
@@ -415,4 +545,45 @@ class SignOffReport {
   bool get isApproved => status == ReportStatus.approved;
   bool get isPendingReview => status == ReportStatus.submitted || status == ReportStatus.underReview;
   bool get needsChanges => status == ReportStatus.changeRequested;
+
+  Map<String, dynamic>? get effectiveSprintReportData {
+    final d = sprintReportData;
+    if (d != null && d.isNotEmpty) return d;
+    final raw = sprintPerformanceData;
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return null;
+  }
+
+  String get displayTitle {
+    final d = effectiveSprintReportData;
+    if (d != null) {
+      final dynamic v = d['reportTitle'] ?? d['report_title'] ?? d['aiTitle'] ?? d['suggestedTitle'] ?? d['title'];
+      final s = v?.toString().trim() ?? '';
+      if (s.isNotEmpty) return s;
+    }
+
+    final t = reportTitle.trim();
+    if (t.isEmpty) return d != null ? 'Sprint Sign-Off Report' : 'Sign-Off Report';
+
+    final comment = (clientComment ?? '').trim();
+    final changeReq = (changeRequestDetails ?? '').trim();
+    final lower = t.toLowerCase();
+    final looksLikeFeedback =
+        t.contains('\n') ||
+        t.length > 160 ||
+        (comment.isNotEmpty && (t == comment || t.contains(comment))) ||
+        (changeReq.isNotEmpty && (t == changeReq || t.contains(changeReq))) ||
+        lower.contains('feedback') ||
+        lower.contains('comment') ||
+        lower.contains('change request') ||
+        lower.contains('requested change');
+
+    if (!looksLikeFeedback) return t;
+    if (d != null) return 'Sprint Sign-Off Report';
+    return 'Sign-Off Report';
+  }
 }

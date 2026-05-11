@@ -82,7 +82,6 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         elevation: 0,
-        surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -167,7 +166,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
           ),
         ],
       ),
-floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton.extended(
         heroTag: 'role_management_add_user_fab',
         onPressed: () => _showAddUserDialog(),
         icon: const Icon(Icons.person_add),

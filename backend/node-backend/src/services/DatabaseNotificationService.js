@@ -433,6 +433,10 @@ class DatabaseNotificationService extends EventEmitter {
             await notifyRoles(['clientReviewer','deliveryLead','systemAdmin'], 'change_request', `Changes requested: ${title}`, { report_id: data && data.id, action_url: `/enhanced-client-review/${data && data.id}` }, senderId);
         });
 
+        global.realtimeEvents.on('audit_log_created', async (data) => {
+            broadcastAll('audit_log_created', data);
+        });
+
         this.modelEventsInitialized = true;
     }
 

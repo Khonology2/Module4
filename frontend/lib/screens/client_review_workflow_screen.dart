@@ -34,9 +34,7 @@ class _ClientReviewWorkflowScreenState
   final _commentController = TextEditingController();
   final _changeRequestController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  final GlobalKey<SignatureCaptureWidgetState> _approveSignatureKey =
-      GlobalKey<SignatureCaptureWidgetState>();
-  final GlobalKey<SignatureCaptureWidgetState> _requestChangesSignatureKey =
+  final GlobalKey<SignatureCaptureWidgetState> _signatureKey =
       GlobalKey<SignatureCaptureWidgetState>();
 
   final SignOffReportService _reportService =
@@ -50,7 +48,7 @@ class _ClientReviewWorkflowScreenState
   List<Map<String, dynamic>> _reviews = [];
   bool _isLoading = true;
   bool _isSubmitting = false;
-  String? _selectedAction; // 'approve' or 'request_changes'
+  String? _selectedAction; // 'approve' | 'request_changes' | 'reject'
   List<Map<String, dynamic>> _signatures = []; // Store digital signatures
   bool _docuSignEnabled = false;
   bool _useDocuSign = false;
@@ -179,18 +177,7 @@ class _ClientReviewWorkflowScreenState
     if (_selectedAction == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select Approve or Request Changes'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    if (_selectedAction == 'request_changes' &&
-        _changeRequestController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please provide details for the change request'),
+          content: Text('Please select an action'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -218,7 +205,7 @@ class _ClientReviewWorkflowScreenState
             reportId: widget.reportId,
             signerEmail: _signerEmail.trim(),
             signerName: AuthService().currentUser?.name ?? 'Signer',
-            reportTitle: _report?.reportTitle ?? 'Sign-Off Report',
+            reportTitle: _report?.displayTitle ?? 'Sign-Off Report',
             reportContent: _report?.reportContent ?? '',
           );
           if (envelopeId != null) {
@@ -236,8 +223,8 @@ class _ClientReviewWorkflowScreenState
           }
         } else {
           String? signature;
-          if (_approveSignatureKey.currentState != null) {
-            signature = await _approveSignatureKey.currentState!.getSignature();
+          if (_signatureKey.currentState != null) {
+            signature = await _signatureKey.currentState!.getSignature();
           }
           if (signature == null || signature.isEmpty) {
             if (mounted) {
@@ -260,10 +247,22 @@ class _ClientReviewWorkflowScreenState
             digitalSignature: signature,
           );
         }
-      } else {
+      } else if (_selectedAction == 'request_changes') {
+        if (_changeRequestController.text.trim().isEmpty) {
+          if (mounted) {
+            setState(() => _isSubmitting = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Change request details are required.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
         String? signature;
-        if (_requestChangesSignatureKey.currentState != null) {
-          signature = await _requestChangesSignatureKey.currentState!.getSignature();
+        if (_signatureKey.currentState != null) {
+          signature = await _signatureKey.currentState!.getSignature();
         }
         if (signature == null || signature.isEmpty) {
           if (mounted) {
@@ -279,14 +278,40 @@ class _ClientReviewWorkflowScreenState
         }
         response = await _reportService.requestChanges(
           widget.reportId,
-          _changeRequestController.text.trim(),
+          changeRequestDetails: _changeRequestController.text.trim().isNotEmpty
+              ? _changeRequestController.text.trim()
+              : null,
+          digitalSignature: signature,
+        );
+      } else {
+        String? signature;
+        if (_signatureKey.currentState != null) {
+          signature = await _signatureKey.currentState!.getSignature();
+        }
+        if (signature == null || signature.isEmpty) {
+          if (mounted) {
+            setState(() => _isSubmitting = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Digital signature is required to reject this report.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+        response = await _reportService.rejectReport(
+          widget.reportId,
+          comment: _commentController.text.trim().isNotEmpty
+              ? _commentController.text.trim()
+              : null,
           digitalSignature: signature,
         );
       }
 
       if (response.isSuccess) {
         // Reload signatures after approval to show the new signature
-        if (_selectedAction == 'approve' || _selectedAction == 'request_changes') {
+        if (_selectedAction == 'approve' || _selectedAction == 'request_changes' || _selectedAction == 'reject') {
           await _loadSignatures();
         }
         try {
@@ -296,10 +321,14 @@ class _ClientReviewWorkflowScreenState
           final actor = AuthService().currentUser?.name ?? 'User';
           final title = _selectedAction == 'approve'
               ? 'Report Approved'
-              : 'Report Changes Requested';
+              : _selectedAction == 'reject'
+                  ? 'Report Rejected'
+                  : 'Report Changes Requested';
           final message = _selectedAction == 'approve'
-              ? '$actor approved "${_report?.reportTitle ?? 'Report'}"'
-              : '$actor requested changes for "${_report?.reportTitle ?? 'Report'}"';
+              ? '$actor approved "${_report?.displayTitle ?? 'Report'}"'
+              : _selectedAction == 'reject'
+                  ? '$actor rejected "${_report?.displayTitle ?? 'Report'}"'
+                  : '$actor requested changes for "${_report?.displayTitle ?? 'Report'}"';
           final type = _selectedAction == 'approve'
               ? NotificationType.reportApproved
               : NotificationType.reportChangesRequested;
@@ -311,10 +340,12 @@ class _ClientReviewWorkflowScreenState
           await rt.initialize(authToken: AuthService().accessToken);
           final event = _selectedAction == 'approve'
               ? 'report_approved'
-              : 'report_change_requested';
+              : _selectedAction == 'reject'
+                  ? 'report_rejected'
+                  : 'report_change_requested';
           rt.emit(event, {
             'reportId': widget.reportId,
-            'title': _report?.reportTitle ?? 'Report',
+            'title': _report?.displayTitle ?? 'Report',
           });
           rt.emit('approval_updated', {
             'reportId': widget.reportId,
@@ -326,7 +357,9 @@ class _ClientReviewWorkflowScreenState
             SnackBar(
               content: Text(_selectedAction == 'approve'
                   ? '✅ Report approved successfully!'
-                  : 'Change request submitted successfully!'),
+                  : _selectedAction == 'reject'
+                      ? 'Report rejected successfully!'
+                      : 'Change request submitted successfully!'),
               backgroundColor: Colors.green,
             ),
           );
@@ -371,7 +404,7 @@ class _ClientReviewWorkflowScreenState
         {
           'role': 'user',
           'content':
-              '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nKnown limitations: ${_report!.knownLimitations ?? '-'}\nNext steps: ${_report!.nextSteps ?? '-'}'
+              '${_report!.displayTitle}\n\n${_report!.reportContent}\n\nKnown limitations: ${_report!.knownLimitations ?? '-'}\nNext steps: ${_report!.nextSteps ?? '-'}'
         }
       ];
       final resp =
@@ -403,7 +436,7 @@ class _ClientReviewWorkflowScreenState
         {
           'role': 'user',
           'content':
-              '${_report!.reportTitle}\n\n${_report!.reportContent}\n\nFocus on gaps, risks, and necessary updates.'
+              '${_report!.displayTitle}\n\n${_report!.reportContent}\n\nFocus on gaps, risks, and necessary updates.'
         }
       ];
       final resp =
@@ -498,7 +531,7 @@ class _ClientReviewWorkflowScreenState
 
         // Report Title
         Text(
-          _report!.reportTitle,
+          _report!.displayTitle,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 color: FlownetColors.pureWhite,
                 fontWeight: FontWeight.bold,
@@ -718,7 +751,7 @@ class _ClientReviewWorkflowScreenState
   @override
   Widget build(BuildContext context) {
     final userRole = AuthService().currentUser?.role;
-    final canReview = userRole == UserRole.clientReviewer;
+    final canReview = userRole == UserRole.clientReviewer || userRole == UserRole.client;
     final isApproved = _report?.status == ReportStatus.approved;
 
     return Scaffold(
@@ -773,6 +806,11 @@ class _ClientReviewWorkflowScreenState
                                 label: Text('Request Changes'),
                                 icon: Icon(Icons.edit_note),
                               ),
+                              ButtonSegment<String>(
+                                value: 'reject',
+                                label: Text('Reject'),
+                                icon: Icon(Icons.cancel),
+                              ),
                             ],
                             selected: <String>{
                               if (_selectedAction != null) _selectedAction!
@@ -791,8 +829,8 @@ class _ClientReviewWorkflowScreenState
                             ),
                           ),
 
-                          // Comment (for approval)
-                          if (_selectedAction == 'approve') ...[
+                          if (_selectedAction == 'approve' ||
+                              _selectedAction == 'reject') ...[
                             const SizedBox(height: 16),
                             TextFormField(
                               controller: _commentController,
@@ -804,78 +842,75 @@ class _ClientReviewWorkflowScreenState
                               maxLines: 3,
                             ),
                             const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton.icon(
-                                onPressed: _isSubmitting
-                                    ? null
-                                    : _generateCommentSuggestion,
-                                icon: const Icon(Icons.auto_awesome),
-                                label: const Text('Suggest with AI'),
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            if (_docuSignEnabled) ...[
-                              const SizedBox(height: 8),
-                              SwitchListTile(
-                                value: _useDocuSign,
-                                onChanged: (v) =>
-                                    setState(() => _useDocuSign = v),
-                                title: const Text('Use DocuSign (Certified)'),
-                                subtitle: const Text(
-                                    'Send a DocuSign envelope to signer email'),
-                                activeThumbColor: FlownetColors.electricBlue,
-                              ),
-                              if (_useDocuSign) ...[
-                                const SizedBox(height: 8),
-                                TextFormField(
-                                  decoration: const InputDecoration(
-                                    labelText: 'Signer Email',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.email),
-                                  ),
-                                  onChanged: (v) => _signerEmail = v,
+                            if (_selectedAction == 'approve') ...[
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton.icon(
+                                  onPressed: _isSubmitting
+                                      ? null
+                                      : _generateCommentSuggestion,
+                                  icon: const Icon(Icons.auto_awesome),
+                                  label: const Text('Suggest with AI'),
                                 ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+                            if (_selectedAction == 'approve') ...[
+                              if (_docuSignEnabled) ...[
+                                const SizedBox(height: 8),
+                                SwitchListTile(
+                                  value: _useDocuSign,
+                                  onChanged: (v) =>
+                                      setState(() => _useDocuSign = v),
+                                  title: const Text('Use DocuSign (Certified)'),
+                                  subtitle: const Text(
+                                      'Send a DocuSign envelope to signer email'),
+                                  activeThumbColor: FlownetColors.electricBlue,
+                                ),
+                                if (_useDocuSign) ...[
+                                  const SizedBox(height: 8),
+                                  TextFormField(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Signer Email',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(Icons.email),
+                                    ),
+                                    onChanged: (v) => _signerEmail = v,
+                                  ),
+                                ] else ...[
+                                  SignatureCaptureWidget(
+                                    key: _signatureKey,
+                                    existingSignature: _report?.digitalSignature,
+                                    allowSignatureReuse: true,
+                                    showAuditInfo: true,
+                                    reportId: _report?.id,
+                                  ),
+                                ],
                               ] else ...[
                                 SignatureCaptureWidget(
-                                  key: _approveSignatureKey,
+                                  key: _signatureKey,
                                   existingSignature: _report?.digitalSignature,
                                   allowSignatureReuse: true,
                                   showAuditInfo: true,
                                   reportId: _report?.id,
                                 ),
                               ],
-                            ] else ...[
-                              SignatureCaptureWidget(
-                                key: _approveSignatureKey,
-                                existingSignature: _report?.digitalSignature,
-                                allowSignatureReuse: true,
-                                showAuditInfo: true,
-                                reportId: _report?.id,
-                              ),
                             ],
                           ],
 
-                          // Change Request Details (required for request changes)
+                          // Change Request Details (optional)
                           if (_selectedAction == 'request_changes') ...[
                             const SizedBox(height: 16),
                             TextFormField(
                               controller: _changeRequestController,
                               decoration: const InputDecoration(
-                                labelText: 'Change Request Details *',
+                                labelText: 'Change Request Details',
                                 border: OutlineInputBorder(),
                                 prefixIcon: Icon(Icons.edit_note),
                                 helperText:
-                                    'Please provide clear details about what changes are needed',
+                                    'Required. Please provide clear details about what changes are needed',
                               ),
                               maxLines: 6,
-                              validator: (value) {
-                                if (_selectedAction == 'request_changes' &&
-                                    (value == null || value.trim().isEmpty)) {
-                                  return 'Change request details are required';
-                                }
-                                return null;
-                              },
                             ),
                             const SizedBox(height: 8),
                             Align(
@@ -888,10 +923,14 @@ class _ClientReviewWorkflowScreenState
                                 label: const Text('Suggest with AI'),
                               ),
                             ),
+                          ],
+
+                          if (_selectedAction == 'request_changes' ||
+                              _selectedAction == 'reject') ...[
                             const SizedBox(height: 16),
                             SignatureCaptureWidget(
-                              key: _requestChangesSignatureKey,
-                              existingSignature: null,
+                              key: _signatureKey,
+                              existingSignature: _report?.digitalSignature,
                               allowSignatureReuse: true,
                               showAuditInfo: true,
                               reportId: _report?.id,
@@ -908,19 +947,25 @@ class _ClientReviewWorkflowScreenState
                               icon: Icon(
                                 _selectedAction == 'approve'
                                     ? Icons.check_circle
-                                    : Icons.edit_note,
+                                    : _selectedAction == 'reject'
+                                        ? Icons.cancel
+                                        : Icons.edit_note,
                               ),
                               label: Text(
                                 _isSubmitting
                                     ? 'Submitting...'
                                     : _selectedAction == 'approve'
                                         ? 'Approve Report'
-                                        : 'Request Changes',
+                                        : _selectedAction == 'reject'
+                                            ? 'Reject Report'
+                                            : 'Request Changes',
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _selectedAction == 'approve'
                                     ? Colors.green
-                                    : Colors.orange,
+                                    : _selectedAction == 'reject'
+                                        ? Colors.red
+                                        : Colors.orange,
                                 foregroundColor: FlownetColors.pureWhite,
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 16),

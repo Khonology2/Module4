@@ -13,8 +13,9 @@ import '../theme/flownet_theme.dart';
 import '../widgets/flownet_logo.dart';
 import '../widgets/sprint_performance_chart.dart';
 import '../widgets/audit_history_widget.dart';
+import '../widgets/signature_capture_widget.dart';
 import 'client_review_workflow_screen.dart';
-import '../utils/user_label_utils.dart';
+import 'report_editor_screen.dart';
 
 class ReportViewScreen extends ConsumerStatefulWidget {
   final String reportId;
@@ -110,7 +111,12 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
   void _navigateToEdit() {
     if (_report == null) return;
     final deliverableId = _report!.deliverableId;
-    if (deliverableId.isEmpty) return;
+    if (deliverableId.isEmpty) {
+      Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => ReportEditorScreen(reportId: _report!.id)))
+          .then((_) => _loadReportData());
+      return;
+    }
     context.go('/report-editor/$deliverableId?reportId=${Uri.encodeComponent(_report!.id)}');
   }
 
@@ -179,7 +185,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
     return '$n ($r)';
   }
 
-  Future<void> _submitClientFeedback(String feedback, bool requestChanges) async {
+  Future<void> _submitClientFeedback(String? feedback, bool requestChanges, String digitalSignature) async {
     if (_report == null) return;
     
     try {
@@ -203,8 +209,8 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
       }
 
       final response = requestChanges
-          ? await _reportService.requestChanges(_report!.id, feedback)
-          : await _reportService.approveReport(_report!.id, comment: feedback);
+          ? await _reportService.requestChanges(_report!.id, changeRequestDetails: feedback, digitalSignature: digitalSignature)
+          : await _reportService.approveReport(_report!.id, comment: feedback, digitalSignature: digitalSignature);
 
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -257,6 +263,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
     if (_report == null) return;
     
     final feedbackController = TextEditingController();
+    final signatureKey = GlobalKey<SignatureCaptureWidgetState>();
     bool requestChanges = false;
 
     showDialog(
@@ -281,7 +288,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Report: ${_report!.reportTitle}',
+                  'Report: ${_report!.displayTitle}',
                   style: const TextStyle(
                     color: FlownetColors.coolGray,
                     fontSize: 14,
@@ -306,11 +313,12 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
                   maxLines: 8,
                   style: const TextStyle(color: FlownetColors.pureWhite),
                   decoration: InputDecoration(
-                    labelText: requestChanges ? 'Change Request Details *' : 'Feedback/Comments',
+                    labelText: requestChanges ? 'Change Request Details' : 'Feedback/Comments (Optional)',
                     labelStyle: const TextStyle(color: FlownetColors.coolGray),
                     hintText: requestChanges 
                         ? 'Describe what changes are needed...'
                         : 'Share your feedback or suggestions...',
+                    helperText: requestChanges ? 'Required when requesting changes' : null,
                     hintStyle: const TextStyle(color: FlownetColors.coolGray),
                     border: const OutlineInputBorder(
                       borderSide: BorderSide(color: FlownetColors.slate),
@@ -323,6 +331,13 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                SignatureCaptureWidget(
+                  key: signatureKey,
+                  allowSignatureReuse: true,
+                  showAuditInfo: true,
+                  reportId: _report?.id,
+                ),
               ],
             ),
           ),
@@ -333,20 +348,35 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
             ),
             ElevatedButton.icon(
               onPressed: () async {
-                if (feedbackController.text.trim().isEmpty) {
+                final nav = Navigator.of(context);
+                if (requestChanges && feedbackController.text.trim().isEmpty) {
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Please enter your feedback'),
+                      content: Text('Change request details are required'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                final sig = await signatureKey.currentState?.getSignature();
+                if (sig == null || sig.trim().isEmpty) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Digital signature is required'),
                       backgroundColor: Colors.orange,
                     ),
                   );
                   return;
                 }
 
-                Navigator.pop(context);
+                if (!context.mounted) return;
+                nav.pop();
                 await _submitClientFeedback(
-                  feedbackController.text.trim(),
+                  feedbackController.text.trim().isNotEmpty ? feedbackController.text.trim() : null,
                   requestChanges,
+                  sig,
                 );
               },
               icon: Icon(requestChanges ? Icons.change_circle : Icons.send),
@@ -523,7 +553,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
             ),
             const SizedBox(height: 16),
             if (_deliverable == null) ...[
-               buildStatusItem('Linked Deliverable', 'Unknown Deliverable'),
+               buildStatusItem('Linked Deliverable ID', _report!.deliverableId),
             ] else ...[
               Row(
                 children: [
@@ -672,7 +702,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
              _buildHistoryItem(
                details: _report!.changeRequestDetails!,
                date: _report!.reviewedAt,
-               user: _report!.reviewedByName ?? _report!.reviewedBy,
+               user: _report!.reviewedBy,
                isLatest: true,
              ),
              if (historyList.isNotEmpty) const Divider(color: Colors.orange, height: 24),
@@ -682,7 +712,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
              return _buildHistoryItem(
                details: i['details'] ?? '',
                date: i['requestedAt'] != null ? DateTime.parse(i['requestedAt']) : null,
-               user: i['requestedByName'] ?? i['requestedBy'],
+               user: i['requestedBy'],
                isLatest: false,
              );
           }),
@@ -726,7 +756,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
         if (user != null) ...[
            const SizedBox(height: 4),
            Text(
-            'Requested by: ${UserLabelUtils.sanitizeUserLabel(user, emptyIsUnknown: true)}',
+             'Requested by: $user',
              style: const TextStyle(color: Colors.white38, fontSize: 11, fontStyle: FontStyle.italic),
            ),
         ],
@@ -754,7 +784,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      _report!.reportTitle.isNotEmpty ? _report!.reportTitle : 'Sign-Off Report',
+                      _report!.displayTitle.isNotEmpty ? _report!.displayTitle : 'Sign-Off Report',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color: FlownetColors.pureWhite,
                         fontWeight: FontWeight.bold,

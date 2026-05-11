@@ -2201,7 +2201,7 @@ router.post('/chat', async (req, res) => {
             }
             const finalText = buildManualSprintReportText(latestData, reportTitle, pending.data.feedback);
             const role = normalizeRole(req.user && req.user.role);
-            const allowSignoff = ['admin', 'systemadmin', 'deliverylead'].includes(role);
+            const allowSignoff = ['deliverylead'].includes(role);
             pendingActions.delete(userId);
             return sendResponse(res, true, {
               content: cleanAiText(finalText),
@@ -2216,11 +2216,11 @@ router.post('/chat', async (req, res) => {
         }
         if (pending.type === 'signoff_sprint_select') {
           const role = normalizeRole(req.user && req.user.role);
-          const allowSignoff = ['admin', 'systemadmin', 'deliverylead'].includes(role);
+          const allowSignoff = ['deliverylead'].includes(role);
           if (!allowSignoff) {
             pendingActions.delete(userId);
             return sendResponse(res, true, {
-              content: cleanAiText('Only Delivery Leads and System Admins can generate sign-off reports with FlowPilot.'),
+              content: cleanAiText('Only Delivery Leads can generate sign-off reports with FlowPilot.'),
               usage: {},
               model: 'server',
             });
@@ -2285,11 +2285,11 @@ router.post('/chat', async (req, res) => {
         }
         if (pending.type === 'signoff_sprint_report') {
           const role = normalizeRole(req.user && req.user.role);
-          const allowSignoff = ['admin', 'systemadmin', 'deliverylead'].includes(role);
+          const allowSignoff = ['deliverylead'].includes(role);
           if (!allowSignoff) {
             pendingActions.delete(userId);
             return sendResponse(res, true, {
-              content: cleanAiText('Only Delivery Leads and System Admins can generate sign-off reports with FlowPilot.'),
+              content: cleanAiText('Only Delivery Leads can generate sign-off reports with FlowPilot.'),
               usage: {},
               model: 'server',
             });
@@ -2402,7 +2402,12 @@ router.post('/chat', async (req, res) => {
           pendingActions.delete(userId);
           return sendResponse(res, true, {
             content: cleanAiText(`${reportContent}\n\nSaved as a draft sign-off report (id=${row ? row.id : 'unknown'}).`),
-            actions: [{ type: 'export_pdf', title: reportTitle, content: cleanAiText(reportContent) }],
+            actions: [{
+              type: 'export_pdf',
+              reportId: row ? String(row.id) : null,
+              title: reportTitle,
+              content: cleanAiText(reportContent),
+            }],
             usage: {},
             model: 'server',
           });
@@ -2595,10 +2600,10 @@ router.post('/chat', async (req, res) => {
         const mentionsDeliverable = /\bdeliverable\b/.test(tt);
         if (wantsSignoffReport && !mentionsDeliverable) {
           const role = normalizeRole(req.user && req.user.role);
-          const allowSignoff = ['admin', 'systemadmin', 'deliverylead'].includes(role);
+          const allowSignoff = ['deliverylead'].includes(role);
           if (!allowSignoff) {
             return sendResponse(res, true, {
-              content: cleanAiText('Only Delivery Leads and System Admins can generate sign-off reports with FlowPilot.'),
+              content: cleanAiText('Only Delivery Leads can generate sign-off reports with FlowPilot.'),
               usage: {},
               model: 'server',
             });

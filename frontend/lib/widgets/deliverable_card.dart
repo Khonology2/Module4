@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../models/deliverable.dart';
-import '../utils/date_utils.dart' as app_date_utils;
 
 class DeliverableCard extends StatelessWidget {
   final Deliverable deliverable;
@@ -191,7 +190,12 @@ class DeliverableCard extends StatelessWidget {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            deliverable.ownerName!,
+                                            (deliverable.ownerName?.trim().isNotEmpty == true
+                                                    ? deliverable.ownerName!.trim()
+                                                    : (deliverable.assignedToName?.trim().isNotEmpty == true
+                                                        ? deliverable.assignedToName!.trim()
+                                                        : 'Unknown'))
+                                                .toString(),
                                             style: TextStyle(
                                               color: Colors.blue[700],
                                               fontSize: 12,
@@ -283,6 +287,17 @@ class DeliverableCard extends StatelessWidget {
   }
 
   String _formatDate(DateTime date) {
-    return app_date_utils.DateUtils.formatDateTime(date);
+    final now = DateTime.now();
+    final difference = now.difference(date).inDays;
+
+    if (difference == 0) {
+      return 'today';
+    } else if (difference == 1) {
+      return 'yesterday';
+    } else if (difference < 7) {
+      return '$difference days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
   }
 }

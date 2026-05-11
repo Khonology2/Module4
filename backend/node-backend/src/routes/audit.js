@@ -9,18 +9,24 @@ const { AuditLog } = require('../models');
  */
 router.get('/', async (req, res) => {
   try {
-    const { skip = 0, limit = 100 } = req.query;
+    const { skip = 0, limit = 100, action, user_id, entity_type, entity_id } = req.query;
     const offset = parseInt(skip);
     const parsedLimit = parseInt(limit);
+    const where = {};
+    if (action) where.action = action;
+    if (user_id) where.user_id = user_id;
+    if (entity_type) where.entity_type = entity_type;
+    if (entity_id) where.entity_id = entity_id.toString();
     
     const auditLogs = await AuditLog.findAll({
       offset: offset,
       limit: parsedLimit,
+      where,
       order: [['created_at', 'DESC']]
     });
     
     // Get total count for pagination
-    const totalCount = await AuditLog.count();
+    const totalCount = await AuditLog.count({ where });
     
     res.json({
       audit_logs: auditLogs,

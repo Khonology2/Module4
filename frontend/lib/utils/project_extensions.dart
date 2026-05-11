@@ -3,7 +3,6 @@
 
 import 'package:flutter/material.dart';
 import '../models/project.dart';
-import 'date_utils.dart' as app_date_utils;
 
 extension ProjectExtensions on Project {
   // Enhanced getters with fallbacks for missing database data
@@ -33,13 +32,13 @@ extension ProjectExtensions on Project {
   }
   
   String get formattedStartDate {
-    return app_date_utils.DateUtils.formatDate(displayStartDate);
+    return '${displayStartDate.day}/${displayStartDate.month}/${displayStartDate.year}';
   }
   
   String get formattedEndDate {
     final end = displayEndDate;
     if (end != null) {
-      return app_date_utils.DateUtils.formatDate(end);
+      return '${end.day}/${end.month}/${end.year}';
     }
     return 'Not set';
   }

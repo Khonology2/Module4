@@ -110,6 +110,28 @@ class User {
          }
        } catch (_) {}
       
+      List<String> stringList(dynamic v) {
+        if (v is List) {
+          return v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+        }
+        return const <String>[];
+      }
+
+      bool parseBool(dynamic v, {required bool fallback}) {
+        if (v is bool) return v;
+        if (v is num) return v != 0;
+        if (v is String) {
+          final s = v.trim().toLowerCase();
+          if (s == 'true' || s == '1' || s == 'yes') return true;
+          if (s == 'false' || s == '0' || s == 'no') return false;
+        }
+        return fallback;
+      }
+
+      final projectIdsRaw = json['projectIds'] ?? json['project_ids'];
+      final isActiveRaw = json['isActive'] ?? json['is_active'] ?? json['isactive'];
+      final emailVerifiedRaw = json['emailVerified'] ?? json['email_verified'];
+
       return User(
         id: json['id']?.toString() ?? '',
         email: json['email']?.toString() ?? '',
@@ -126,10 +148,10 @@ class User {
             : (json['last_login'] != null 
                 ? DateTime.parse(json['last_login'].toString()) 
                 : null),
-        isActive: json['isActive'] ?? json['is_active'] ?? true,
-        projectIds: List<String>.from(json['projectIds'] ?? []),
+        isActive: parseBool(isActiveRaw, fallback: true),
+        projectIds: stringList(projectIdsRaw),
         preferences: Map<String, dynamic>.from(json['preferences'] ?? {}),
-        emailVerified: json['emailVerified'] ?? false,
+        emailVerified: parseBool(emailVerifiedRaw, fallback: false),
         emailVerifiedAt: json['emailVerifiedAt'] != null ? DateTime.parse(json['emailVerifiedAt']?.toString() ?? '') : null,
       );
     } catch (e) {

@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../utils/version_control.dart';
@@ -17,11 +17,8 @@ class VersionService {
     }
 
     try {
-      // On web, use HTTP with a cache-busting query to ensure latest asset
-      // after pull/hot-reload cycles.
       final String rawJson;
       if (kIsWeb) {
-        // Use absolute URL to prevent double assets prefix
         final baseUrl = Uri.base.origin;
         final uri = Uri.parse(
           '$baseUrl/assets/data/version.json?v=${DateTime.now().millisecondsSinceEpoch}',
@@ -42,7 +39,7 @@ class VersionService {
         return decoded;
       }
     } catch (_) {
-      // Fallback to generated version when asset is missing/unreadable.
+      // Fall back to generated version information when the asset is unavailable.
     }
 
     _cachedVersionInfo = VersionControl.getVersionInfo();
@@ -50,37 +47,11 @@ class VersionService {
   }
 
   static Map<String, dynamic> getVersionDetails() {
-    if (_cachedVersionInfo != null) {
-      return _cachedVersionInfo!;
-    }
     return VersionControl.getVersionInfo();
-  }
-
-  static String getLatestCommitTooltip(Map<String, dynamic> versionInfo) {
-    final commits = versionInfo['commits'];
-    if (commits is List && commits.isNotEmpty) {
-      final latest = commits.first;
-      if (latest is Map) {
-        final author = latest['author']?.toString().trim();
-        final message = latest['message']?.toString().trim();
-        if ((author != null && author.isNotEmpty) &&
-            (message != null && message.isNotEmpty)) {
-          return 'Latest commit by @$author\n$message';
-        }
-      }
-    }
-    return 'No recent commits available';
   }
   
   static String getCurrentVersion() {
-    if (_cachedVersionInfo != null && _cachedVersionInfo!['version'] != null) {
-      return _cachedVersionInfo!['version'].toString();
-    }
     return VersionControl.generateVersionNumber();
-  }
-
-  static void clearCachedVersion() {
-    _cachedVersionInfo = null;
   }
   
   static String getEnvironment() {

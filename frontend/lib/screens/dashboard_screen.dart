@@ -164,7 +164,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
       floatingActionButton: canCreate
           ? FloatingActionButton.extended(
-              heroTag: 'dashboard_new_deliverable_fab',
               onPressed: () {
                 _showCreateDeliverableDialog();
               },
@@ -223,13 +222,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildMetricsRow(DashboardState dashboardState) {
-    final totalDeliverables = dashboardState.deliverables.length;
-    final approvedDeliverables = dashboardState.deliverables
-        .where((d) => d.status == DeliverableStatus.approved)
-        .length;
-    final pendingDeliverables = dashboardState.deliverables
-        .where((d) => d.status == DeliverableStatus.submitted)
-        .length;
+    final stats = dashboardState.stats;
+    final totalDeliverables = stats?.totalDeliverables ?? dashboardState.deliverables.length;
+    final approvedDeliverables = stats?.approvedReports ??
+        dashboardState.deliverables
+            .where((d) => d.status == DeliverableStatus.approved)
+            .length;
+    final pendingDeliverables = stats?.submittedReports ??
+        dashboardState.deliverables
+            .where((d) => d.status == DeliverableStatus.submitted)
+            .length;
+    final avgSignoff = stats?.avgSignoffDaysDisplay ?? '—';
 
     return Row(
       children: [
@@ -244,7 +247,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: MetricsCard(
-            title: 'Approved',
+            title: 'Approved Reports',
             value: approvedDeliverables.toString(),
             icon: Icons.check_circle,
             color: Colors.green,
@@ -260,10 +263,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ),
         const SizedBox(width: 12),
-        const Expanded(
+        Expanded(
           child: MetricsCard(
             title: 'Avg. Sign-off',
-            value: '2.3d',
+            value: avgSignoff,
             icon: Icons.schedule,
             color: Colors.purple,
           ),
@@ -512,7 +515,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 // Use WidgetsBinding to safely navigate after async operation
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted) {
-                    GoRouter.of(context).go(AuthService.postLogoutRoute);
+                    GoRouter.of(context).go('/');
                   }
                 });
               }
