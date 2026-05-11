@@ -1,164 +1,196 @@
 name: Generate Daily Commits
- 
+
 on:
   push:
     branches:
       - '**'
+
   schedule:
     # Run weekdays at 4:30 PM UTC (2:30 PM SAST, 6:30 AM PST)
     - cron: '30 16 * * 1-5'
-  workflow_dispatch: # Allow manual trigger
- 
+
+  workflow_dispatch:
+
 permissions:
-  contents: write # Allow workflow to push commits back to repository
- 
+  contents: write
+
 jobs:
   generate-commits:
     runs-on: ubuntu-latest
+
     concurrency:
       group: daily-commits-${{ github.ref }}
       cancel-in-progress: false
- 
+
     steps:
-    - name: Block weekend runs
-      id: weekday_gate
-      run: |
-        WEEKDAY=$(date -u +"%u") # 1=Mon ... 7=Sun
-        if [ "$WEEKDAY" -ge 6 ]; then
-          echo "run_allowed=false" >> "$GITHUB_OUTPUT"
-          echo "Weekend detected (UTC). Workflow processing skipped."
-          echo "## Daily Version Summary" >> "${GITHUB_STEP_SUMMARY}"
-          echo "" >> "${GITHUB_STEP_SUMMARY}"
-          echo "Skipped: weekend run (Saturday/Sunday)." >> "${GITHUB_STEP_SUMMARY}"
-        else
-          echo "run_allowed=true" >> "$GITHUB_OUTPUT"
-        fi
+      - name: Block weekend runs
+        id: weekday_gate
+        run: |
+          WEEKDAY=$(date -u +"%u")
 
-    - name: Checkout repository
-      if: steps.weekday_gate.outputs.run_allowed == 'true'
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 # Fetch all history for complete commit log
-        persist-credentials: true
- 
-    - name: Setup Node.js for commit processing
-      if: steps.weekday_gate.outputs.run_allowed == 'true'
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-    - name: Ensure dependencies (jq)
-      if: steps.weekday_gate.outputs.run_allowed == 'true'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y jq
-    - name: Ensure output directory
-      if: steps.weekday_gate.outputs.run_allowed == 'true'
-      run: |
-        mkdir -p assets/data
- 
-    - name: Generate versions for branch set
-      if: steps.weekday_gate.outputs.run_allowed == 'true'
-      run: |
-        set -euo pipefail
+          if [ "$WEEKDAY" -ge 6 ]; then
+            echo "run_allowed=false" >> "$GITHUB_OUTPUT"
 
-        TODAY=$(date -u +"%Y-%m-%d")
-        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        YEAR=$(date -u +"%Y")
-        MONTH=$(date -u +"%m")
-        DAY=$(date -u +"%d")
-        WEEKDAY=$(date -u +"%u") # 1=Mon ... 7=Sun
+            echo "Weekend detected (UTC). Workflow processing skipped."
 
-        # Week of month: 1-7=A, 8-14=B, 15-21=C, 22+=D
-        WEEK_OF_MONTH=$(( (DAY - 1) / 7 + 1 ))
-        if [ "$WEEK_OF_MONTH" -le 1 ]; then
-          WEEK_LETTER="A"
-        elif [ "$WEEK_OF_MONTH" -eq 2 ]; then
-          WEEK_LETTER="B"
-        elif [ "$WEEK_OF_MONTH" -eq 3 ]; then
-          WEEK_LETTER="C"
-        else
-          WEEK_LETTER="D"
-        fi
+            echo "## Daily Version Summary" >> "${GITHUB_STEP_SUMMARY}"
+            echo "" >> "${GITHUB_STEP_SUMMARY}"
+            echo "Skipped: weekend run (Saturday/Sunday)." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "run_allowed=true" >> "$GITHUB_OUTPUT"
+          fi
 
-        case "$WEEKDAY" in
-          1) DAY_LETTER="A" ;;
-          2) DAY_LETTER="B" ;;
-          3) DAY_LETTER="C" ;;
-          4) DAY_LETTER="D" ;;
-          *) DAY_LETTER="E" ;; # Friday + weekends
-        esac
+      - name: Checkout repository
+        if: steps.weekday_gate.outputs.run_allowed == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
-        # Determine which branches to process:
-        # - push/create: current branch only
-        # - schedule/workflow_dispatch: all remote branches
-        if [ "${GITHUB_EVENT_NAME}" = "push" ] || [ "${GITHUB_EVENT_NAME}" = "create" ]; then
-          BRANCHES="${GITHUB_REF_NAME}"
-        else
-          BRANCHES=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | sed 's#^origin/##' | rg -v '^HEAD$' || true)
-        fi
+      - name: Setup Node.js for commit processing
+        if: steps.weekday_gate.outputs.run_allowed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
 
-        if [ -z "${BRANCHES}" ]; then
-          echo "No branches found to process."
-          exit 0
-        fi
+      - name: Ensure dependencies (jq)
+        if: steps.weekday_gate.outputs.run_allowed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq ripgrep
 
-        echo "## Daily Version Summary (${TODAY})" >> "${GITHUB_STEP_SUMMARY}"
-        echo "" >> "${GITHUB_STEP_SUMMARY}"
-        echo "| Branch | Version | Commits Today | Updated |" >> "${GITHUB_STEP_SUMMARY}"
-        echo "|---|---|---:|:---:|" >> "${GITHUB_STEP_SUMMARY}"
-
-        for BRANCH in ${BRANCHES}; do
-          echo "Processing branch: ${BRANCH}"
-          git checkout -B "${BRANCH}" "origin/${BRANCH}"
+      - name: Ensure output directory
+        if: steps.weekday_gate.outputs.run_allowed == 'true'
+        run: |
           mkdir -p assets/data
 
-          COMMITS_JSON=$(git log --since="${TODAY}T00:00:00Z" --pretty=format:'%an|%s|%aI' --no-merges | \
-            jq -R -s '
-              split("\n") |
-              map(select(length > 0)) |
-              map(split("|") | {author: .[0], message: .[1], timestamp: .[2]})
-            ')
+      - name: Generate versions for branch set
+        if: steps.weekday_gate.outputs.run_allowed == 'true'
+        run: |
+          set -euo pipefail
 
-          COMMIT_COUNT=$(git log --since="${TODAY}T00:00:00Z" --oneline --no-merges | wc -l | tr -d ' ')
-          if [ "$COMMIT_COUNT" -eq 0 ]; then
-            COMMITS_JSON="[]"
+          TODAY=$(date -u +"%Y-%m-%d")
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          YEAR=$(date -u +"%Y")
+          MONTH=$(date -u +"%m")
+
+          # FIXED: removes leading zero (08 -> 8)
+          DAY=$(date -u +"%-d")
+
+          WEEKDAY=$(date -u +"%u")
+
+          # Week of month: 1-7=A, 8-14=B, 15-21=C, 22+=D
+          WEEK_OF_MONTH=$(( (DAY - 1) / 7 + 1 ))
+
+          if [ "$WEEK_OF_MONTH" -le 1 ]; then
+            WEEK_LETTER="A"
+          elif [ "$WEEK_OF_MONTH" -eq 2 ]; then
+            WEEK_LETTER="B"
+          elif [ "$WEEK_OF_MONTH" -eq 3 ]; then
+            WEEK_LETTER="C"
+          else
+            WEEK_LETTER="D"
           fi
 
-          EFFECTIVE_COMMIT_COUNT="${COMMIT_COUNT}"
-          if [ "$WEEKDAY" -ge 6 ]; then
-            EFFECTIVE_COMMIT_COUNT=0
+          case "$WEEKDAY" in
+            1) DAY_LETTER="A" ;;
+            2) DAY_LETTER="B" ;;
+            3) DAY_LETTER="C" ;;
+            4) DAY_LETTER="D" ;;
+            *) DAY_LETTER="E" ;;
+          esac
+
+          # Determine branches to process
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] || [ "${GITHUB_EVENT_NAME}" = "create" ]; then
+            BRANCHES="${GITHUB_REF_NAME}"
+          else
+            BRANCHES=$(git for-each-ref \
+              --format='%(refname:short)' refs/remotes/origin \
+              | sed 's#^origin/##' \
+              | rg -v '^HEAD$' || true)
           fi
 
-          VERSION="Ver ${YEAR}.${MONTH}${WEEK_LETTER}${DAY_LETTER}${EFFECTIVE_COMMIT_COUNT} SIT"
-
-          jq -n \
-            --arg version "$VERSION" \
-            --arg generated_at "$TIMESTAMP" \
-            --argjson commits "$COMMITS_JSON" \
-            --arg total_commits "$EFFECTIVE_COMMIT_COUNT" \
-            --arg date_range "$TODAY" \
-            --arg branch "$BRANCH" \
-            '{
-              version: $version,
-              branch: $branch,
-              generated_at: $generated_at,
-              commits: $commits,
-              total_commits: ($total_commits | tonumber),
-              date_range: $date_range
-            }' > assets/data/version.json
-
-          jq . assets/data/version.json > /dev/null
-
-          UPDATED="No"
-          if ! git diff --quiet -- assets/data/version.json; then
-            git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action"
-            git add assets/data/version.json
-            git commit -m "Update version data [${TODAY}]"
-            git pull --rebase origin "${BRANCH}" || git pull origin "${BRANCH}" || true
-            git push origin "${BRANCH}"
-            UPDATED="Yes"
+          if [ -z "${BRANCHES}" ]; then
+            echo "No branches found to process."
+            exit 0
           fi
 
-          echo "| ${BRANCH} | ${VERSION} | ${COMMIT_COUNT} | ${UPDATED} |" >> "${GITHUB_STEP_SUMMARY}"
-        done
+          echo "## Daily Version Summary (${TODAY})" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "| Branch | Version | Commits Today | Updated |" >> "${GITHUB_STEP_SUMMARY}"
+          echo "|---|---|---:|:---:|" >> "${GITHUB_STEP_SUMMARY}"
+
+          for BRANCH in ${BRANCHES}; do
+            echo "Processing branch: ${BRANCH}"
+
+            git checkout -B "${BRANCH}" "origin/${BRANCH}"
+
+            mkdir -p assets/data
+
+            COMMITS_JSON=$(git log \
+              --since="${TODAY}T00:00:00Z" \
+              --pretty=format:'%an|%s|%aI' \
+              --no-merges | jq -R -s '
+                split("\n") |
+                map(select(length > 0)) |
+                map(split("|") | {
+                  author: .[0],
+                  message: .[1],
+                  timestamp: .[2]
+                })
+              ')
+
+            COMMIT_COUNT=$(git log \
+              --since="${TODAY}T00:00:00Z" \
+              --oneline \
+              --no-merges | wc -l | tr -d ' ')
+
+            if [ "$COMMIT_COUNT" -eq 0 ]; then
+              COMMITS_JSON="[]"
+            fi
+
+            EFFECTIVE_COMMIT_COUNT="${COMMIT_COUNT}"
+
+            if [ "$WEEKDAY" -ge 6 ]; then
+              EFFECTIVE_COMMIT_COUNT=0
+            fi
+
+            VERSION="Ver ${YEAR}.${MONTH}${WEEK_LETTER}${DAY_LETTER}${EFFECTIVE_COMMIT_COUNT} SIT"
+
+            jq -n \
+              --arg version "$VERSION" \
+              --arg generated_at "$TIMESTAMP" \
+              --argjson commits "$COMMITS_JSON" \
+              --arg total_commits "$EFFECTIVE_COMMIT_COUNT" \
+              --arg date_range "$TODAY" \
+              --arg branch "$BRANCH" \
+              '{
+                version: $version,
+                branch: $branch,
+                generated_at: $generated_at,
+                commits: $commits,
+                total_commits: ($total_commits | tonumber),
+                date_range: $date_range
+              }' > assets/data/version.json
+
+            jq . assets/data/version.json > /dev/null
+
+            UPDATED="No"
+
+            if ! git diff --quiet -- assets/data/version.json; then
+              git config --local user.email "action@github.com"
+              git config --local user.name "GitHub Action"
+
+              git add assets/data/version.json
+
+              git commit -m "Update version data [${TODAY}]"
+
+              git pull --rebase origin "${BRANCH}" || git pull origin "${BRANCH}" || true
+
+              git push origin "${BRANCH}"
+
+              UPDATED="Yes"
+            fi
+
+            echo "| ${BRANCH} | ${VERSION} | ${COMMIT_COUNT} | ${UPDATED} |" >> "${GITHUB_STEP_SUMMARY}"
+          done
