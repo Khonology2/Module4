@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../widgets/background_image.dart';
+import '../utils/app_icons.dart';
+import '../widgets/sidebar_version_display.dart';
 
 class _NavItem {
   final String label;
@@ -49,42 +51,53 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
         _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
         _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
         _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
-        _NavItem(label: 'Deliverables', icon: Icons.assignment_outlined, iconName: 'deliverables', route: '/deliverables-overview'),
-        _NavItem(label: 'Timeline', icon: Icons.calendar_today_outlined, iconName: 'timeline', route: '/timeline'),
-        _NavItem(label: 'Approval Requests', icon: Icons.assignment_outlined, iconName: 'approval_requests', route: '/approval-requests'),
+        _NavItem(label: 'Users', icon: Icons.people_outline, iconName: 'users', route: '/users'),
+        _NavItem(label: 'Roles', icon: Icons.admin_panel_settings_outlined, iconName: 'roles', route: '/roles'),
         _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository'),
         _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository'),
-        _NavItem(label: 'User Management', icon: Icons.admin_panel_settings_outlined, iconName: 'role_management', route: '/role-management'),
-        _NavItem(label: 'FlowPilot', icon: Icons.smart_toy_outlined, iconName: 'ai_assistant', route: '/ai-assistant'),
+      ];
+    } else if (userRole.contains('project')) {
+      items = const [
+        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
+        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
+        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
+        _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository'),
+        _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository'),
+      ];
+    } else if (userRole.contains('delivery')) {
+      items = const [
+        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
+        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
+        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
+        _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository'),
+        _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository'),
+      ];
+    } else if (userRole.contains('team')) {
+      items = const [
+        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
+        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
+        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
+        _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository'),
+        _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository'),
       ];
     } else {
-      final baseItems = [
-        const _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
-        const _NavItem(label: 'FlowPilot', icon: Icons.smart_toy_outlined, iconName: 'ai_assistant', route: '/ai-assistant'),
-        const _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
-        const _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprint-console', requiredPermission: 'view_sprints'),
-        const _NavItem(label: 'Deliverables', icon: Icons.assignment_outlined, iconName: 'deliverables', route: '/deliverables-overview'),
-        const _NavItem(label: 'Timeline', icon: Icons.calendar_today_outlined, iconName: 'timeline', route: '/timeline'),
+      // Default/fallback for unknown roles
+      items = const [
+        _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, iconName: 'dashboard', route: '/dashboard'),
+        _NavItem(label: 'Projects', icon: Icons.folder_outlined, iconName: 'projects', route: '/projects'),
+        _NavItem(label: 'Sprints', icon: Icons.timer_outlined, iconName: 'sprints', route: '/sprints'),
       ];
-
-      final roleSpecific = <_NavItem>[];
-
-      if (userRole.contains('delivery') || userRole.contains('project')) {
-        roleSpecific.addAll([
-          const _NavItem(label: 'Approval Requests', icon: Icons.assignment_outlined, iconName: 'approval_requests', route: '/approval-requests', requiredPermission: 'view_approvals'),
-          const _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository', requiredPermission: 'view_all_deliverables'),
-          const _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository', requiredPermission: 'view_all_deliverables'),
-        ]);
-      } else if (userRole.contains('client')) {
-        roleSpecific.addAll([
-          const _NavItem(label: 'Approval Requests', icon: Icons.assignment_outlined, iconName: 'approval_requests', route: '/approval-requests', requiredPermission: 'view_approvals'),
-          const _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository', requiredPermission: 'view_all_deliverables'),
-          const _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository', requiredPermission: 'view_all_deliverables'),
-        ]);
-      }
-
-      items = [...baseItems, ...roleSpecific];
     }
+
+    final roleSpecific = <_NavItem>[];
+    if (authService.hasPermission('view_all_deliverables')) {
+      roleSpecific.addAll([
+        const _NavItem(label: 'Repository', icon: Icons.folder_outlined, iconName: 'repository', route: '/repository', requiredPermission: 'view_all_deliverables'),
+        const _NavItem(label: 'Reports', icon: Icons.assessment_outlined, iconName: 'reports', route: '/report-repository', requiredPermission: 'view_all_deliverables'),
+      ]);
+    }
+
+    items = [...items, ...roleSpecific];
 
     return items.where((item) {
       if (item.requiredPermission == null) return true;
@@ -92,104 +105,337 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     }).toList();
   }
 
+  void _handleLogout(BuildContext context) async {
+    final authService = AuthService();
+    await authService.logout();
+    if (context.mounted) {
+      context.go('/login');
+    }
+  }
+
+  Widget _buildThemeToggleButton(bool isDarkMode) {
+    return FloatingActionButton(
+      mini: true,
+      onPressed: () {
+        // TODO: Implement theme toggle
+      },
+      backgroundColor: Colors.white.withValues(alpha: 0.9),
+      child: Icon(
+        isDarkMode ? Icons.light_mode : Icons.dark_mode,
+        color: isDarkMode ? Colors.black : Colors.black87,
+        size: 16,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 768;
     final routeLocation = GoRouterState.of(context).uri.path;
-    final backgroundImagePath = 'assets/Icons/khono_bg.png';
-    final backgroundWithGradient = true;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     if (isDesktop) {
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: BackgroundImage(
-          imagePath: backgroundImagePath,
-          withGradient: backgroundWithGradient,
           child: Row(
             children: [
-              SizedBox(
-                width: _sidebarWidth,
+              _buildDesktopSidebar(routeLocation),
+              Expanded(
                 child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.8),
-                    border: Border(
-                      right: BorderSide(
-                        color: Colors.white.withOpacity(0.2),
-                        width: 1,
+                  color: Colors.transparent,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(child: widget.child),
+                      const Positioned(
+                        left: 14,
+                        bottom: 8,
+                        child: SidebarVersionDisplay(isSidebarCollapsed: false),
                       ),
-                    ),
-                  ),
-                  child: ListView.builder(
-                    itemCount: _navItems.length,
-                    itemBuilder: (context, index) {
-                      final item = _navItems[index];
-                      final active = routeLocation.startsWith(item.route);
-
-                      return ListTile(
-                        leading: Icon(
-                          item.icon,
-                          color: active ? Colors.blue : Colors.white,
-                          size: 20,
+                      if (routeLocation != '/dashboard')
+                        Positioned(
+                          right: 20,
+                          bottom: 96,
+                          child: _buildThemeToggleButton(isDarkMode),
                         ),
-                        title: Text(
-                          item.label,
-                          style: TextStyle(
-                            color: active ? Colors.blue : Colors.white,
-                            fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                        selected: active,
-                        selectedTileColor: Colors.white.withOpacity(0.1),
-                        onTap: () => context.go(item.route),
-                      );
-                    },
+                    ],
                   ),
                 ),
               ),
-              Expanded(child: widget.child),
+            ],
+          ),
+        ),
+      );
+    } else {
+      // Mobile layout with drawer
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: BackgroundImage(
+          child: widget.child,
+        ),
+        floatingActionButton:
+            routeLocation == '/dashboard' ? null : _buildThemeToggleButton(isDarkMode),
+        drawer: Drawer(
+          backgroundColor: Colors.black,
+          child: Column(
+            children: [
+              // Drawer header
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Color(0xFF333333),
+                      width: 0.5,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Image.network(
+                      'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/assets/images/flownet_logo.png',
+                      height: 32,
+                      width: 32,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Flow-Space',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              // Navigation items
+              Expanded(
+                child: _buildNavigationItems(isMobile: true),
+              ),
             ],
           ),
         ),
       );
     }
+  }
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: BackgroundImage(
-        imagePath: backgroundImagePath,
-        withGradient: backgroundWithGradient,
-        child: widget.child,
-      ),
-      drawer: Drawer(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        child: ListView.builder(
-          itemCount: _navItems.length,
-          itemBuilder: (context, index) {
-            final item = _navItems[index];
-            final active = routeLocation.startsWith(item.route);
+  Widget _buildNavigationItems({required bool isMobile}) {
+    final routeLocation = GoRouterState.of(context).uri.path;
 
-            return ListTile(
-              leading: Icon(
-                item.icon,
-                color: active ? Colors.blue : Colors.white,
-                size: 20,
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: _navItems.length,
+      itemBuilder: (context, index) {
+        final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+        final sidebarTextColor = isDarkMode ? Colors.white : Colors.black;
+        final sidebarSubtleText = isDarkMode ? Colors.white70 : Colors.black87;
+        final item = _navItems[index];
+        final active = routeLocation.startsWith(item.route);
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: active
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ListTile(
+            leading: Icon(
+              item.icon,
+              color: active ? sidebarTextColor : sidebarSubtleText,
+              size: 20,
+            ),
+            title: Text(
+              item.label,
+              style: TextStyle(
+                color: active ? sidebarTextColor : sidebarSubtleText,
+                fontWeight: active ? FontWeight.w600 : FontWeight.w400,
               ),
-              title: Text(
-                item.label,
-                style: TextStyle(
-                  color: active ? Colors.blue : Colors.white,
-                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-              selected: active,
-              selectedTileColor: Colors.white.withOpacity(0.1),
-              onTap: () {
+            ),
+            onTap: () {
+              if (!routeLocation.startsWith(item.route)) {
                 context.go(item.route);
-                Navigator.pop(context);
-              },
-            );
-          },
+                Navigator.pop(context); // Close drawer on mobile
+              }
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDesktopSidebar(String routeLocation) {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color sidebarBackground =
+        isDarkMode ? const Color(0xFF0C0C0C) : const Color(0xFFE8E8E8);
+    final Color sidebarBorder =
+        isDarkMode ? const Color(0xFF2A2A2A) : const Color(0xFFD2D2D2);
+    final Color sidebarText =
+        isDarkMode ? Colors.white : const Color(0xFF141414);
+    final Color subtitleText = isDarkMode
+        ? Colors.white.withAlpha((0.82 * 255).round())
+        : const Color(0xFF3F3F3F);
+
+    return Container(
+      width: _sidebarWidth,
+      decoration: BoxDecoration(
+        color: sidebarBackground,
+        border: Border(
+          right: BorderSide(color: sidebarBorder, width: 1),
         ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: sidebarBorder, width: 1),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text(
+                  'K H O N O L O G Y',
+                  style: TextStyle(
+                    color: Color(0xFFE02020),
+                    fontSize: 13,
+                    letterSpacing: 2.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Welcome to\nDeliverable & Sprint Sign-Off Hub',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: subtitleText,
+                    fontSize: 11,
+                    height: 1.35,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              itemCount: _navItems.length,
+              itemBuilder: (context, index) {
+                final item = _navItems[index];
+                final active = routeLocation.startsWith(item.route);
+                return _buildDesktopNavItem(item, active, routeLocation);
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            child: Divider(color: sidebarBorder, height: 1),
+          ),
+          _buildDesktopFooterItem(
+            label: 'Account Profile',
+            iconName: 'account',
+            fallbackIcon: Icons.person_outline,
+            route: '/profile',
+            currentRoute: routeLocation,
+            textColor: sidebarText,
+          ),
+          _buildDesktopFooterItem(
+            label: 'Logout',
+            iconName: 'logout',
+            fallbackIcon: Icons.logout,
+            onTap: () => _handleLogout(context),
+            currentRoute: routeLocation,
+            textColor: sidebarText,
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopNavItem(
+    _NavItem item,
+    bool active,
+    String routeLocation,
+  ) {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color activeColor = isDarkMode ? Colors.white : Colors.black;
+    final Color inactiveColor = isDarkMode ? Colors.white70 : Colors.black54;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      decoration: BoxDecoration(
+        color: active ? activeColor.withValues(alpha: 0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListTile(
+        dense: true,
+        leading: Icon(
+          item.icon,
+          color: active ? activeColor : inactiveColor,
+          size: 20,
+        ),
+        title: Text(
+          item.label,
+          style: TextStyle(
+            color: active ? activeColor : inactiveColor,
+            fontSize: 13,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+        onTap: () => context.go(item.route),
+      ),
+    );
+  }
+
+  Widget _buildDesktopFooterItem({
+    required String label,
+    required String iconName,
+    required IconData fallbackIcon,
+    String? route,
+    VoidCallback? onTap,
+    required String currentRoute,
+    required Color textColor,
+  }) {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final bool active = route != null && currentRoute.startsWith(route);
+    final Color activeColor = isDarkMode ? Colors.white : Colors.black;
+    final Color inactiveColor = isDarkMode ? Colors.white70 : Colors.black54;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      decoration: BoxDecoration(
+        color: active ? activeColor.withValues(alpha: 0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListTile(
+        dense: true,
+        leading: Icon(
+          fallbackIcon,
+          color: active ? activeColor : inactiveColor,
+          size: 18,
+        ),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: active ? activeColor : inactiveColor,
+            fontSize: 12,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+        onTap: onTap ?? (route != null ? () => context.go(route) : null),
       ),
     );
   }
