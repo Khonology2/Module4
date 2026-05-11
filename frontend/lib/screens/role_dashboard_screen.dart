@@ -3572,22 +3572,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       } else {
         completionRateStr = '-';
       }
-      final m = <String, dynamic>{
-        'deliverables': totalDeliverables,
-        'completed': completed,
-        'in_progress': inProgress,
-        'overdue': overdue,
-        'active_sprints': activeSprints,
-        'active_projects': activeProjects,
-        'pending_reviews': pendingReviews,
-        'completion_rate': completionRateStr,
-      };
-      if (mounted) {
-        setState(() {
-        });
-      }
-    } catch (_) {
-      if (mounted) {};
+      } catch (_) {
     } finally {
     }
   }
