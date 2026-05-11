@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
+import '../services/backend_api_service.dart';
 import '../widgets/background_image.dart';
 import '../utils/app_icons.dart';
 import '../widgets/sidebar_version_display.dart';
@@ -44,7 +45,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     final isAdminLike =
         userRole.contains('admin') || userRole.contains('system');
 
-    final List<_NavItem> items;
+    List<_NavItem> items;
 
     if (isAdminLike) {
       items = const [
@@ -106,8 +107,8 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
   }
 
   void _handleLogout(BuildContext context) async {
-    final authService = AuthService();
-    await authService.logout();
+    final apiService = BackendApiService();
+    await apiService.signOut();
     if (context.mounted) {
       context.go('/login');
     }

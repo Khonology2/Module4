@@ -3523,55 +3523,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   void _computeTeamMetrics() {
     if (!mounted) return;
     try {
-      final int totalDeliverables = _dashboardDeliverables.length;
-      int completed = 0;
-      int inProgress = 0;
-      int overdue = 0;
-      for (final d in _dashboardDeliverables) {
-        final status =
-            (d['status'] ?? d['state'] ?? '').toString().toLowerCase();
-        if (status == 'completed' || status == 'done' || status == 'approved') {
-          completed++;
-        }
-        if (status == 'in_progress' ||
-            status == 'in-progress' ||
-            status == 'progress') {
-          inProgress++;
-        }
-        final dueStr =
-            (d['due_date'] ?? d['dueDate'] ?? d['deadline'] ?? '').toString();
-        final due = DateTime.tryParse(dueStr);
-        if (due != null &&
-            due.isBefore(DateTime.now()) &&
-            status != 'completed' &&
-            status != 'done' &&
-            status != 'approved') {
-          overdue++;
-        }
-      }
-      int activeSprints = 0;
-      for (final s in _dashboardSprints) {
-        final status =
-            (s['status'] ?? s['state'] ?? '').toString().toLowerCase();
-        if (status == 'active' ||
-            status == 'in_progress' ||
-            status == 'in-progress') {
-          activeSprints++;
-        }
-      }
-      int activeProjects = 0;
-      for (final p in _dashboardProjects) {
-        final status = (p['status'] ?? '').toString().toLowerCase();
-        if (status != 'completed' && status != 'archived') activeProjects++;
-      }
-      final pendingReviews = _pendingReports.length;
-      String completionRateStr;
-      if (totalDeliverables > 0) {
-        final rate = (completed / totalDeliverables * 100).toStringAsFixed(1);
-        completionRateStr = '$rate%';
-      } else {
-        completionRateStr = '-';
-      }
+      // Metrics computation logic can be added here if needed
       } catch (_) {
     } finally {
     }
