@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/flownet_theme.dart';
 import '../models/user.dart';
+import '../models/user_role.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_container.dart';
 import '../widgets/fixed_footer_version_display.dart';
@@ -52,8 +53,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
     return Scaffold(
       body: Stack(
         children: [
@@ -393,7 +392,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                     child: Text(
                                       'I accept the Terms of Service and Privacy Policy',
                                       style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.7),
+                                        color: Colors.white70,
                                         fontSize: 12,
                                       ),
                                     ),
