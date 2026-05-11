@@ -125,17 +125,31 @@ class AppIcons {
     if (assetPath.isNotEmpty) {
       return Transform.scale(
         scale: visualScale,
-        child: Image.network(
-          'https://raw.githubusercontent.com/Khonology2/Module4/Busisiwe/frontend/$assetPath',
+        child: Image.asset(
+          assetPath,
           width: size,
           height: size,
           fit: fit,
+          color: color,
+          colorBlendMode: color != null ? BlendMode.srcIn : null,
           errorBuilder: (context, error, stackTrace) {
-            debugPrint('Failed to load icon asset: $assetPath -> $error');
-            return Icon(
-              getIcon(iconName, fallbackIcon: fallbackIcon),
-              size: size,
+            final altPath = assetPath.startsWith('frontend/')
+                ? assetPath.replaceFirst('frontend/', '')
+                : 'frontend/$assetPath';
+            return Image.asset(
+              altPath,
+              width: size,
+              height: size,
+              fit: fit,
               color: color,
+              colorBlendMode: color != null ? BlendMode.srcIn : null,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  getIcon(iconName, fallbackIcon: fallbackIcon),
+                  size: size,
+                  color: color,
+                );
+              },
             );
           },
         ),
