@@ -92,6 +92,73 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
       ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: Colors.white,
+                  child: ClipOval(
+                    child: Transform.scale(
+                      scale: 1.6,
+                      child: Image.asset(
+                        'assets/User_management.png',
+                        width: 44,
+                        height: 44,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Sprints Management',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Manage different users and their roles.',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _loadUsers,
+                  icon: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.white,
+                    child: ClipOval(
+                      child: Transform.scale(
+                        scale: 1.45,
+                        child: Image.asset(
+                          'assets/notification.png',
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           _buildSearchAndFilter(),
           Expanded(
             child: _isLoading
@@ -100,7 +167,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+floatingActionButton: FloatingActionButton.extended(
         heroTag: 'role_management_add_user_fab',
         onPressed: () => _showAddUserDialog(),
         icon: const Icon(Icons.person_add),
@@ -111,55 +178,87 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
 
   Widget _buildSearchAndFilter() {
     return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+      child: Row(
         children: [
-          TextField(
-            decoration: InputDecoration(
-              hintText: 'Search users...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+          Expanded(
+            child: TextField(
+              style: const TextStyle(color: Colors.white, fontSize: 18),
+              decoration: InputDecoration(
+                hintText: 'Search Users...',
+                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
+                prefixIcon: Icon(Icons.search, color: Colors.white.withValues(alpha: 0.55)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+                ),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.20),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              filled: true,
-              fillColor: Colors.grey[50],
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
             ),
-            onChanged: (value) {
-              setState(() {
-                _searchQuery = value;
-              });
-            },
           ),
-          const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildFilterChip('All', null),
-                const SizedBox(width: 8),
-                ...UserRole.values
-                    .map((role) => _buildFilterChip(role.displayName, role)),
-              ],
+          const SizedBox(width: 10),
+          Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.48),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white54),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<UserRole?>(
+                value: _filterRole,
+                dropdownColor: const Color(0xFF1A1A1A),
+                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white70),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                items: [
+                  const DropdownMenuItem<UserRole?>(
+                    value: null,
+                    child: Text('USER ROLE'),
+                  ),
+                  ...UserRole.values.map(
+                    (role) => DropdownMenuItem<UserRole?>(
+                      value: role,
+                      child: Text(role.displayName),
+                    ),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() => _filterRole = value);
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 44,
+            child: ElevatedButton(
+              onPressed: _showAddUserDialog,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC10D00),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+              ),
+              child: const Text(
+                'Add User',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, UserRole? role) {
-    final isSelected = _filterRole == role;
-    return FilterChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        setState(() {
-          _filterRole = selected ? role : null;
-        });
-      },
-      selectedColor:
-          Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-      checkmarkColor: Theme.of(context).colorScheme.primary,
     );
   }
 
@@ -195,13 +294,16 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        childAspectRatio: 2.0,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
       itemCount: filteredUsers.length,
-      itemBuilder: (context, index) {
-        final user = filteredUsers[index];
-        return _buildUserCard(user);
-      },
+      itemBuilder: (context, index) => _buildUserCard(filteredUsers[index]),
     );
   }
 
@@ -223,154 +325,164 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
   }
 
   Widget _buildUserCard(User user) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: user.roleColor,
-              child: Icon(
-                user.roleIcon,
-                color: Colors.white,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 14,
+            backgroundColor: Colors.white,
+            child: ClipOval(
+              child: Transform.scale(
+                scale: 1.55,
+                child: Image.asset(
+                  'assets/Icons/Account_User_Profile/red_user_profile.png',
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  user.name,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  user.email,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 10,
+                      ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: user.roleColor.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(user.roleIcon, size: 13, color: user.roleColor),
+                          const SizedBox(width: 5),
+                          Text(
+                            user.roleDisplayName,
+                            style: TextStyle(
+                              color: user.roleColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: user.isActive
+                            ? Colors.green.withValues(alpha: 0.2)
+                            : Colors.red.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        user.isActive ? 'Active' : 'Inactive',
+                        style: TextStyle(
+                          color: user.isActive ? Colors.lightGreenAccent : Colors.redAccent,
+                          fontSize: 9,
                           fontWeight: FontWeight.w600,
                         ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    user.email,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: user.roleColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              user.roleIcon,
-                              size: 16,
-                              color: user.roleColor,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              user.roleDisplayName,
-                              style: TextStyle(
-                                color: user.roleColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: user.isActive
-                              ? Colors.green.withValues(alpha: 0.1)
-                              : Colors.red.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          user.isActive ? 'Active' : 'Inactive',
-                          style: TextStyle(
-                            color: user.isActive ? Colors.green : Colors.red,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                switch (value) {
-                  case 'edit':
-                    _showEditUserDialog(user);
-                    break;
-                  case 'change_role':
-                    _showChangeRoleDialog(user);
-                    break;
-                  case 'toggle_status':
-                    _toggleUserStatus(user);
-                    break;
-                  case 'delete':
-                    _showDeleteUserDialog(user);
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit),
-                      SizedBox(width: 8),
-                      Text('Edit User'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'change_role',
-                  child: Row(
-                    children: [
-                      Icon(Icons.swap_horiz),
-                      SizedBox(width: 8),
-                      Text('Change Role'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'toggle_status',
-                  child: Row(
-                    children: [
-                      Icon(user.isActive ? Icons.block : Icons.check_circle),
-                      const SizedBox(width: 8),
-                      Text(user.isActive ? 'Deactivate' : 'Activate'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete, color: Colors.red),
-                      SizedBox(width: 8),
-                      Text('Delete User', style: TextStyle(color: Colors.red)),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
-              child: const Icon(Icons.more_vert),
             ),
-          ],
-        ),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white70, size: 18),
+            color: const Color(0xFF1B1B24),
+            onSelected: (value) {
+              switch (value) {
+                case 'edit':
+                  _showEditUserDialog(user);
+                  break;
+                case 'change_role':
+                  _showChangeRoleDialog(user);
+                  break;
+                case 'toggle_status':
+                  _toggleUserStatus(user);
+                  break;
+                case 'delete':
+                  _showDeleteUserDialog(user);
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit),
+                    SizedBox(width: 8),
+                    Text('Edit User'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'change_role',
+                child: Row(
+                  children: [
+                    Icon(Icons.swap_horiz),
+                    SizedBox(width: 8),
+                    Text('Change Role'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'toggle_status',
+                child: Row(
+                  children: [
+                    Icon(user.isActive ? Icons.block : Icons.check_circle),
+                    const SizedBox(width: 8),
+                    Text(user.isActive ? 'Deactivate' : 'Activate'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Delete User', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

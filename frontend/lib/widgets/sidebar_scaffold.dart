@@ -1,11 +1,9 @@
 // ignore_for_file: prefer_const_constructors
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/flownet_theme.dart';
 import '../services/auth_service.dart';
-import '../providers/service_providers.dart';
 import '../utils/app_icons.dart';
 import 'background_image.dart';
 import 'sidebar_version_display.dart';
@@ -279,16 +277,6 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                   child: Stack(
                     children: [
                       Positioned.fill(child: widget.child),
-                      const Positioned(
-                        left: 14,
-                        bottom: 8,
-                        child: SidebarVersionDisplay(isSidebarCollapsed: false),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
           ),
         ),
       );
@@ -301,6 +289,8 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
           withGradient: backgroundWithGradient,
           child: widget.child,
         ),
+        floatingActionButton:
+            routeLocation == '/dashboard' ? null : _buildAiChatbotButton(),
         drawer: Drawer(
           backgroundColor: sidebarColor,
           child: Column(
@@ -629,18 +619,26 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
     );
   }
 
-  Widget _buildThemeToggleButton(bool isDarkMode) {
+  Widget _buildAiChatbotButton() {
     return FloatingActionButton.small(
-      heroTag: null,
+      heroTag: 'ai-chatbot-fab',
       onPressed: () {
-        ProviderScope.containerOf(context, listen: false)
-            .read(themeProvider.notifier)
-            .toggleTheme();
+        context.go('/ai-assistant');
       },
-      backgroundColor:
-          isDarkMode ? FlownetColors.surface : FlownetColors.pureWhite,
-      foregroundColor: isDarkMode ? Colors.white : Colors.black,
-      child: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      highlightElevation: 0,
+      child: ClipOval(
+        child: Transform.scale(
+          scale: 1.28,
+          child: Image.asset(
+            'assets/red_icon.png',
+            width: 40,
+            height: 40,
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
     );
   }
 
