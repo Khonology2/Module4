@@ -68,7 +68,7 @@ console.log('Environment variables loaded from:', loadedPaths.length > 0 ? loade
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? '*** (set)' : 'undefined');
 console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? '*** (set)' : 'undefined');
 console.log('NODE_ENV:', process.env.NODE_ENV || 'undefined');
-console.log('PORT:', process.env.PORT || '3001 (default)');
+console.log('PORT:', process.env.PORT || '8000 (default)');
 console.log('='.repeat(50));
 
 module.exports = process.env;

@@ -322,7 +322,7 @@ app.use('*', (req, res) => {
 });
 
 // Database connection and server startup
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8000;
 
 function isTruthy(value, defaultValue = false) {
   if (value === undefined || value === null || value === '') return defaultValue;
