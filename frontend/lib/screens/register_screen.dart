@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../theme/flownet_theme.dart';
 import '../models/user.dart';
 import '../models/user_role.dart';
 import '../services/auth_service.dart';
-import '../widgets/app_container.dart';
 import '../widgets/fixed_footer_version_display.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -552,18 +549,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       UserRole userRole;
       switch (_selectedRole.toLowerCase()) {
         case 'project manager':
-          userRole = UserRole.deliveryLead;
+          userRole = UserRole.projectManager;
           break;
         case 'scrum master':
+          userRole = UserRole.scrumMaster;
+          break;
         case 'qa engineer':
+          userRole = UserRole.qaEngineer;
+          break;
         case 'developer':
-          userRole = UserRole.teamMember;
+          userRole = UserRole.developer;
           break;
         case 'client':
-          userRole = UserRole.clientReviewer;
+          userRole = UserRole.client;
           break;
         case 'stakeholder':
-          userRole = UserRole.systemAdmin;
+          userRole = UserRole.stakeholder;
           break;
         default:
           userRole = UserRole.teamMember;
