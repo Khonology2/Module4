@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
+import '../widgets/background_image.dart';
 
 class _NavItem {
   final String label;
@@ -95,41 +96,72 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 768;
     final routeLocation = GoRouterState.of(context).uri.path;
+    final backgroundImagePath = 'assets/Icons/khono_bg.png';
+    final backgroundWithGradient = true;
 
     if (isDesktop) {
       return Scaffold(
-        body: Row(
-          children: [
-            SizedBox(
-              width: _sidebarWidth,
-              child: Container(
-                color: Colors.black,
-                child: ListView.builder(
-                  itemCount: _navItems.length,
-                  itemBuilder: (context, index) {
-                    final item = _navItems[index];
-                    final active = routeLocation.startsWith(item.route);
-
-                    return ListTile(
-                      title: Text(
-                        item.label,
-                        style: const TextStyle(color: Colors.white),
+        backgroundColor: Colors.transparent,
+        body: BackgroundImage(
+          imagePath: backgroundImagePath,
+          withGradient: backgroundWithGradient,
+          child: Row(
+            children: [
+              SizedBox(
+                width: _sidebarWidth,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.8),
+                    border: Border(
+                      right: BorderSide(
+                        color: Colors.white.withOpacity(0.2),
+                        width: 1,
                       ),
-                      selected: active,
-                      onTap: () => context.go(item.route),
-                    );
-                  },
+                    ),
+                  ),
+                  child: ListView.builder(
+                    itemCount: _navItems.length,
+                    itemBuilder: (context, index) {
+                      final item = _navItems[index];
+                      final active = routeLocation.startsWith(item.route);
+
+                      return ListTile(
+                        leading: Icon(
+                          item.icon,
+                          color: active ? Colors.blue : Colors.white,
+                          size: 20,
+                        ),
+                        title: Text(
+                          item.label,
+                          style: TextStyle(
+                            color: active ? Colors.blue : Colors.white,
+                            fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                        selected: active,
+                        selectedTileColor: Colors.white.withOpacity(0.1),
+                        onTap: () => context.go(item.route),
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-            Expanded(child: widget.child),
-          ],
+              Expanded(child: widget.child),
+            ],
+          ),
         ),
       );
     }
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: BackgroundImage(
+        imagePath: backgroundImagePath,
+        withGradient: backgroundWithGradient,
+        child: widget.child,
+      ),
       drawer: Drawer(
+        backgroundColor: Colors.black.withOpacity(0.9),
         child: ListView.builder(
           itemCount: _navItems.length,
           itemBuilder: (context, index) {
@@ -137,8 +169,20 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
             final active = routeLocation.startsWith(item.route);
 
             return ListTile(
-              title: Text(item.label),
+              leading: Icon(
+                item.icon,
+                color: active ? Colors.blue : Colors.white,
+                size: 20,
+              ),
+              title: Text(
+                item.label,
+                style: TextStyle(
+                  color: active ? Colors.blue : Colors.white,
+                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
               selected: active,
+              selectedTileColor: Colors.white.withOpacity(0.1),
               onTap: () {
                 context.go(item.route);
                 Navigator.pop(context);
@@ -147,7 +191,6 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
           },
         ),
       ),
-      body: widget.child,
     );
   }
 }
