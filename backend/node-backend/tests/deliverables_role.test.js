@@ -24,6 +24,7 @@ jest.mock('../src/middleware/auth', () => ({
     req.user = { id: 'test-user-id', role: role };
     next();
   },
+  requireRole: () => (_req, _res, next) => next(),
 }));
 
 const deliverablesRouter = require('../src/routes/deliverables');
@@ -109,7 +110,7 @@ describe('Deliverable Role Logic', () => {
         .send({ owner_id: 'new-owner-id' });
 
       expect(response.status).toBe(403);
-      expect(response.body.error).toContain('Only Owners, Admins, and Delivery Leads can assign deliverable owners');
+      expect(response.body.error).toContain('Only Project Owners/Admins/Delivery Leads can assign deliverable owners');
       expect(mockDeliverable.update).not.toHaveBeenCalled();
     });
 

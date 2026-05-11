@@ -18,7 +18,7 @@ if (-not (Test-Path ".env.sit")) {
 
 Write-Host "Environment: SIT" -ForegroundColor Yellow
 Write-Host "Config File: .env.sit" -ForegroundColor Yellow
-Write-Host "Port: 3001" -ForegroundColor Yellow
+Write-Host "Port: 8000" -ForegroundColor Yellow
 Write-Host ""
 
 # Start the server

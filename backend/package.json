@@ -7,12 +7,21 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "seed-dashboard": "node seed-dashboard-data.js",
+    "seed-role-users": "node seed-role-users.js",
     "test": "node test-database.js",
     "setup": "node simple-database-setup.js",
     "reset": "node reset-database.js",
     "create-tables": "node create-tables.js",
     "jira-proxy": "node jira-proxy.js",
-    "setup-jira": "node setup-jira-tables.js"
+    "setup-jira": "node setup-jira-tables.js",
+    "migrate": "node migrations/run-migration.js",
+    "test-db": "node migrations/test-connection.js",
+    "db-status": "node migrations/test-connection.js",
+    "migrate-render": "node migrations/migrate-render.js",
+    "test-render": "node migrations/migrate-render.js",
+    "update-render": "node migrations/update-render.js",
+    "clean-render-users": "node migrations/clean-render-users.js"
   },
   "keywords": [
     "flow-space",
@@ -28,7 +37,7 @@
     "@sendgrid/mail": "^8.1.6",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",

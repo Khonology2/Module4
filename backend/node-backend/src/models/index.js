@@ -1,5 +1,33 @@
-const database = require('../config/database');
-const { DataTypes } = require('sequelize');
+const path = require('path');
+const { Sequelize, DataTypes } = require('sequelize');
+
+const createSequelize = () => {
+  const forcePostgres = String(process.env.FORCE_POSTGRES || '').toLowerCase() === 'true';
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (forcePostgres || databaseUrl) {
+    return new Sequelize(databaseUrl || undefined, {
+      dialect: 'postgres',
+      logging: false,
+      dialectOptions:
+        String(process.env.NODE_ENV || '').toLowerCase() === 'production'
+          ? { ssl: { require: true, rejectUnauthorized: false } }
+          : {}
+    });
+  }
+
+  const sqliteFile = process.env.SQLITE_STORAGE
+    ? String(process.env.SQLITE_STORAGE)
+    : path.resolve(__dirname, '..', 'database.sqlite');
+
+  return new Sequelize({
+    dialect: 'sqlite',
+    storage: sqliteFile,
+    logging: false
+  });
+};
+
+const sequelize = createSequelize();
 
 // Import all models
 const Deliverable = require('./Deliverable');
@@ -19,6 +47,7 @@ const ApprovalRequest = require('./ApprovalRequest');
 const Ticket = require('./Ticket');
 const DeliverableArtifact = require('./DeliverableArtifact');
 const ProjectMember = require('./ProjectMember');
+const Timeline = require('./Timeline');
 
 // Function to initialize models with the database connection
 function initializeModels(sequelize) {
@@ -39,7 +68,8 @@ function initializeModels(sequelize) {
     ApprovalRequest: ApprovalRequest(sequelize, DataTypes),
     Ticket: Ticket(sequelize, DataTypes),
     DeliverableArtifact: DeliverableArtifact(sequelize, DataTypes),
-    ProjectMember: ProjectMember(sequelize, DataTypes)
+    ProjectMember: ProjectMember(sequelize, DataTypes),
+    Timeline: Timeline(sequelize, DataTypes)
   };
 
   // Set up associations
@@ -53,10 +83,10 @@ function initializeModels(sequelize) {
 }
 
 // Initialize models with the database connection
-const models = initializeModels(database.sequelize);
+const models = initializeModels(sequelize);
 
 module.exports = {
-  sequelize: database.sequelize,
+  sequelize,
   ...models,
   initializeModels
 };

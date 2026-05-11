@@ -46,24 +46,15 @@ router.get('/', async (req, res) => {
 router.get('/entity/:entityType/:entityId', async (req, res) => {
   try {
     const { entityType, entityId } = req.params;
-    
-    let id = parseInt(entityId);
-    if (isNaN(id)) {
-      // Handle composite IDs like "report:123"
-      if (typeof entityId === 'string' && entityId.includes(':')) {
-        const parts = entityId.split(':');
-        id = parseInt(parts[parts.length - 1]);
-      }
-    }
-
-    if (isNaN(id)) {
-       return res.json([]); // Return empty if ID is invalid
-    }
+    const id = typeof entityId === 'string' && entityId.includes(':')
+      ? entityId.split(':').pop()
+      : entityId;
+    if (!id) return res.json([]);
     
     const auditLogs = await AuditLog.findAll({
       where: {
         entity_type: entityType,
-        entity_id: id
+        entity_id: id.toString()
       },
       order: [['created_at', 'DESC']]
     });
@@ -105,7 +96,7 @@ router.get('/deliverable/:deliverableId', async (req, res) => {
     const auditLogs = await AuditLog.findAll({
       where: {
         entity_type: 'deliverable',
-        entity_id: parseInt(deliverableId)
+        entity_id: deliverableId.toString()
       },
       order: [['created_at', 'DESC']]
     });
@@ -129,7 +120,7 @@ router.get('/sprint/:sprintId', async (req, res) => {
     const auditLogs = await AuditLog.findAll({
       where: {
         entity_type: 'sprint',
-        entity_id: parseInt(sprintId)
+        entity_id: sprintId.toString()
       },
       order: [['created_at', 'DESC']]
     });
@@ -149,23 +140,15 @@ router.get('/sprint/:sprintId', async (req, res) => {
 router.get('/signoff/:signoffId', async (req, res) => {
   try {
     const { signoffId } = req.params;
-    
-    let id = parseInt(signoffId);
-    if (isNaN(id)) {
-      if (typeof signoffId === 'string' && signoffId.includes(':')) {
-        const parts = signoffId.split(':');
-        id = parseInt(parts[parts.length - 1]);
-      }
-    }
-
-    if (isNaN(id)) {
-       return res.json([]); 
-    }
+    const id = typeof signoffId === 'string' && signoffId.includes(':')
+      ? signoffId.split(':').pop()
+      : signoffId;
+    if (!id) return res.json([]);
     
     const auditLogs = await AuditLog.findAll({
       where: {
         entity_type: 'signoff',
-        entity_id: id
+        entity_id: id.toString()
       },
       order: [['created_at', 'DESC']]
     });

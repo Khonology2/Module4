@@ -18,14 +18,26 @@ class DatabaseNotificationService extends EventEmitter {
         this.setupGlobalEventEmitter();
     }
 
+    shouldUseSsl(connectionString) {
+        if (String(process.env.NODE_ENV || '').toLowerCase() !== 'production') return false;
+        const cs = (connectionString || '').toString();
+        if (/sslmode=disable/i.test(cs)) return false;
+        return true;
+    }
+
     /**
      * Initialize the database notification service
      * @param {string} connectionString - PostgreSQL connection string
      */
     async initialize(connectionString) {
         try {
+            const ssl = this.shouldUseSsl(connectionString)
+                ? { rejectUnauthorized: false }
+                : undefined;
+
             this.client = new Client({
                 connectionString,
+                ssl,
                 connectionTimeoutMillis: 10000,
                 keepAlive: true
             });
@@ -470,17 +482,3 @@ module.exports = {
     DatabaseNotificationService,
     databaseNotificationService
 };
-        global.realtimeEvents.on('report_updated', async (data) => {
-            const title = data && data.reportTitle ? data.reportTitle : 'Sign-Off Report';
-            try {
-                await notifyRoles(['clientReviewer','deliveryLead','systemAdmin'], 'approval', `Report updated: ${title}`, { report_id: data && data.id, status: data && data.status }, null);
-            } catch (_) {}
-            broadcastAll('report_updated', data);
-        });
-
-        global.realtimeEvents.on('report_deleted', async (data) => {
-            try {
-                await notifyRoles(['clientReviewer','deliveryLead','systemAdmin'], 'approval', `Report deleted`, { report_id: data && data.id }, null);
-            } catch (_) {}
-            broadcastAll('report_deleted', data);
-        });

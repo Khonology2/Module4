@@ -106,7 +106,7 @@ case NotificationType.reportChangesRequested:
 
 ## 🚀 System Status
 
-**Backend:** ✅ Running on port 3001  
+**Backend:** ✅ Running on port 8000  
 **Frontend:** ✅ Compiled successfully  
 **Database:** ✅ Connected  
 **Notifications:** ✅ Fully functional  

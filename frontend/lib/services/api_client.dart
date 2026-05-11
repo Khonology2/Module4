@@ -1,0 +1,690 @@
+import 'dart:convert';
+import 'dart:io';
+// ignore: depend_on_referenced_packages
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../config/environment.dart';
+import 'package:flutter/foundation.dart';
+import '../models/user.dart';
+import '../utils/debug_helper.dart';
+
+class ApiClient {
+  static final ApiClient _instance = ApiClient._internal();
+  factory ApiClient() => _instance;
+  ApiClient._internal();
+
+static String get _baseUrlWithVersion => Environment.apiBaseUrl;
+  static const Duration _timeout = Duration(seconds: 90); // Increased timeout for Render cold starts
+
+  bool _initialized = false;
+  String? _accessToken;
+  String? _refreshToken;
+  DateTime? _tokenExpiry;
+
+  // Getters
+  String? get accessToken => _accessToken;
+  bool get isAuthenticated => _accessToken != null && _isTokenValid();
+  
+  // Get auth token for API calls
+  String? getAuthToken() => _accessToken;
+  
+  // Get current user (cached)
+  User? _currentUser;
+  
+  User? get currentUser => _currentUser;
+  
+  // Set current user
+  void setCurrentUser(User user) {
+    _currentUser = user;
+  }
+
+  // Initialize API client
+  Future<void> initialize() async {
+    if (_initialized) return;
+    await _loadStoredTokens();
+    DebugHelper.logEnvironmentInfo();
+    debugPrint('API Client initialized with base URL: $_baseUrlWithVersion');
+    _initialized = true;
+  }
+
+  // Token management
+  Future<void> _loadStoredTokens() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _accessToken = prefs.getString('access_token');
+      _refreshToken = prefs.getString('refresh_token');
+      final expiryString = prefs.getString('token_expiry');
+      if (expiryString != null) {
+        _tokenExpiry = DateTime.parse(expiryString);
+      }
+    } catch (e) {
+      debugPrint('Error loading stored tokens: $e');
+    }
+  }
+
+  Future<void> saveTokens(String accessToken, String refreshToken, DateTime expiry) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('access_token', accessToken);
+      await prefs.setString('refresh_token', refreshToken);
+      await prefs.setString('token_expiry', expiry.toIso8601String());
+      
+      _accessToken = accessToken;
+      _refreshToken = refreshToken;
+      _tokenExpiry = expiry;
+    } catch (e) {
+      debugPrint('Error saving tokens: $e');
+    }
+  }
+
+  Future<void> clearTokens() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('access_token');
+      await prefs.remove('refresh_token');
+      await prefs.remove('token_expiry');
+      
+      _accessToken = null;
+      _refreshToken = null;
+      _tokenExpiry = null;
+    } catch (e) {
+      debugPrint('Error clearing tokens: $e');
+    }
+  }
+
+  bool _isTokenValid() {
+    if (_tokenExpiry == null) return false;
+    return DateTime.now().isBefore(_tokenExpiry!.subtract(const Duration(minutes: 5)));
+  }
+
+  Future<bool> _refreshAccessToken() async {
+    if (_refreshToken == null) return false;
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrlWithVersion/auth/refresh'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_refreshToken',
+        },
+        body: jsonEncode({
+          'refresh_token': _refreshToken,
+        }),
+      ).timeout(_timeout);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final newAccessToken = data['access_token'];
+        final newRefreshToken = data['refresh_token'] ?? _refreshToken;
+        final expiry = DateTime.now().add(Duration(seconds: data['expires_in'] ?? 3600));
+        
+        await saveTokens(newAccessToken, newRefreshToken, expiry);
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Error refreshing token: $e');
+    }
+    return false;
+  }
+
+  // HTTP Methods
+  Future<ApiResponse> get(String endpoint, {Map<String, String>? queryParams, bool requireAuth = true}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
+    if (!requireAuth) {
+      // Make unauthenticated request
+      return await _makeUnauthenticatedRequest('GET', endpoint, queryParams: queryParams);
+    }
+
+    // Check auth
+    if (isAuthenticated && !_isTokenValid()) {
+      final refreshed = await _refreshAccessToken();
+      if (!refreshed) {
+        return ApiResponse.error('Authentication expired. Please login again.');
+      }
+    }
+
+    return await _makeRequest('GET', endpoint, queryParams: queryParams);
+  }
+
+  Future<ApiResponse> post(String endpoint, {Map<String, dynamic>? body, Map<String, String>? queryParams, bool requireAuth = true}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
+    if (!requireAuth && queryParams != null && queryParams.containsKey('token')) {
+      // For token-based requests, we can skip auth but still need to pass token
+      // The token will be in query params, so we'll make a special request
+      return await _makeTokenBasedRequest('POST', endpoint, body: body, queryParams: queryParams);
+    }
+    return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams);
+  }
+
+  Future<ApiResponse> put(String endpoint, {Map<String, dynamic>? body, Map<String, String>? queryParams}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+    return await _makeRequest('PUT', endpoint, body: body, queryParams: queryParams);
+  }
+
+  Future<ApiResponse> delete(String endpoint, {Map<String, String>? queryParams}) async {
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+    return await _makeRequest('DELETE', endpoint, queryParams: queryParams);
+  }
+
+  // Multipart file upload method
+  Future<ApiResponse> uploadFile(
+    String endpoint, 
+    String filePath, 
+    String fileName, 
+    String fileType, 
+    {
+      Map<String, String>? fields,
+      List<int>? fileBytes,
+    }
+  ) async {
+    try {
+      // Check if token needs refresh
+      if (_accessToken != null && !_isTokenValid()) {
+        final refreshed = await _refreshAccessToken();
+        if (!refreshed) {
+          await clearTokens();
+          return ApiResponse.error('Authentication expired. Please login again.');
+        }
+      }
+
+      // Build URL
+      final String url = '$_baseUrlWithVersion$endpoint';
+
+      // Create multipart request
+      final request = http.MultipartRequest('POST', Uri.parse(url));
+
+      // Add authorization header
+      if (_accessToken != null) {
+        request.headers['Authorization'] = 'Bearer $_accessToken';
+      }
+
+      // Add file
+      if (fileBytes != null) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: fileName,
+        ));
+      } else {
+        request.files.add(await http.MultipartFile.fromPath(
+          'file',
+          filePath,
+          filename: fileName,
+        ));
+      }
+
+      // Add additional fields
+      if (fields != null) {
+        fields.forEach((key, value) {
+          request.fields[key] = value;
+        });
+      }
+
+      // Add file type field
+      request.fields['fileType'] = fileType;
+
+      // Send request
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+
+      // Convert to regular response
+      final httpResponse = http.Response(responseBody, response.statusCode);
+      return _handleResponse(httpResponse);
+    } on SocketException {
+      return ApiResponse.error('No internet connection. Please check your network.');
+    } on HttpException catch (e) {
+      return ApiResponse.error('HTTP error: ${e.message}');
+    } catch (e) {
+      debugPrint('File upload error: $e');
+      return ApiResponse.error('An unexpected error occurred during file upload: $e');
+    }
+  }
+
+  Future<ApiResponse> _makeRequest(
+    String method,
+    String endpoint, {
+    Map<String, dynamic>? body,
+    Map<String, String>? queryParams,
+  }) async {
+    try {
+      // Check if token needs refresh
+      if (_accessToken != null && !_isTokenValid()) {
+        final refreshed = await _refreshAccessToken();
+        if (!refreshed) {
+          await clearTokens();
+          return ApiResponse.error('Authentication expired. Please login again.');
+        }
+      }
+
+      // Build URL
+      String url = '$_baseUrlWithVersion$endpoint';
+      if (queryParams != null && queryParams.isNotEmpty) {
+        final uri = Uri.parse(url);
+        url = uri.replace(queryParameters: queryParams).toString();
+      }
+
+      // Prepare headers
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+
+      if (_accessToken != null) {
+        headers['Authorization'] = 'Bearer $_accessToken';
+      }
+
+      // Make request
+      http.Response response;
+      switch (method.toUpperCase()) {
+        case 'GET':
+          response = await http.get(Uri.parse(url), headers: headers).timeout(_timeout);
+          break;
+        case 'POST':
+          response = await http.post(
+            Uri.parse(url),
+            headers: headers,
+            body: body != null ? jsonEncode(body) : null,
+          ).timeout(_timeout);
+          break;
+        case 'PUT':
+          response = await http.put(
+            Uri.parse(url),
+            headers: headers,
+            body: body != null ? jsonEncode(body) : null,
+          ).timeout(_timeout);
+          break;
+        case 'DELETE':
+          response = await http.delete(Uri.parse(url), headers: headers).timeout(_timeout);
+          break;
+        default:
+          throw Exception('Unsupported HTTP method: $method');
+      }
+
+      return _handleResponse(response);
+    } on SocketException {
+      return ApiResponse.error('No internet connection. Please check your network.');
+    } on HttpException catch (e) {
+      return ApiResponse.error('HTTP error: ${e.message}');
+    } catch (e) {
+      debugPrint('API request error: $e');
+      return ApiResponse.error('An unexpected error occurred: $e');
+    }
+  }
+
+  Future<ApiResponse> _makeUnauthenticatedRequest(
+    String method,
+    String endpoint, {
+    Map<String, String>? queryParams,
+  }) async {
+    try {
+      // Build URL
+      String url = '$_baseUrlWithVersion$endpoint';
+      if (queryParams != null && queryParams.isNotEmpty) {
+        final uri = Uri.parse(url);
+        url = uri.replace(queryParameters: queryParams).toString();
+      }
+
+      // Prepare headers (no auth)
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+
+      // Make request
+      http.Response response;
+      switch (method.toUpperCase()) {
+        case 'GET':
+          response = await http.get(Uri.parse(url), headers: headers).timeout(_timeout);
+          break;
+        default:
+          throw Exception('Unsupported HTTP method for unauthenticated request: $method');
+      }
+
+      return _handleResponse(response);
+    } on SocketException {
+      return ApiResponse.error('No internet connection. Please check your network.');
+    } on HttpException catch (e) {
+      return ApiResponse.error('HTTP error: ${e.message}');
+    } catch (e) {
+      debugPrint('Unauthenticated API request error: $e');
+      return ApiResponse.error('An unexpected error occurred: $e');
+    }
+  }
+
+  Future<ApiResponse> _makeTokenBasedRequest(
+    String method,
+    String endpoint, {
+    Map<String, dynamic>? body,
+    Map<String, String>? queryParams,
+  }) async {
+    try {
+      // Build URL
+      String url = '$_baseUrlWithVersion$endpoint';
+      if (queryParams != null && queryParams.isNotEmpty) {
+        final uri = Uri.parse(url);
+        url = uri.replace(queryParameters: queryParams).toString();
+      }
+
+      // Prepare headers (include token in header if present in query)
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      
+      // If token is in query params, also add it to header for backend compatibility
+      if (queryParams != null && queryParams.containsKey('token')) {
+        headers['x-review-token'] = queryParams['token']!;
+      }
+
+      // Make request
+      http.Response response;
+      switch (method.toUpperCase()) {
+        case 'POST':
+          response = await http.post(
+            Uri.parse(url),
+            headers: headers,
+            body: body != null ? jsonEncode(body) : null,
+          ).timeout(_timeout);
+          break;
+        default:
+          throw Exception('Unsupported HTTP method for token-based request: $method');
+      }
+
+      return _handleResponse(response);
+    } on SocketException {
+      return ApiResponse.error('No internet connection. Please check your network.');
+    } on HttpException catch (e) {
+      return ApiResponse.error('HTTP error: ${e.message}');
+    } catch (e) {
+      debugPrint('Token-based API request error: $e');
+      return ApiResponse.error('An unexpected error occurred: $e');
+    }
+  }
+
+  Future<ApiResponse> uploadFileBytes(
+    String endpoint, {
+    required List<int> fileBytes,
+    required String filename,
+    String fileField = 'file',
+    Map<String, String>? fields,
+  }) async {
+    // Check auth
+    if (isAuthenticated && !_isTokenValid()) {
+      final refreshed = await _refreshAccessToken();
+      if (!refreshed) {
+        return ApiResponse.error('Authentication expired. Please login again.');
+      }
+    }
+
+    try {
+      final uri = Uri.parse('$_baseUrlWithVersion$endpoint');
+      final request = http.MultipartRequest('POST', uri);
+
+      // Auth header
+      if (_accessToken != null) {
+        request.headers['Authorization'] = 'Bearer $_accessToken';
+      }
+
+      // Add fields
+      if (fields != null) {
+        request.fields.addAll(fields);
+      }
+
+      // Add file
+      request.files.add(http.MultipartFile.fromBytes(
+        fileField,
+        fileBytes,
+        filename: filename,
+      ));
+
+      final streamedResponse = await request.send().timeout(_timeout);
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      return _handleResponse(response);
+    } catch (e) {
+      debugPrint('Upload error: $e');
+      return ApiResponse.error('Upload failed: $e');
+    }
+  }
+
+  ApiResponse _handleResponse(http.Response response) {
+    try {
+      final rawBody = response.body;
+      if (response.statusCode == 204 || rawBody.trim().isEmpty) {
+        return ApiResponse.success(null, response.statusCode);
+      }
+      // Check if response is HTML (error pages) instead of JSON
+      final contentType = response.headers['content-type'] ?? '';
+      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
+        // Server returned HTML (likely a 404 or error page)
+        String errorMsg = 'Server returned HTML instead of JSON';
+        if (response.statusCode == 404) {
+          errorMsg = 'Endpoint not found (404). Check the API endpoint path.';
+        } else if (response.statusCode >= 500) {
+          errorMsg = 'Server error (${response.statusCode})';
+        }
+        return ApiResponse.error(errorMsg, response.statusCode);
+      }
+      
+      final responseBody = jsonDecode(response.body);
+      
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (responseBody == null) {
+          return ApiResponse.success(null, response.statusCode);
+        }
+
+        // Support top-level lists (e.g., files, users collections)
+        if (responseBody is List) {
+          return ApiResponse.success(responseBody, response.statusCode);
+        }
+
+        // From here on, raw must be a Map-like structure
+        if (responseBody is! Map) {
+          return ApiResponse.success(responseBody, response.statusCode);
+        }
+
+        final Map<String, dynamic> body = responseBody as Map<String, dynamic>;
+
+        // 1) Standard format: { success: true, data: ... }
+        final bool isStandardFormat = body['success'] == true && body.containsKey('data');
+        // 2) Auth format: { token: '...', user: {...} }
+        final bool isAuthFormat = body.containsKey('token') || body.containsKey('user');
+
+        if (isStandardFormat) {
+          final data = body['data'];
+          return ApiResponse.success(data, response.statusCode);
+        }
+
+        if (isAuthFormat) {
+          return ApiResponse.success(body, response.statusCode);
+        }
+
+        // 3) Fallback: return entire map as data
+        return ApiResponse.success(body, response.statusCode);
+      } else {
+        if (responseBody is Map) {
+          final Map<String, dynamic> body = responseBody as Map<String, dynamic>;
+          String errorMessage = body['message']?.toString() ?? body['error']?.toString() ?? 'Request failed';
+          if (body.containsKey('details')) {
+            errorMessage += ': ${body['details']}';
+          }
+          return ApiResponse.error(errorMessage, response.statusCode);
+        }
+        return ApiResponse.error('Request failed', response.statusCode);
+      }
+    } catch (e) {
+      // If JSON parsing fails, provide a more helpful error message
+      String errorMsg = 'Invalid response format: $e';
+      if (response.body.trim().startsWith('<!DOCTYPE')) {
+        errorMsg = 'Server returned HTML instead of JSON. Check if the endpoint exists.';
+      }
+      return ApiResponse.error(errorMsg, response.statusCode);
+    }
+  }
+
+  // Authentication methods
+  Future<ApiResponse> login(String email, String password) async {
+
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
+    // Retry a limited number of times for transient startup/network failures.
+    ApiResponse response = ApiResponse.error('Login request not sent');
+    const maxAttempts = 2;
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      debugPrint('🔐 Login attempt $attempt for: $email');
+
+      response = await post(
+        '/auth/login',
+        body: {
+          'email': email,
+          'password': password,
+        },
+      );
+
+      // Any HTTP response (2xx/4xx/5xx) should stop retrying immediately.
+      if (response.statusCode != 0) {
+        break;
+      }
+
+      // statusCode == 0 means transport-level failure (e.g. Failed to fetch).
+      if (attempt < maxAttempts) {
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+
+    if (response.isSuccess && response.data != null) {
+      final data = response.data!;
+      final accessToken = data['token'] ?? data['access_token'];
+      final refreshToken = data['refresh_token'] ?? '';
+      final expiresIn = data['expires_in'] ?? 86400;
+      final expiry = DateTime.now().add(Duration(seconds: expiresIn));
+      
+      await saveTokens(accessToken, refreshToken, expiry);
+    }
+
+    return response;
+  }
+
+  Future<ApiResponse> register(String email, String password, String name, String role) async {
+    // Parse the full name into firstName and lastName for the backend
+    final nameParts = name.trim().split(' ');
+    final firstName = nameParts.isNotEmpty ? nameParts[0] : '';
+    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+    final response = await post('/auth/register', body: {
+      'email': email,
+      'password': password,
+      'firstName': firstName,
+      'lastName': lastName,
+      'role': role,
+    },);
+
+    // Save tokens if registration is successful
+    if (response.isSuccess && response.data != null) {
+      final data = response.data!;
+      final accessToken = data['token']; // Backend returns 'token' in registration
+      if (accessToken != null) {
+        final refreshToken = data['refresh_token'] ?? '';
+        final expiresIn = data['expires_in'] ?? 86400; // Default to 24 hours
+        final expiry = DateTime.now().add(Duration(seconds: expiresIn));
+        
+        await saveTokens(accessToken, refreshToken, expiry);
+      }
+    }
+
+    return response;
+  }
+
+  Future<ApiResponse> logout() async {
+
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
+    final response = await post('/auth/logout');
+    await clearTokens();
+    return response;
+  }
+
+  Future<ApiResponse> getCurrentUser() async {
+
+    // BYPASSES DISABLED: Backend is now working correctly on Render
+    // The deployed app should use real API calls to backend-532p.onrender.com
+
+    // Don't call /auth/me if we don't have an access token
+    if (_accessToken == null) {
+      return ApiResponse.error('No access token available. Please login first.');
+    }
+
+    return await get('/auth/me');
+  }
+
+  Future<ApiResponse> updateProfile(Map<String, dynamic> updates) async {
+    return await put('/auth/profile', body: updates);
+  }
+
+  Future<ApiResponse> changePassword(String currentPassword, String newPassword) async {
+    return await post('/auth/change-password', body: {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    },);
+  }
+
+  Future<ApiResponse> forgotPassword(String email) async {
+    return await post('/auth/forgot-password', body: {
+      'email': email,
+    },);
+  }
+
+  Future<ApiResponse> resetPassword(String token, String newPassword) async {
+    return await post('/auth/reset-password', body: {
+      'token': token,
+      'password': newPassword,
+    },);
+  }
+
+}
+
+class ApiResponse {
+  final bool isSuccess;
+  final dynamic data; // Changed to dynamic to support both Map and List
+  final String? error;
+  final int statusCode;
+
+  ApiResponse._({
+    required this.isSuccess,
+    this.data,
+    this.error,
+    required this.statusCode,
+  });
+
+  factory ApiResponse.success(dynamic data, int statusCode) {
+    return ApiResponse._(
+      isSuccess: true,
+      data: data,
+      statusCode: statusCode,
+    );
+  }
+
+  factory ApiResponse.error(String error, [int statusCode = 0]) {
+    return ApiResponse._(
+      isSuccess: false,
+      error: error,
+      statusCode: statusCode,
+    );
+  }
+
+  String? get deliverableId => null;
+
+  @override
+  String toString() {
+    return 'ApiResponse(isSuccess: $isSuccess, data: $data, error: $error, statusCode: $statusCode)';
+  }
+}

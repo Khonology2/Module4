@@ -1,6 +1,48 @@
 const express = require('express');
 const router = express.Router();
-const { Sprint, Project } = require('../models');
+const { Sprint, Project, Deliverable, User } = require('../models');
+const { authenticateToken, requireRole } = require('../middleware/auth');
+const { carryOverOverdueDeliverablesForProject } = require('../services/sprintCarryOverService');
+const sprintController = require('../controllers/sprintController');
+
+function normalizeStatus(v) {
+  return String(v || '').toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+function buildUserDisplayName(u) {
+  if (!u) return null;
+  const name = (u.name || '').toString().trim();
+  if (name) return name;
+  const first = (u.first_name || u.firstName || '').toString().trim();
+  const last = (u.last_name || u.lastName || '').toString().trim();
+  const full = `${first} ${last}`.trim();
+  if (full) return full;
+  const email = (u.email || '').toString().trim();
+  return email || null;
+}
+
+function deliverableProgressPercent(statusRaw) {
+  const s = normalizeStatus(statusRaw);
+  if (s === 'signedoff' || s === 'approved' || s === 'completed' || s === 'done') return 100;
+  if (s === 'inreview' || s === 'submitted') return 80;
+  if (s === 'changerequested') return 70;
+  if (s === 'rejected') return 50;
+  if (s === 'inprogress' || s === 'active') return 50;
+  return 0;
+}
+
+function deliverableStatusCategory(deliverable, now) {
+  const s = normalizeStatus(deliverable.status);
+  const progress = deliverableProgressPercent(deliverable.status);
+  const due = deliverable.due_date ? new Date(deliverable.due_date) : null;
+  const overdue = due != null && due.getTime() < now.getTime() && progress < 100;
+  const blocked = s === 'changerequested' || s === 'rejected';
+  if (overdue) return 'overdue';
+  if (progress >= 100) return 'completed';
+  if (blocked) return 'blocked';
+  if (progress <= 0) return 'not_started';
+  return 'in_progress';
+}
 
 function normalizeSprintData(body) {
   const d = {};
@@ -81,6 +123,14 @@ router.get('/', async (req, res) => {
     const include = [{ model: Project, as: 'project', attributes: ['id', 'name', 'key'] }];
     if (!projectId && projectKey) include[0].where = { key: projectKey };
 
+    if (projectId) {
+      try {
+        await carryOverOverdueDeliverablesForProject(projectId);
+      } catch (e) {
+        console.error('Error carrying over overdue deliverables:', e);
+      }
+    }
+
     const sprints = await Sprint.findAll({
       offset: parseInt(skip),
       limit: parseInt(limit),
@@ -102,6 +152,23 @@ router.get('/', async (req, res) => {
       stack: error.stack
     });
   }
+});
+
+/**
+ * @route GET /api/sprints/:id/report
+ * @desc Get a sprint-based report (deliverables nested under sprint)
+ * @access Public
+ */
+router.get('/:id/report', async (req, res) => {
+  return sprintController.getSprintReport(req, res);
+});
+
+router.get('/:id/ai-report', async (req, res) => {
+  return sprintController.getAiSprintReport(req, res);
+});
+
+router.post('/:id/ai-chat', async (req, res) => {
+  return sprintController.postAiSprintChat(req, res);
 });
 
 /**
@@ -146,7 +213,7 @@ router.get('/:id', async (req, res) => {
  * @desc Create a new sprint
  * @access Private
  */
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, requireRole(['deliveryLead', 'systemAdmin', 'admin']), async (req, res) => {
   try {
     const sprintData = normalizeSprintData(req.body);
     const sprint = await Sprint.create(sprintData);
@@ -169,7 +236,7 @@ router.post('/', async (req, res) => {
  * @desc Update an existing sprint
  * @access Private
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = normalizeSprintData(req.body);
@@ -178,6 +245,23 @@ router.put('/:id', async (req, res) => {
     
     if (!sprint) {
       return res.status(404).json({ error: 'Sprint not found' });
+    }
+
+    const normalizeRole = (r) => String(r || '').toLowerCase().replace(/[\s_-]+/g, '');
+    const role = normalizeRole(req.user && req.user.role);
+    const isPrivileged = ['admin', 'systemadmin', 'deliverylead'].includes(role);
+    let isProjectOwner = false;
+    try {
+      const pid = sprint.project_id;
+      if (pid) {
+        const project = await Project.findByPk(pid);
+        if (project && project.owner_id && req.user && req.user.id) {
+          isProjectOwner = String(project.owner_id) === String(req.user.id);
+        }
+      }
+    } catch (_) {}
+    if (!isPrivileged && !isProjectOwner) {
+      return res.status(403).json({ error: 'Not authorized to update this sprint' });
     }
     
     await sprint.update(updateData);
@@ -190,11 +274,54 @@ router.put('/:id', async (req, res) => {
 });
 
 /**
+ * @route PUT /api/sprints/:id/status
+ * @desc Update sprint status (compatibility endpoint)
+ * @access Private
+ */
+router.put('/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const nextStatus = req.body?.status ?? req.body?.state ?? req.body?.newStatus;
+    if (nextStatus == null || String(nextStatus).trim() === '') {
+      return res.status(400).json({ error: 'status is required' });
+    }
+
+    const sprint = await Sprint.findByPk(id);
+    if (!sprint) {
+      return res.status(404).json({ error: 'Sprint not found' });
+    }
+
+    const normalizeRole = (r) => String(r || '').toLowerCase().replace(/[\s_-]+/g, '');
+    const role = normalizeRole(req.user && req.user.role);
+    const isPrivileged = ['admin', 'systemadmin', 'deliverylead'].includes(role);
+    let isProjectOwner = false;
+    try {
+      const pid = sprint.project_id;
+      if (pid) {
+        const project = await Project.findByPk(pid);
+        if (project && project.owner_id && req.user && req.user.id) {
+          isProjectOwner = String(project.owner_id) === String(req.user.id);
+        }
+      }
+    } catch (_) {}
+    if (!isPrivileged && !isProjectOwner) {
+      return res.status(403).json({ error: 'Not authorized to update sprint status' });
+    }
+
+    await sprint.update({ status: nextStatus });
+    res.json({ success: true, data: sprint });
+  } catch (error) {
+    console.error('Error updating sprint status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * @route DELETE /api/sprints/:id
  * @desc Delete a sprint
  * @access Private
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole(['deliveryLead', 'systemAdmin', 'admin']), async (req, res) => {
   try {
     const { id } = req.params;
     

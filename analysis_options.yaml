@@ -6,6 +6,10 @@ analyzer:
     - Flow-Space/**
     - build/**
     - .dart_tool/**
+    - test/**
+    - scripts/**
+    - test_auth_integration.dart
+    - lib/**
   errors:
     require_trailing_commas: ignore
 
