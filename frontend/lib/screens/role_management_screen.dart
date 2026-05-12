@@ -293,16 +293,34 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        childAspectRatio: 2.0,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-      ),
-      itemCount: filteredUsers.length,
-      itemBuilder: (context, index) => _buildUserCard(filteredUsers[index]),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = width >= 1400
+            ? 4
+            : width >= 1100
+                ? 3
+                : width >= 760
+                    ? 2
+                    : 1;
+        final aspectRatio = columns == 1
+            ? 3.4
+            : columns == 2
+                ? 2.4
+                : 2.0;
+
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            childAspectRatio: aspectRatio,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+          ),
+          itemCount: filteredUsers.length,
+          itemBuilder: (context, index) => _buildUserCard(filteredUsers[index]),
+        );
+      },
     );
   }
 
@@ -344,6 +362,13 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                   width: 28,
                   height: 28,
                   fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(
+                      Icons.person,
+                      size: 18,
+                      color: Color(0xFFB01313),
+                    );
+                  },
                 ),
               ),
             ),
@@ -361,6 +386,8 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
                       ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -372,7 +399,9 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 6),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -380,23 +409,25 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                         color: user.roleColor.withValues(alpha: 0.22),
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(user.roleIcon, size: 13, color: user.roleColor),
-                          const SizedBox(width: 5),
-                          Text(
-                            user.roleDisplayName,
-                            style: TextStyle(
-                              color: user.roleColor,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(user.roleIcon, size: 13, color: user.roleColor),
+                            const SizedBox(width: 5),
+                            Text(
+                              user.roleDisplayName,
+                              style: TextStyle(
+                                color: user.roleColor,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(

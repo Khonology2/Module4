@@ -160,14 +160,21 @@ router.get('/:id/preview', authenticateToken, async (req, res) => {
     const file = files.find(f => f.filename === req.params.id);
     if (!file) return res.status(404).json({ success: false, error: 'Document not found' });
     const ext = path.extname(file.filename).replace('.', '').toLowerCase();
-    if (['txt', 'md', 'json', 'xml', 'csv'].includes(ext)) {
+    if (['txt', 'md', 'json', 'xml', 'csv', 'log', 'yaml', 'yml', 'ini', 'conf', 'properties'].includes(ext)) {
       const rel = file.url.replace(fileUploadService.baseUrl, '').replace(/^\//, '');
       const filePath = path.resolve(fileUploadService.storageBasePath, rel || file.filename);
       if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'File not found' });
       const content = fs.readFileSync(filePath, 'utf8');
       return res.json({ success: true, data: { previewContent: content } });
     }
-    return res.json({ success: true, data: { downloadUrl: file.url } });
+    return res.json({
+      success: true,
+      data: {
+        downloadUrl: file.url,
+        previewAvailable: false,
+        message: 'Inline preview is not available for this file type. Open or download the file instead.',
+      },
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message || 'Failed to generate preview' });
   }

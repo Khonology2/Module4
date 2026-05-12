@@ -19,10 +19,12 @@ import 'report_editor_screen.dart';
 
 class ReportViewScreen extends ConsumerStatefulWidget {
   final String reportId;
+  final bool showPostSubmitBanner;
   
   const ReportViewScreen({
     super.key,
     required this.reportId,
+    this.showPostSubmitBanner = false,
   });
 
   @override
@@ -40,6 +42,17 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
   void initState() {
     super.initState();
     _loadReportData();
+    if (widget.showPostSubmitBanner) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Report submitted successfully and is ready for review.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      });
+    }
   }
 
   Future<Deliverable?> _enrichDeliverableWithSubmittedByName({

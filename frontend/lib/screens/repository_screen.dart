@@ -203,13 +203,6 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
       if (result != null && result.files.isNotEmpty) {
         final pickedFile = result.files.first;
 
-        // Check for JSON file
-        final fileName = pickedFile.name.toLowerCase();
-        if (fileName.endsWith('.json')) {
-          _showErrorSnackBar('JSON files cannot be uploaded.');
-          return;
-        }
-
         // For web platform, we need to handle the file differently
         if (kIsWeb) {
           // On web, we can't create a File from path, so we'll handle it differently

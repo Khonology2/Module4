@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../models/sign_off_report.dart';
@@ -1221,10 +1223,32 @@ class _ReportEditorScreenState extends ConsumerState<ReportEditorScreen> {
 
   /// Convert typed signature to base64 image format
   Future<String> _convertTypedSignature(String typedText) async {
-    // For now, we'll convert the typed text to a simple base64 format
-    // In a production app, you might want to render this as an actual image
-    final bytes = utf8.encode(typedText);
-    return 'data:text/plain;base64,${base64Encode(bytes)}';
+    final cleaned = typedText.trim().isEmpty ? 'Signature' : typedText.trim();
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const padding = 24.0;
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: cleaned,
+        style: const TextStyle(
+          color: Colors.black87,
+          fontSize: 42,
+          fontStyle: FontStyle.italic,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final width = (textPainter.width + (padding * 2)).clamp(280.0, 700.0);
+    final height = (textPainter.height + (padding * 2)).clamp(120.0, 220.0);
+
+    textPainter.paint(canvas, const Offset(padding, padding));
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(width.round(), height.round());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final bytes = byteData?.buffer.asUint8List() ?? Uint8List(0);
+    return 'data:image/png;base64,${base64Encode(bytes)}';
   }
 
   /// Save signature locally when API is unavailable

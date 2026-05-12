@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:open_file/open_file.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../models/repository_file.dart';
 import '../services/document_service.dart';
 import '../services/auth_service.dart';
 import '../theme/flownet_theme.dart';
 import '../config/api_config.dart';
+import '../config/environment.dart';
 
 // Conditional imports for web PDF viewing
 import 'document_preview_widget_stub.dart'
@@ -70,7 +72,7 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
   }
 
   Future<void> _loadPreview() async {
-    if (!_canPreview()) return;
+    if (!_canInlinePreview()) return;
 
     // Track document view
     await widget.documentService.trackDocumentView(widget.document.id);
@@ -84,8 +86,7 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
     try {
       final response = await widget.documentService.getDocumentPreview(widget.document.id);
       if (response.isSuccess) {
-        // For web PDFs, fetch and prepare for preview
-        if (kIsWeb && widget.document.fileType.toLowerCase() == 'pdf') {
+        if (widget.document.fileType.toLowerCase() == 'pdf') {
           await _buildPdfUrl(response.data);
         }
         setState(() {
@@ -108,15 +109,15 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
 
   Future<void> _buildPdfUrl(Map<String, dynamic>? data) async {
     try {
-      // For web, we need to fetch the PDF and create a blob URL
-      // This ensures authentication works properly
       if (kIsWeb) {
         await _fetchPdfForPreview();
       } else {
-        // For mobile/desktop, use file path
-        final downloadUrl = data?['downloadUrl'] ?? 
-            ApiConfig.getFullUrl('/documents/${widget.document.id}/download');
-        _pdfUrl = downloadUrl;
+        final response = await widget.documentService.downloadDocument(widget.document.id);
+        if (response.isSuccess) {
+          _pdfUrl = response.data?['filePath']?.toString();
+        } else {
+          _error = response.error ?? 'Failed to prepare PDF preview';
+        }
       }
     } catch (e) {
       setState(() {
@@ -167,9 +168,24 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
   }
 
   bool _canPreview() {
-    final supportedTypes = ['pdf', 'txt', 'md', 'json', 'xml', 'csv'];
+    final supportedTypes = [
+      'pdf',
+      'txt',
+      'md',
+      'json',
+      'xml',
+      'csv',
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'bmp',
+    ];
     return supportedTypes.contains(widget.document.fileType.toLowerCase());
   }
+
+  bool _canInlinePreview() => _canPreview();
 
   Widget _buildPreviewContent() {
     if (_isLoading) {
@@ -222,7 +238,7 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
       );
     }
 
-    if (!_canPreview()) {
+    if (!_canInlinePreview()) {
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -234,7 +250,7 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Preview not available',
+                'Inline preview not available',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -243,11 +259,12 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'This file type cannot be previewed',
+                'This file type is not rendered inside the app. Use Open or Download below.',
                 style: TextStyle(
                   fontSize: 14,
                   color: FlownetColors.coolGray,
                 ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -267,6 +284,13 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
       case 'xml':
       case 'csv':
         return _buildTextPreview();
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'webp':
+      case 'bmp':
+        return _buildImagePreview();
       default:
         return _buildUnsupportedPreview();
     }
@@ -320,7 +344,7 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
           borderRadius: BorderRadius.circular(8),
           child: widget.document.filePath != null
               ? PDFView(
-                  filePath: widget.document.filePath!,
+                  filePath: _pdfUrl ?? widget.document.filePath!,
                   enableSwipe: true,
                   swipeHorizontal: false,
                   autoSpacing: false,
@@ -340,11 +364,51 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
                   },
                 )
               : const Center(
-                  child: Text('File path not available'),
+                  child: Text('Preparing PDF preview...'),
                 ),
         ),
       );
     }
+  }
+
+  Widget _buildImagePreview() {
+    final imageUrl = _resolveDocumentUrl();
+    if (imageUrl == null) {
+      return _buildUnsupportedPreview();
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: FlownetColors.coolGray),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: InteractiveViewer(
+          child: Image.network(
+            imageUrl,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => const Center(
+              child: Text(
+                'Image preview unavailable. Use Open or Download.',
+                style: TextStyle(color: FlownetColors.coolGray),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String? _resolveDocumentUrl() {
+    final filePath = widget.document.filePath;
+    if (filePath != null && filePath.trim().isNotEmpty) {
+      return Uri.parse(Environment.apiBaseUrl).resolve(filePath).toString();
+    }
+    return Uri.parse(Environment.apiBaseUrl)
+        .resolve('/documents/${widget.document.id}/download')
+        .toString();
   }
 
   Widget _buildTextPreview() {
@@ -384,18 +448,22 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
             color: FlownetColors.coolGray,
           ),
           const SizedBox(height: 16),
-          Text(
-            'Preview not supported',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: FlownetColors.charcoalBlack).copyWith(
+          const Text(
+            'Preview not supported in app',
+            style: TextStyle(
+              fontSize: 18, 
+              fontWeight: FontWeight.bold, 
               color: FlownetColors.coolGray,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'This file type cannot be previewed',
-            style: const TextStyle(fontSize: 14, color: FlownetColors.coolGray).copyWith(
+            'Use Open or Download to view this ${widget.document.fileType.toUpperCase()} file.',
+            style: const TextStyle(
+              fontSize: 14, 
               color: FlownetColors.coolGray,
             ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -588,22 +656,35 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
   Future<void> _openDocument() async {
     try {
       if (kIsWeb) {
-        // For web, trigger download which will open in browser
-        await _downloadDocument();
+        final target = _resolveDocumentUrl();
+        if (target == null) {
+          throw Exception('Document URL is unavailable');
+        }
+        final launched = await launchUrl(
+          Uri.parse(target),
+          mode: LaunchMode.platformDefault,
+          webOnlyWindowName: '_blank',
+        );
+        if (!launched) {
+          await _downloadDocument();
+        }
       } else {
-        // For mobile/desktop, try to open with system default app
-        if (widget.document.filePath != null) {
-          final result = await OpenFile.open(widget.document.filePath!);
-          if (result.type != ResultType.done) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Cannot open file: ${result.message}'),
-                  backgroundColor: FlownetColors.crimsonRed,
-                ),
-              );
-            }
-          }
+        final response = await widget.documentService.downloadDocument(widget.document.id);
+        if (!response.isSuccess) {
+          throw Exception(response.error ?? 'Failed to download file for opening');
+        }
+        final localPath = response.data?['filePath']?.toString();
+        if (localPath == null || localPath.isEmpty) {
+          throw Exception('Downloaded file path is unavailable');
+        }
+        final result = await OpenFile.open(localPath);
+        if (result.type != ResultType.done && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Cannot open file: ${result.message}'),
+              backgroundColor: FlownetColors.crimsonRed,
+            ),
+          );
         }
       }
     } catch (e) {

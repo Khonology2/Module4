@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/sign_off_report.dart';
 import 'api_client.dart';
+import 'profile_service.dart';
 import 'package:universal_html/html.dart' as html;
 
 // Platform-specific imports (only import when not on web)
@@ -15,6 +16,7 @@ import 'package:path_provider/path_provider.dart' if (dart.library.html) '../ser
 
 class _BrandingAssets {
   final pw.ImageProvider? logo;
+  final pw.ImageProvider? wordmark;
   final pw.ImageProvider? headerBackground;
   final pw.ImageProvider? sprintIcon;
   final pw.ImageProvider? footerIcon1;
@@ -23,12 +25,20 @@ class _BrandingAssets {
 
   const _BrandingAssets({
     this.logo,
+    this.wordmark,
     this.headerBackground,
     this.sprintIcon,
     this.footerIcon1,
     this.footerIcon2,
     this.footerIcon3,
   });
+}
+
+class _ParsedSignaturePayload {
+  final Uint8List? imageBytes;
+  final String? typedText;
+
+  const _ParsedSignaturePayload({this.imageBytes, this.typedText});
 }
 
 class PdfBytesResult {
@@ -55,7 +65,12 @@ class ReportExportService {
   static const PdfColor _lightRedBar = PdfColor(242 / 255, 204 / 255, 204 / 255);
   static const PdfColor _brandRed = PdfColor(0.78, 0.04, 0.04);
   static const PdfColor _ink = PdfColors.black;
-
+  static const double _reportSideInset = 40;
+  static const double _reportColumnGap = 16;
+  static final double _reportContentWidth =
+      PdfPageFormat.a4.width - (_reportSideInset * 2);
+  static final double _reportHalfColumnWidth =
+      (_reportContentWidth - _reportColumnGap) / 2;
   static Future<pw.ThemeData?>? _cachedThemeFuture;
   static Future<_BrandingAssets>? _cachedBrandingFuture;
   static Future<_BrandingAssets>? _cachedBrandingFastFuture;
@@ -132,6 +147,7 @@ class ReportExportService {
 
   Future<_BrandingAssets> _loadBrandingAssetsUncached() async {
     pw.ImageProvider? logo;
+    pw.ImageProvider? wordmark;
     pw.ImageProvider? headerBackground;
     pw.ImageProvider? sprintIcon;
     pw.ImageProvider? footerIcon1;
@@ -139,11 +155,16 @@ class ReportExportService {
     pw.ImageProvider? footerIcon3;
 
     try {
-      final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
+      final bytes = (await rootBundle.load('assets/Icons/khonology_name_icon.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) wordmark = pw.MemoryImage(bytes);
     } catch (_) {}
     try {
-      final bytes = (await rootBundle.load('assets/Icons/Chatbot_BG.png')).buffer.asUint8List();
+      final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
+      wordmark ??= logo;
+    } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/Icons/khono_bg.png')).buffer.asUint8List();
       if (bytes.isNotEmpty) headerBackground = pw.MemoryImage(bytes);
     } catch (_) {}
     try {
@@ -151,8 +172,12 @@ class ReportExportService {
       if (bytes.isNotEmpty) headerBackground ??= pw.MemoryImage(bytes);
     } catch (_) {}
     try {
-      final bytes = (await rootBundle.load('assets/Icons/Sprints console active.png.png')).buffer.asUint8List();
+      final bytes = (await rootBundle.load('assets/Icons/Sprints console inactive.png.png')).buffer.asUint8List();
       if (bytes.isNotEmpty) sprintIcon = pw.MemoryImage(bytes);
+    } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/Icons/Sprints console active.png.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) sprintIcon ??= pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/Sprints.png')).buffer.asUint8List();
@@ -166,6 +191,7 @@ class ReportExportService {
 
     return _BrandingAssets(
       logo: logo,
+      wordmark: wordmark,
       headerBackground: headerBackground,
       sprintIcon: sprintIcon,
       footerIcon1: footerIcon1,
@@ -176,16 +202,22 @@ class ReportExportService {
 
   Future<_BrandingAssets> _loadBrandingAssetsFastUncached() async {
     pw.ImageProvider? logo;
+    pw.ImageProvider? wordmark;
     pw.ImageProvider? headerBackground;
     pw.ImageProvider? sprintIcon;
     pw.ImageProvider? footerIcon1;
 
     try {
-      final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
+      final bytes = (await rootBundle.load('assets/Icons/khonology_name_icon.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) wordmark = pw.MemoryImage(bytes);
     } catch (_) {}
     try {
-      final bytes = (await rootBundle.load('assets/Icons/Chatbot_BG.png')).buffer.asUint8List();
+      final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
+      wordmark ??= logo;
+    } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/Icons/khono_bg.png')).buffer.asUint8List();
       if (bytes.isNotEmpty) headerBackground = pw.MemoryImage(bytes);
     } catch (_) {}
     try {
@@ -193,8 +225,12 @@ class ReportExportService {
       if (bytes.isNotEmpty) headerBackground ??= pw.MemoryImage(bytes);
     } catch (_) {}
     try {
-      final bytes = (await rootBundle.load('assets/Icons/Sprints console active.png.png')).buffer.asUint8List();
+      final bytes = (await rootBundle.load('assets/Icons/Sprints console inactive.png.png')).buffer.asUint8List();
       if (bytes.isNotEmpty) sprintIcon = pw.MemoryImage(bytes);
+    } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/Icons/Sprints console active.png.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) sprintIcon ??= pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/Sprints.png')).buffer.asUint8List();
@@ -208,6 +244,7 @@ class ReportExportService {
 
     return _BrandingAssets(
       logo: logo,
+      wordmark: wordmark,
       headerBackground: headerBackground,
       sprintIcon: sprintIcon,
       footerIcon1: footerIcon1,
@@ -360,32 +397,44 @@ class ReportExportService {
   }
 
   Future<void> exportReportAsPDFFromServer(SignOffReport report, {String? filePath}) async {
-    final bytes = await _apiClient.getBytes(
-      '/sign-off-reports/${report.id}/pdf',
-      timeout: const Duration(seconds: 60),
-      headers: const <String, String>{'Accept': 'application/pdf'},
-    );
-    final fileSize = bytes.length;
-    final fileHash = _generateFileHash(bytes);
-    final exportTitle = report.reportTitle.trim().isNotEmpty ? report.reportTitle.trim() : 'Sign-Off Report';
-    final result = PdfBytesResult(
-      bytes: bytes,
-      exportTitle: exportTitle,
-      reportId: report.id,
-      fileSize: fileSize,
-      fileHash: fileHash,
-      reportStatus: report.status.toString(),
-    );
-    await exportPdfBytes(result, filePath: filePath);
+    try {
+      await exportReportAsPDF(report, filePath: filePath, includeSignatures: true);
+    } catch (_) {
+      final bytes = await _apiClient.getBytes(
+        '/sign-off-reports/${report.id}/pdf',
+        timeout: const Duration(seconds: 60),
+        headers: const <String, String>{'Accept': 'application/pdf'},
+      );
+      final fileSize = bytes.length;
+      final fileHash = _generateFileHash(bytes);
+      final exportTitle = report.reportTitle.trim().isNotEmpty ? report.reportTitle.trim() : 'Sign-Off Report';
+      final result = PdfBytesResult(
+        bytes: bytes,
+        exportTitle: exportTitle,
+        reportId: report.id,
+        fileSize: fileSize,
+        fileHash: fileHash,
+        reportStatus: report.status.toString(),
+      );
+      await exportPdfBytes(result, filePath: filePath);
+    }
+  }
+
+  Future<Map<String, dynamic>?> _loadUserProfileForPdf() async {
+    try {
+      final profile = await ProfileService.getUserProfile();
+      return profile.isEmpty ? null : profile;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<PdfBytesResult> buildPdfBytes(SignOffReport report, {bool fast = false, bool includeSignatures = true}) async {
     final hydrateFuture = fast ? _hydrateReportForPdfFast(report) : _hydrateReportForPdf(report);
     final brandingFuture = fast ? _loadBrandingAssetsFast() : _loadBrandingAssets();
     final themeFuture = fast ? Future<pw.ThemeData?>.value(null) : _loadPdfTheme();
-    final signaturesFuture = (!includeSignatures ||
-            fast ||
-            (report.digitalSignature != null && report.digitalSignature!.trim().isNotEmpty))
+    final profileFuture = _loadUserProfileForPdf();
+    final signaturesFuture = (!includeSignatures || fast)
         ? Future<List<Map<String, dynamic>>>.value(const <Map<String, dynamic>>[])
         : _fetchSignatures(report.id);
 
@@ -394,12 +443,18 @@ class ReportExportService {
       signaturesFuture,
       brandingFuture,
       themeFuture,
+      profileFuture,
     ]);
 
     final reportForPdf = results[0] as SignOffReport;
     final signatures = results[1] as List<Map<String, dynamic>>;
     final branding = results[2] as _BrandingAssets;
     final theme = results[3] as pw.ThemeData?;
+    final currentProfile = results[4] as Map<String, dynamic>?;
+    final effectiveSignatures = includeSignatures
+        ? _resolveEffectiveSignatures(reportForPdf, signatures)
+        : const <Map<String, dynamic>>[];
+    final footerSignature = _selectFooterSignature(effectiveSignatures);
 
     final pdf = pw.Document(theme: theme);
     String exportTitle;
@@ -410,9 +465,14 @@ class ReportExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 50),
+          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 88),
           theme: theme,
-          footer: (pw.Context context) => _buildSprintFooter(context, branding),
+          footer: (pw.Context context) => _buildDocumentFooter(
+            context,
+            branding,
+            signature: footerSignature,
+            currentProfile: currentProfile,
+          ),
           build: (pw.Context context) => [
             _buildSprintHeader(
               branding,
@@ -421,8 +481,8 @@ class ReportExportService {
             ),
             ..._buildSprintSignoffBody(
               reportForPdf,
-              signatures: signatures,
-              includeSignatures: includeSignatures,
+              branding: branding,
+              currentProfile: currentProfile,
             ),
           ],
         ),
@@ -432,20 +492,24 @@ class ReportExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 50),
+          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 88),
           theme: theme,
-          footer: (pw.Context context) => _buildSprintFooter(context, branding),
+          footer: (pw.Context context) => _buildDocumentFooter(
+            context,
+            branding,
+            signature: footerSignature,
+            currentProfile: currentProfile,
+          ),
           build: (pw.Context context) => [
             _buildSprintHeader(
               branding,
               title: exportTitle,
               date: _formatDate(reportForPdf.createdAt),
-              reportLabel: 'SIGN-OFF REPORT',
             ),
-            ..._buildManualSignoffBody(
+            ..._buildSprintSignoffBody(
               reportForPdf,
-              signatures: signatures,
-              includeSignatures: includeSignatures,
+              branding: branding,
+              currentProfile: currentProfile,
             ),
           ],
         ),
@@ -585,62 +649,9 @@ class ReportExportService {
   /// Print report
   Future<void> printReport(SignOffReport report) async {
     try {
-      final reportForPdf = await _hydrateReportForPdf(report);
-      final branding = await _loadBrandingAssets();
-      final theme = await _loadPdfTheme();
-      final signatures = (reportForPdf.digitalSignature != null && reportForPdf.digitalSignature!.trim().isNotEmpty)
-          ? const <Map<String, dynamic>>[]
-          : await _fetchSignatures(reportForPdf.id);
-
-      final pdf = pw.Document(theme: theme);
-
-      if (_isSprintSignoffReport(reportForPdf)) {
-        final resolvedTitle = _resolveSprintReportTitle(reportForPdf);
-        pdf.addPage(
-          pw.MultiPage(
-            pageFormat: PdfPageFormat.a4,
-            margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 50),
-            theme: theme,
-            footer: (pw.Context context) => _buildSprintFooter(context, branding),
-            build: (pw.Context context) => [
-              _buildSprintHeader(
-                branding,
-                title: resolvedTitle,
-                date: _formatDate(reportForPdf.createdAt),
-              ),
-              ..._buildSprintSignoffBody(
-                reportForPdf,
-                signatures: signatures,
-              ),
-            ],
-          ),
-        );
-      } else {
-        final title = reportForPdf.reportTitle.trim().isNotEmpty ? reportForPdf.reportTitle.trim() : 'Sign-Off Report';
-        pdf.addPage(
-          pw.MultiPage(
-            pageFormat: PdfPageFormat.a4,
-            margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 50),
-            theme: theme,
-            footer: (pw.Context context) => _buildSprintFooter(context, branding),
-            build: (pw.Context context) => [
-              _buildSprintHeader(
-                branding,
-                title: title,
-                date: _formatDate(reportForPdf.createdAt),
-                reportLabel: 'SIGN-OFF REPORT',
-              ),
-              ..._buildManualSignoffBody(
-                reportForPdf,
-                signatures: signatures,
-              ),
-            ],
-          ),
-        );
-      }
-      
+      final result = await buildPdfBytes(report, includeSignatures: true);
       await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => pdf.save(),
+        onLayout: (PdfPageFormat format) async => result.bytes,
       );
     } catch (e) {
       debugPrint('Error printing report: $e');
@@ -658,140 +669,130 @@ class ReportExportService {
     String? date,
     String reportLabel = 'SPRINT SIGN-OFF REPORT',
   }) {
-    return pw.SizedBox(
-      width: double.infinity,
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 40),
       child: pw.Column(
         mainAxisSize: pw.MainAxisSize.min,
         children: [
-          pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 40),
-            child: pw.Column(
-              mainAxisSize: pw.MainAxisSize.min,
+          pw.Container(
+            width: double.infinity,
+            height: 118,
+            child: pw.Stack(
               children: [
-                pw.Container(
-                  width: double.infinity,
-                  child: pw.Column(
-                    mainAxisSize: pw.MainAxisSize.min,
-                    children: [
-                      pw.Container(
-                        width: double.infinity,
-                        height: 110,
-                        child: pw.Stack(
-                          children: [
-                            if (branding.headerBackground != null)
-                              pw.Positioned.fill(
-                                child: pw.Image(
-                                  branding.headerBackground!,
-                                  fit: pw.BoxFit.cover,
-                                ),
-                              )
-                            else
-                              pw.Positioned.fill(
-                                child: pw.Container(
-                                  decoration: const pw.BoxDecoration(
-                                    gradient: pw.LinearGradient(
-                                      begin: pw.Alignment.centerLeft,
-                                      end: pw.Alignment.centerRight,
-                                      colors: [
-                                        PdfColor(0.12, 0.02, 0.02, 1),
-                                        PdfColor(0.03, 0.03, 0.03, 1),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            pw.Padding(
-                              padding: const pw.EdgeInsets.fromLTRB(22, 22, 22, 18),
-                              child: pw.Row(
-                                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                                children: [
-                                  pw.Column(
-                                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                                    mainAxisAlignment: pw.MainAxisAlignment.center,
-                                    children: [
-                                      pw.Text(
-                                        'K H O N O L O G Y',
-                                        style: pw.TextStyle(
-                                          fontSize: 30,
-                                          fontWeight: pw.FontWeight.bold,
-                                          color: _brandRed,
-                                          letterSpacing: 2,
-                                        ),
-                                      ),
-                                      pw.SizedBox(height: 6),
-                                      pw.Text(
-                                        reportLabel,
-                                        style: pw.TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: pw.FontWeight.bold,
-                                          color: PdfColors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  pw.Container(
-                                    width: 64,
-                                    height: 64,
-                                    decoration: const pw.BoxDecoration(
-                                      color: PdfColors.white,
-                                      shape: pw.BoxShape.circle,
-                                    ),
-                                    alignment: pw.Alignment.center,
-                                    child: branding.sprintIcon != null
-                                        ? pw.Padding(
-                                            padding: const pw.EdgeInsets.all(10),
-                                            child: pw.Image(branding.sprintIcon!, fit: pw.BoxFit.contain),
-                                          )
-                                        : pw.Text(
-                                            'K',
-                                            style: pw.TextStyle(
-                                              fontSize: 26,
-                                              fontWeight: pw.FontWeight.bold,
-                                              color: _brandRed,
-                                            ),
-                                          ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                if (branding.headerBackground != null)
+                  pw.Positioned.fill(
+                    child: pw.Image(
+                      branding.headerBackground!,
+                      fit: pw.BoxFit.cover,
+                    ),
+                  )
+                else
+                  pw.Positioned.fill(
+                    child: pw.Container(
+                      decoration: const pw.BoxDecoration(
+                        gradient: pw.LinearGradient(
+                          begin: pw.Alignment.centerLeft,
+                          end: pw.Alignment.centerRight,
+                          colors: [
+                            PdfColor(0.12, 0.02, 0.02, 1),
+                            PdfColor(0.03, 0.03, 0.03, 1),
                           ],
                         ),
                       ),
-                      pw.Container(
-                        width: double.infinity,
-                        height: 28,
-                        color: _brandRed,
-                        padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        child: pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            pw.Expanded(
-                              child: pw.Text(
-                                'Title: ${title ?? ''}',
-                                style: pw.TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColors.white,
-                                ),
-                                maxLines: 1,
-                              ),
-                            ),
-                            pw.SizedBox(width: 10),
-                            pw.Text(
-                              'Date: ${date ?? ''}',
-                              style: pw.TextStyle(
-                                fontSize: 11,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.white,
-                              ),
-                              maxLines: 1,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
+                if (branding.wordmark != null)
+                  pw.Positioned(
+                    left: 20,
+                    top: 26,
+                    child: pw.Image(
+                      branding.wordmark!,
+                      width: 420,
+                      height: 28,
+                      fit: pw.BoxFit.contain,
+                    ),
+                  )
+                else
+                  pw.Positioned(
+                    left: 20,
+                    top: 26,
+                    child: pw.Text(
+                      'K H O N O L O G Y',
+                      style: pw.TextStyle(
+                        fontSize: 30,
+                        fontWeight: pw.FontWeight.bold,
+                        color: _brandRed,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ),
+                pw.Positioned(
+                  left: 22,
+                  top: 67,
+                  child: pw.Text(
+                    reportLabel,
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.white,
+                    ),
+                  ),
+                ),
+                if (branding.sprintIcon != null)
+                  pw.Positioned(
+                    right: 18,
+                    top: 12,
+                    child: pw.Image(
+                      branding.sprintIcon!,
+                      width: 78,
+                      height: 78,
+                      fit: pw.BoxFit.contain,
+                    ),
+                  )
+                else
+                  pw.Positioned(
+                    right: 18,
+                    top: 18,
+                    child: pw.Text(
+                      'K',
+                      style: pw.TextStyle(
+                        fontSize: 26,
+                        fontWeight: pw.FontWeight.bold,
+                        color: _brandRed,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          pw.Container(
+            width: double.infinity,
+            height: 34,
+            color: _brandRed,
+            padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Expanded(
+                  child: pw.Text(
+                    'Title: ${title ?? ''}',
+                    style: pw.TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.white,
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+                pw.SizedBox(width: 10),
+                pw.Text(
+                  'Date: ${date ?? ''}',
+                  style: pw.TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.white,
+                  ),
+                  maxLines: 1,
                 ),
               ],
             ),
@@ -801,46 +802,18 @@ class ReportExportService {
     );
   }
 
-  List<pw.Widget> _buildManualSignoffBody(
-    SignOffReport report, {
-    required List<Map<String, dynamic>> signatures,
-    bool includeSignatures = true,
-  }) {
-    const bodyPadding = pw.EdgeInsets.fromLTRB(40, 10, 40, 0);
-    const blockPadding = pw.EdgeInsets.fromLTRB(40, 6, 40, 0);
-
-    final content = report.reportContent.trim().isNotEmpty ? report.reportContent.trim() : '-';
-    final known = (report.knownLimitations ?? '').trim();
-    final next = (report.nextSteps ?? '').trim();
-
-    return [
-      pw.Padding(padding: bodyPadding, child: _sectionBar('REPORT CONTENT')),
-      pw.Padding(padding: blockPadding, child: _multilineText(content, fontSize: 10)),
-      if (known.isNotEmpty) ...[
-        pw.SizedBox(height: 10),
-        pw.Padding(padding: bodyPadding, child: _sectionBar('KNOWN LIMITATIONS')),
-        pw.Padding(padding: blockPadding, child: _multilineText(known, fontSize: 10)),
-      ],
-      if (next.isNotEmpty) ...[
-        pw.SizedBox(height: 10),
-        pw.Padding(padding: bodyPadding, child: _sectionBar('NEXT STEPS')),
-        pw.Padding(padding: blockPadding, child: _multilineText(next, fontSize: 10)),
-      ],
-      if (includeSignatures) ...[
-        pw.SizedBox(height: 12),
-        ..._buildSignatureSection(report, signatures: signatures, bodyPadding: bodyPadding),
-      ],
-    ];
-  }
-
-  List<pw.Widget> _buildSignatureSection(
-    SignOffReport report, {
-    required List<Map<String, dynamic>> signatures,
-    required pw.EdgeInsets bodyPadding,
-  }) {
+  List<Map<String, dynamic>> _resolveEffectiveSignatures(
+    SignOffReport report,
+    List<Map<String, dynamic>> signatures,
+  ) {
     final effectiveSignatures = <Map<String, dynamic>>[...signatures];
     final inlineSig = report.digitalSignature?.trim();
-    if (effectiveSignatures.isEmpty && inlineSig != null && inlineSig.isNotEmpty) {
+    final hasMatchingInline = inlineSig != null &&
+        inlineSig.isNotEmpty &&
+        effectiveSignatures.any(
+          (sig) => ((sig['signature_data'] ?? sig['signatureData'] ?? '').toString().trim()) == inlineSig,
+        );
+    if (!hasMatchingInline && inlineSig != null && inlineSig.isNotEmpty) {
       effectiveSignatures.add({
         'signer_name': report.approvedByName ?? report.submittedByName ?? report.preparedByName ?? report.createdBy,
         'signer_role': report.approvedByRole ?? report.submittedByRole ?? report.preparedByRole ?? '',
@@ -849,170 +822,107 @@ class ReportExportService {
       });
     }
 
-    return [
-      pw.Padding(padding: bodyPadding, child: _sectionBar('DIGITAL SIGNATURES')),
-      if (effectiveSignatures.isEmpty)
-        pw.SizedBox(height: 240)
-      else
-        ...effectiveSignatures.map((sig) {
-          final signerName = (sig['signer_name'] ?? sig['signerName'] ?? sig['name']) as String? ?? 'Unknown';
-          final signerRole = (sig['signer_role'] ?? sig['signerRole'] ?? sig['role']) as String? ?? 'Unknown';
-          final signedAt = (sig['signed_at'] ?? sig['signedAt']) as String?;
-          final signatureData =
-              (sig['signature_data'] ?? sig['signatureData'] ?? sig['digitalSignature'] ?? sig['signature']) as String?;
+    return effectiveSignatures;
+  }
 
-          return pw.Padding(
-            padding: const pw.EdgeInsets.fromLTRB(40, 10, 40, 0),
-            child: pw.Container(
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.grey300, width: 1),
-                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-              ),
-              padding: const pw.EdgeInsets.all(12),
+  Map<String, dynamic>? _selectFooterSignature(List<Map<String, dynamic>> signatures) {
+    if (signatures.isEmpty) {
+      return null;
+    }
+    return signatures.last;
+  }
+
+  pw.Widget _buildDocumentFooter(
+    pw.Context context,
+    _BrandingAssets branding, {
+    Map<String, dynamic>? signature,
+    Map<String, dynamic>? currentProfile,
+  }) {
+    final isLastPage = context.pageNumber == context.pagesCount;
+    final hasFooterSignature = isLastPage && signature != null;
+
+    return pw.Container(
+      alignment: hasFooterSignature ? pw.Alignment.centerLeft : pw.Alignment.center,
+      padding: const pw.EdgeInsets.only(top: 4, bottom: 10),
+      child: hasFooterSignature
+          ? pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(horizontal: 40),
               child: pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
-                  pw.Container(
-                    width: 250,
-                    height: 140,
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.grey50,
-                      border: pw.Border.all(color: PdfColors.grey400, width: 1),
-                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                    ),
-                    child: pw.Stack(
-                      children: [
-                        pw.Positioned.fill(
-                          child: pw.Opacity(
-                            opacity: 0.1,
-                            child: pw.Container(
-                              decoration: const pw.BoxDecoration(image: null),
-                              child: pw.Stack(
-                                children: [
-                                  for (int i = 1; i < 10; i++)
-                                    pw.Positioned(
-                                      top: i * 14.0,
-                                      left: 0,
-                                      right: 0,
-                                      child: pw.Container(height: 0.5, color: PdfColors.grey700),
-                                    ),
-                                  for (int i = 1; i < 15; i++)
-                                    pw.Positioned(
-                                      left: i * 16.6,
-                                      top: 0,
-                                      bottom: 0,
-                                      child: pw.Container(width: 0.5, color: PdfColors.grey700),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (signatureData != null && signatureData.isNotEmpty)
-                          pw.Center(
-                            child: pw.SizedBox(
-                              width: 230,
-                              height: 120,
-                              child: _buildSignatureImage(signatureData),
-                            ),
-                          ),
-                      ],
+                  pw.Expanded(
+                    child: _buildSignatureCard(
+                      signerName: ((signature['signer_name'] ??
+                                  signature['signerName'] ??
+                                  signature['name']) as String?) ??
+                          'Unknown',
+                      signerRole: ((signature['signer_role'] ??
+                                  signature['signerRole'] ??
+                                  signature['role']) as String?) ??
+                          'Unknown',
+                      signedAt: (signature['signed_at'] ?? signature['signedAt']) as String?,
+                      signatureData: ((signature['signature_data'] ??
+                              signature['signatureData'] ??
+                              signature['digitalSignature'] ??
+                              signature['signature']) as String?),
+                      branding: branding,
+                      currentProfile: currentProfile,
+                      compact: true,
                     ),
                   ),
-                  pw.SizedBox(width: 20),
-                  pw.Expanded(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      mainAxisAlignment: pw.MainAxisAlignment.center,
-                      children: [
-                        pw.Text(
-                          signerName,
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.black,
-                          ),
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          _formatRole(signerRole),
-                          style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
-                        ),
-                        if (signedAt != null) ...[
-                          pw.SizedBox(height: 4),
-                          pw.Text(
-                            'Signed: ${_formatIsoDate(signedAt)}',
-                            style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey600),
-                          ),
-                        ],
-                        pw.SizedBox(height: 12),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          decoration: const pw.BoxDecoration(
-                            color: PdfColors.green,
-                            borderRadius: pw.BorderRadius.all(pw.Radius.circular(20)),
-                          ),
-                          child: pw.Text(
-                            'VERIFIED',
-                            style: pw.TextStyle(
-                              color: PdfColors.white,
-                              fontWeight: pw.FontWeight.bold,
-                              fontSize: 10,
+                  pw.SizedBox(width: 18),
+                  pw.SizedBox(
+                    width: 110,
+                    child: pw.Align(
+                      alignment: pw.Alignment.centerRight,
+                      child: branding.logo != null
+                          ? pw.SizedBox(
+                              height: 22,
+                              child: pw.Image(
+                                branding.logo!,
+                                fit: pw.BoxFit.contain,
+                              ),
+                            )
+                          : pw.Text(
+                              'K H O N O L O G Y',
+                              style: pw.TextStyle(
+                                fontSize: 12,
+                                fontWeight: pw.FontWeight.bold,
+                                color: _brandRed,
+                                letterSpacing: 1.6,
+                              ),
                             ),
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ],
               ),
-            ),
-          );
-        }),
-    ];
-  }
-
-  pw.Widget _multilineText(String text, {double fontSize = 10}) {
-    final normalized = text.replaceAll('\r\n', '\n');
-    final parts = normalized.split('\n');
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        for (final p in parts) ...[
-          if (p.trim().isEmpty) pw.SizedBox(height: 8) else pw.Text(p, style: pw.TextStyle(fontSize: fontSize, color: PdfColors.black)),
-        ],
-      ],
-    );
-  }
-
-  pw.Widget _buildSprintFooter(pw.Context context, _BrandingAssets branding) {
-    return pw.Container(
-      alignment: pw.Alignment.center,
-      padding: const pw.EdgeInsets.only(top: 8, bottom: 28),
-      child: (branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3) != null
-          ? pw.SizedBox(
-              height: 24,
-              child: pw.Image(
-                (branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3)!,
-                fit: pw.BoxFit.contain,
-              ),
             )
-          : pw.Text(
-              '~~~',
-              style: pw.TextStyle(
-                fontSize: 16,
-                fontWeight: pw.FontWeight.bold,
-                color: _brandRed,
-                letterSpacing: 2,
-              ),
-            ),
+          : ((branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3) != null
+              ? pw.Center(
+                  child: pw.SizedBox(
+                    height: 24,
+                    child: pw.Image(
+                      (branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3)!,
+                      fit: pw.BoxFit.contain,
+                    ),
+                  ),
+                )
+              : pw.Text(
+                  '~~~',
+                  style: pw.TextStyle(
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                    color: _brandRed,
+                    letterSpacing: 2,
+                  ),
+                )),
     );
   }
 
   List<pw.Widget> _buildSprintSignoffBody(
     SignOffReport report, {
-    required List<Map<String, dynamic>> signatures,
-    bool includeSignatures = true,
+    required _BrandingAssets branding,
+    Map<String, dynamic>? currentProfile,
   }) {
     final data = report.sprintReportData ?? const <String, dynamic>{};
     final sprint = _asMap(data['sprint']);
@@ -1022,6 +932,7 @@ class ReportExportService {
     final teamRaw = data['team'];
     final team = teamRaw is List ? _asList(teamRaw) : _asList(_asMap(teamRaw)['members']);
     final deliverables = _asList(data['deliverables']);
+    final performanceMetrics = _extractPerformanceMetrics(report, data);
 
     final sprintName = _stringOrDash(sprint['name']);
     final sprintId = _stringOrDash(sprint['id']);
@@ -1056,22 +967,31 @@ class ReportExportService {
         inferredFromTitle != '-' &&
         inferredFromTitle != sprintName &&
         inferredFromTitle != projectName;
+    final hasStructuredSprintData = sprint.isNotEmpty || summary.isNotEmpty || project.isNotEmpty || deliverables.isNotEmpty;
+    final rawContentFallback = report.reportContent.trim();
     final note = (extractedNotes.isNotEmpty && extractedNotes != '-')
         ? extractedNotes
-        : ((fromFields.isNotEmpty) ? fromFields : (inferredAsNotes ? inferredFromTitle : '-'));
+        : ((fromFields.isNotEmpty)
+            ? fromFields
+            : ((!hasStructuredSprintData && rawContentFallback.isNotEmpty)
+                ? rawContentFallback
+                : (inferredAsNotes ? inferredFromTitle : '-')));
     final String? feedback = extractedFeedback.isNotEmpty ? extractedFeedback : null;
 
     const bodyPadding = pw.EdgeInsets.fromLTRB(40, 10, 40, 0);
 
-    final projectDetail = pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        _sectionBar('PROJECT DETAIL:'),
-        pw.SizedBox(height: 8),
-        _kvLine('Name:', projectName),
-        _kvLine('Key:', projectKey),
-        _kvLine('ID:', projectId),
-      ],
+    final projectDetail = pw.Container(
+      width: double.infinity,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          _columnSectionBar('PROJECT DETAIL:'),
+          pw.SizedBox(height: 8),
+          _kvLine('Name:', projectName),
+          _kvLine('Key:', projectKey),
+          _kvLine('ID:', projectId),
+        ],
+      ),
     );
 
     final sprintCount = report.sprintIds.isNotEmpty ? report.sprintIds.length : 1;
@@ -1095,49 +1015,58 @@ class ReportExportService {
       }
     }
 
-    final projectSprintTotals = pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        _sectionBar('PROJECT SPRINT TOTALS:'),
-        pw.SizedBox(height: 8),
-        _kvLine('Total Sprints:', sprintCount.toString()),
-        _kvLine('Total Deliverables:', totalDeliverablesAll.toString()),
-        _kvLine('Completed:', completedAll.toString()),
-        _kvLine('In Progress:', inProgressAll.toString()),
-        _kvLine('Not Started:', notStartedAll.toString()),
-        _kvLine('Overdue:', overdueAll.toString()),
-        _kvLine('Blocked:', blockedAll.toString()),
-      ],
+    final projectSprintTotals = pw.Container(
+      width: double.infinity,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          _columnSectionBar('PROJECT SPRINT TOTALS:'),
+          pw.SizedBox(height: 8),
+          _kvLine('Total Sprints:', sprintCount.toString()),
+          _kvLine('Total Deliverables:', totalDeliverablesAll.toString()),
+          _kvLine('Completed:', completedAll.toString()),
+          _kvLine('In Progress:', inProgressAll.toString()),
+          _kvLine('Not Started:', notStartedAll.toString()),
+          _kvLine('Overdue:', overdueAll.toString()),
+          _kvLine('Blocked:', blockedAll.toString()),
+        ],
+      ),
     );
 
-    final sprintDetail = pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        _sectionBar('SPRINT DETAIL:'),
-        pw.SizedBox(height: 8),
-        _kvLine('Name:', sprintName),
-        _kvLine('ID:', sprintId),
-        _kvLine('Status:', sprintStatus),
-        _kvLine('Start:', sprintStart),
-        _kvLine('End:', sprintEnd),
-      ],
+    final sprintDetail = pw.Container(
+      width: double.infinity,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          _columnSectionBar('SPRINT DETAIL:'),
+          pw.SizedBox(height: 8),
+          _kvLine('Name:', sprintName),
+          _kvLine('ID:', sprintId),
+          _kvLine('Status:', sprintStatus),
+          _kvLine('Start:', sprintStart),
+          _kvLine('End:', sprintEnd),
+        ],
+      ),
     );
 
-    final sprintSummary = pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        _sectionBar('SPRINT SUMMARY:'),
-        pw.SizedBox(height: 8),
-        _kvLine('Total Deliverables:', totalDeliverables),
-        _kvLine('Completed:', completed),
-        _kvLine('In Progress:', inProgress),
-        _kvLine('Not Started:', notStarted),
-        _kvLine('Overdue:', overdue),
-        _kvLine('Blocked:', blocked),
-        _kvLine('Sprint Progress:', sprintProgress),
-        _kvLine('Completion Rate:', completionRate),
-        _kvLine('Health:', health),
-      ],
+    final sprintSummary = pw.Container(
+      width: double.infinity,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          _columnSectionBar('SPRINT SUMMARY:'),
+          pw.SizedBox(height: 8),
+          _kvLine('Total Deliverables:', totalDeliverables),
+          _kvLine('Completed:', completed),
+          _kvLine('In Progress:', inProgress),
+          _kvLine('Not Started:', notStarted),
+          _kvLine('Overdue:', overdue),
+          _kvLine('Blocked:', blocked),
+          _kvLine('Sprint Progress:', sprintProgress),
+          _kvLine('Completion Rate:', completionRate),
+          _kvLine('Health:', health),
+        ],
+      ),
     );
 
     final topRows = pw.Padding(
@@ -1174,18 +1103,21 @@ class ReportExportService {
     final teamFirst = teamLines.length <= 2 ? teamLines : teamLines.sublist(0, 2);
     final teamRest = teamLines.length <= 2 ? const <String>[] : teamLines.sublist(2);
     final teamWidgets = <pw.Widget>[
-      pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Padding(padding: bodyPadding, child: _sectionBar('TEAM MEMBERS')),
-          pw.Padding(
-            padding: const pw.EdgeInsets.fromLTRB(40, 5, 40, 0),
-            child: pw.Text(
-              teamLines.isEmpty ? 'None' : teamFirst.join('\n'),
-              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+      pw.Container(
+        width: double.infinity,
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            _fullWidthSectionBar('TEAM MEMBERS'),
+            pw.Padding(
+              padding: const pw.EdgeInsets.fromLTRB(40, 5, 40, 0),
+              child: pw.Text(
+                teamLines.isEmpty ? 'None' : teamFirst.join('\n'),
+                style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       if (teamRest.isNotEmpty)
         pw.Padding(
@@ -1212,18 +1144,21 @@ class ReportExportService {
     final delFirst = deliverableLines.length <= 2 ? deliverableLines : deliverableLines.sublist(0, 2);
     final delRest = deliverableLines.length <= 2 ? const <String>[] : deliverableLines.sublist(2);
     final deliverableWidgets = <pw.Widget>[
-      pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Padding(padding: bodyPadding, child: _sectionBar('DELIVERABLES')),
-          pw.Padding(
-            padding: const pw.EdgeInsets.fromLTRB(40, 5, 40, 0),
-            child: pw.Text(
-              deliverableLines.isEmpty ? 'None' : delFirst.join('\n'),
-              style: const pw.TextStyle(fontSize: 9.5, color: PdfColors.black),
+      pw.Container(
+        width: double.infinity,
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            _fullWidthSectionBar('DELIVERABLES'),
+            pw.Padding(
+              padding: const pw.EdgeInsets.fromLTRB(40, 5, 40, 0),
+              child: pw.Text(
+                deliverableLines.isEmpty ? 'None' : delFirst.join('\n'),
+                style: const pw.TextStyle(fontSize: 9.5, color: PdfColors.black),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       if (delRest.isNotEmpty)
         pw.Padding(
@@ -1235,166 +1170,670 @@ class ReportExportService {
         ),
     ];
 
+    final trimmedNote = note.trim().isEmpty ? '-' : note.trim();
+    final noteLines = trimmedNote.split('\n');
+    final noteFirst = noteLines.length <= 2 ? trimmedNote : noteLines.take(2).join('\n');
+    final noteRest = noteLines.length <= 2 ? '' : noteLines.skip(2).join('\n').trim();
+
     final notesWidgets = <pw.Widget>[
-      pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Padding(padding: bodyPadding, child: _sectionBar('SIGN-OFF NOTES')),
-          pw.Padding(
-            padding: const pw.EdgeInsets.fromLTRB(40, 6, 40, 0),
-            child: pw.Text(
-              note.trim().isEmpty ? '-' : note.trim(),
-              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
-            ),
-          ),
-          if (feedback != null && feedback.trim().isNotEmpty && feedback.trim() != '-')
+      pw.Container(
+        width: double.infinity,
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            _fullWidthSectionBar('SIGN-OFF NOTES'),
             pw.Padding(
               padding: const pw.EdgeInsets.fromLTRB(40, 6, 40, 0),
               child: pw.Text(
-                'Feedback: ${feedback.trim()}',
+                noteFirst,
                 style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
               ),
             ),
-        ],
+          ],
+        ),
       ),
+      if (noteRest.isNotEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.fromLTRB(40, 2, 40, 0),
+          child: pw.Text(
+            noteRest,
+            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+          ),
+        ),
+      if (feedback != null && feedback.trim().isNotEmpty && feedback.trim() != '-')
+        pw.Padding(
+          padding: const pw.EdgeInsets.fromLTRB(40, 6, 40, 0),
+          child: pw.Text(
+            'Feedback: ${feedback.trim()}',
+            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+          ),
+        ),
     ];
-
-    final effectiveSignatures = <Map<String, dynamic>>[...signatures];
-    final inlineSig = report.digitalSignature?.trim();
-    if (effectiveSignatures.isEmpty && inlineSig != null && inlineSig.isNotEmpty) {
-      effectiveSignatures.add({
-        'signer_name':
-            report.approvedByName ?? report.submittedByName ?? report.preparedByName ?? report.createdBy,
-        'signer_role': report.approvedByRole ?? report.submittedByRole ?? report.preparedByRole ?? '',
-        'signed_at': (report.approvedAt ?? report.submittedAt ?? report.createdAt).toIso8601String(),
-        'signature_data': inlineSig,
-      });
-    }
-
-    final signatureWidgets = includeSignatures
-        ? <pw.Widget>[
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Padding(padding: bodyPadding, child: _sectionBar('DIGITAL SIGNATURES')),
-                if (effectiveSignatures.isEmpty)
-                  pw.SizedBox(height: 140)
-                else
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.only(top: 1),
-                    child: pw.SizedBox.shrink(),
-                  ),
-              ],
-            ),
-            if (effectiveSignatures.isEmpty) pw.SizedBox(height: 100) else ...effectiveSignatures.map((sig) {
-          final signerName = (sig['signer_name'] ?? sig['signerName'] ?? sig['name']) as String? ?? 'Unknown';
-          final signerRole = (sig['signer_role'] ?? sig['signerRole'] ?? sig['role']) as String? ?? 'Unknown';
-          final signedAt = (sig['signed_at'] ?? sig['signedAt']) as String?;
-          final signatureData =
-              (sig['signature_data'] ?? sig['signatureData'] ?? sig['digitalSignature'] ?? sig['signature']) as String?;
-
-          return pw.Padding(
-            padding: const pw.EdgeInsets.fromLTRB(40, 10, 40, 0),
-            child: pw.Container(
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.grey300, width: 1),
-                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-              ),
-              padding: const pw.EdgeInsets.all(12),
-              child: pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  // Signature Box with Grid background
-                  pw.Container(
-                    width: 220,
-                    height: 110,
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.grey50,
-                      border: pw.Border.all(color: PdfColors.grey400, width: 1),
-                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                    ),
-                    child: (signatureData != null && signatureData.isNotEmpty)
-                        ? pw.Center(
-                            child: pw.SizedBox(
-                              width: 200,
-                              height: 90,
-                              child: _buildSignatureImage(signatureData),
-                            ),
-                          )
-                        : pw.Center(
-                            child: pw.Text(
-                              'No signature',
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
-                            ),
-                          ),
-                  ),
-                  pw.SizedBox(width: 20),
-                  // Signer Details
-                  pw.Expanded(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      mainAxisAlignment: pw.MainAxisAlignment.center,
-                      children: [
-                        pw.Text(
-                          signerName,
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.black,
-                          ),
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          _formatRole(signerRole),
-                          style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
-                        ),
-                        if (signedAt != null) ...[
-                          pw.SizedBox(height: 4),
-                          pw.Text(
-                            'Signed: ${_formatDateTime(signedAt)}',
-                            style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey600),
-                          ),
-                        ],
-                        pw.SizedBox(height: 6),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-              }),
-          ]
-        : const <pw.Widget>[];
 
     return [
       topRows,
+      if (performanceMetrics.isNotEmpty) ...[
+        pw.SizedBox(height: 8),
+        ..._buildSprintMetricsChartsSection(performanceMetrics),
+      ],
       ...teamWidgets,
       pw.SizedBox(height: 8),
       ...deliverableWidgets,
       pw.SizedBox(height: 8),
       ...notesWidgets,
-      pw.SizedBox(height: 8),
-      ...signatureWidgets,
       pw.SizedBox(height: 10),
     ];
+  }
+
+  List<Map<String, dynamic>> _extractPerformanceMetrics(
+    SignOffReport report,
+    Map<String, dynamic> data,
+  ) {
+    final fromData = _asList(data['performanceMetrics']);
+    if (fromData.isNotEmpty) {
+      return fromData.map((item) => _asMap(item)).where((item) => item.isNotEmpty).toList();
+    }
+
+    final raw = report.sprintPerformanceData;
+    if (raw != null && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded.map((item) => _asMap(item)).where((item) => item.isNotEmpty).toList();
+        }
+        if (decoded is Map) {
+          final nested = _asList(decoded['performanceMetrics']);
+          if (nested.isNotEmpty) {
+            return nested.map((item) => _asMap(item)).where((item) => item.isNotEmpty).toList();
+          }
+        }
+      } catch (_) {}
+    }
+
+    return const <Map<String, dynamic>>[];
+  }
+
+  List<pw.Widget> _buildSprintMetricsChartsSection(List<Map<String, dynamic>> metrics) {
+    if (metrics.isEmpty) {
+      return const <pw.Widget>[];
+    }
+
+    int maxPointValue = 1;
+    for (final metric in metrics) {
+      maxPointValue = _maxInt(maxPointValue, _num(metric['committed_points']));
+      maxPointValue = _maxInt(maxPointValue, _num(metric['completed_points']));
+      maxPointValue = _maxInt(maxPointValue, _num(metric['velocity']));
+    }
+
+    final cards = metrics
+        .map(
+          (metric) => pw.Padding(
+            padding: const pw.EdgeInsets.fromLTRB(40, 8, 40, 0),
+            child: _buildSprintMetricCard(
+              metric,
+              maxPointValue: maxPointValue,
+            ),
+          ),
+        )
+        .toList();
+
+    final firstCard = cards.isNotEmpty ? cards.first : null;
+    final remainingCards = cards.length <= 1 ? const <pw.Widget>[] : cards.sublist(1);
+
+    return [
+      pw.NewPage(freeSpace: 240),
+      pw.Container(
+        width: double.infinity,
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            _fullWidthSectionBar('SPRINT METRICS GRAPHS'),
+            pw.Padding(
+              padding: const pw.EdgeInsets.fromLTRB(40, 6, 40, 0),
+              child: pw.Text(
+                'Compact sprint graphs summarise delivery, quality, and scope without breaking the report layout.',
+                style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700),
+              ),
+            ),
+            if (firstCard != null) firstCard,
+          ],
+        ),
+      ),
+      ...remainingCards,
+    ];
+  }
+
+  pw.Widget _buildSprintMetricCard(
+    Map<String, dynamic> metric, {
+    required int maxPointValue,
+  }) {
+    final name = _stringOrDash(metric['name']);
+    final passRate = _num(metric['test_pass_rate']).clamp(0, 100);
+    final scopeIndicator = _stringOrDash(metric['scope_change_indicator']);
+    final committed = _num(metric['committed_points']);
+    final completed = _num(metric['completed_points']);
+    final velocity = _num(metric['velocity']);
+    final defectsOpened = _num(metric['defects_opened']);
+    final defectsClosed = _num(metric['defects_closed']);
+    final pointsAdded = _num(metric['points_added']);
+    final pointsRemoved = _num(metric['points_removed']);
+    final spillover = committed > completed ? committed - completed : 0;
+    final completionPercent = committed <= 0 ? 0 : ((completed / committed) * 100).round().clamp(0, 100);
+    final completionColor = completionPercent >= 90
+        ? const PdfColor(0.54, 0.71, 0.54)
+        : completionPercent >= 70
+            ? const PdfColor(0.95, 0.75, 0.24)
+            : _brandRed;
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            name,
+            style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 3),
+          _buildPercentBar(
+            label: 'Completion',
+            value: completionPercent,
+            color: completionColor,
+          ),
+          pw.SizedBox(height: 3),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: _buildMetricCompactStat(
+                  title: 'Committed',
+                  value: '$committed',
+                  fill: const PdfColor(0.93, 0.96, 0.99),
+                ),
+              ),
+              pw.SizedBox(width: 6),
+              pw.Expanded(
+                child: _buildMetricCompactStat(
+                  title: 'Completed',
+                  value: '$completed',
+                  fill: const PdfColor(0.99, 0.93, 0.93),
+                ),
+              ),
+              pw.SizedBox(width: 6),
+              pw.Expanded(
+                child: _buildMetricCompactStat(
+                  title: 'Velocity',
+                  value: '$velocity',
+                  fill: const PdfColor(0.92, 0.97, 0.92),
+                ),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 5),
+          _buildMetricSubsectionTitle('Delivery Overview'),
+          pw.SizedBox(height: 6),
+          _buildDeliveryOverviewPanel(
+            items: [
+              _DeliveryMetricBarItem(
+                label: 'Committed',
+                value: committed,
+                maxValue: maxPointValue,
+                color: const PdfColor(0.74, 0.82, 0.94),
+              ),
+              _DeliveryMetricBarItem(
+                label: 'Completed',
+                value: completed,
+                maxValue: maxPointValue,
+                color: _brandRed,
+              ),
+              _DeliveryMetricBarItem(
+                label: 'Velocity',
+                value: velocity,
+                maxValue: maxPointValue,
+                color: const PdfColor(0.54, 0.71, 0.54),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 6),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: _buildMetricCompactPanel(
+                  title: 'Quality',
+                  children: [
+                    _buildPercentBar(
+                      label: 'Pass Rate',
+                      value: passRate,
+                      color: const PdfColor(0.54, 0.71, 0.54),
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Row(
+                      children: [
+                        pw.Expanded(
+                          child: _buildMetricCompactStat(
+                            title: 'Opened',
+                            value: '$defectsOpened',
+                            fill: const PdfColor(0.99, 0.93, 0.93),
+                          ),
+                        ),
+                        pw.SizedBox(width: 5),
+                        pw.Expanded(
+                          child: _buildMetricCompactStat(
+                            title: 'Closed',
+                            value: '$defectsClosed',
+                            fill: const PdfColor(0.92, 0.97, 0.92),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(width: 8),
+              pw.Expanded(
+                child: _buildMetricCompactPanel(
+                  title: 'Scope',
+                  children: [
+                    pw.Text(
+                      'Change: $scopeIndicator',
+                      style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey800),
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Row(
+                      children: [
+                        pw.Expanded(
+                          child: _buildMetricCompactStat(
+                            title: 'Added',
+                            value: '$pointsAdded',
+                            fill: const PdfColor(1.0, 0.96, 0.88),
+                          ),
+                        ),
+                        pw.SizedBox(width: 5),
+                        pw.Expanded(
+                          child: _buildMetricCompactStat(
+                            title: 'Removed',
+                            value: '$pointsRemoved',
+                            fill: const PdfColor(0.94, 0.92, 0.99),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (spillover > 0) ...[
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Spillover: $spillover points',
+                        style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildMetricSubsectionTitle(String title) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 1),
+      child: pw.Text(
+        title,
+        style: pw.TextStyle(
+          fontSize: 10,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColors.black,
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _buildMetricCompactStat({
+    required String title,
+    required String value,
+    required PdfColor fill,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: pw.BoxDecoration(
+        color: fill,
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            title,
+            style: pw.TextStyle(fontSize: 7, color: PdfColors.grey800),
+          ),
+          pw.SizedBox(height: 1.5),
+          pw.Text(
+            value,
+            style: pw.TextStyle(fontSize: 10.5, fontWeight: pw.FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildMetricCompactPanel({
+    required String title,
+    required List<pw.Widget> children,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(6),
+      decoration: const pw.BoxDecoration(
+        color: PdfColors.grey100,
+        borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            title,
+            style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 3),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildDeliveryOverviewPanel({
+    required List<_DeliveryMetricBarItem> items,
+  }) {
+    return pw.Container(
+      width: double.infinity,
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          ...items.asMap().entries.expand((entry) sync* {
+            final index = entry.key;
+            final item = entry.value;
+            yield pw.Expanded(
+              child: _buildCompactMetricBarCard(item),
+            );
+            if (index != items.length - 1) {
+              yield pw.SizedBox(width: 6);
+            }
+          }),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildCompactMetricBarCard(_DeliveryMetricBarItem item) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(5),
+      decoration: const pw.BoxDecoration(
+        color: PdfColors.grey100,
+        borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+      ),
+      child: _buildHorizontalMetricBar(
+        label: item.label,
+        value: item.value,
+        maxValue: item.maxValue,
+        color: item.color,
+      ),
+    );
+  }
+
+  pw.Widget _buildHorizontalMetricBar({
+    required String label,
+    required int value,
+    required int maxValue,
+    required PdfColor color,
+  }) {
+    final safeMax = maxValue <= 0 ? 1 : maxValue;
+    final ratio = (value / safeMax).clamp(0.0, 1.0);
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              label,
+              style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.Text(
+              '$value',
+              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 2),
+        pw.LinearProgressIndicator(
+          value: ratio.toDouble(),
+          minHeight: 4,
+          backgroundColor: PdfColors.grey300,
+          valueColor: color,
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _buildPercentBar({
+    required String label,
+    required int value,
+    required PdfColor color,
+  }) {
+    final ratio = (value / 100).clamp(0.0, 1.0);
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              label,
+              style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.Text(
+              '$value%',
+              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 2),
+        pw.LinearProgressIndicator(
+          value: ratio.toDouble(),
+          minHeight: 4,
+          backgroundColor: PdfColors.grey300,
+          valueColor: color,
+        ),
+      ],
+    );
   }
 
   pw.Widget _sectionBar(String title) {
     return pw.Container(
       width: double.infinity,
       color: _lightRedBar,
-      padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       child: pw.Text(
         title,
         style: pw.TextStyle(
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: pw.FontWeight.bold,
           color: _ink,
         ),
       ),
     );
   }
+
+  pw.Widget _columnSectionBar(String title) {
+    return pw.SizedBox(
+      width: _reportHalfColumnWidth,
+      child: _sectionBar(title),
+    );
+  }
+
+  pw.Widget _fullWidthSectionBar(String title) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.fromLTRB(_reportSideInset, 10, _reportSideInset, 0),
+      child: pw.SizedBox(
+        width: _reportContentWidth,
+        child: _sectionBar(title),
+      ),
+    );
+  }
+
+  pw.Widget _buildSignatureCard({
+    required String signerName,
+    required String signerRole,
+    required String? signedAt,
+    required String? signatureData,
+    required _BrandingAssets branding,
+    Map<String, dynamic>? currentProfile,
+    bool compact = false,
+  }) {
+    final profile = currentProfile ?? const <String, dynamic>{};
+    final profileName = _profileFullName(profile);
+    final displayName =
+        signerName.trim().isNotEmpty && signerName.trim().toLowerCase() != 'unknown' ? signerName.trim() : profileName;
+    final displayRole =
+        signerRole.trim().isNotEmpty && signerRole.trim().toLowerCase() != 'unknown' ? _formatRole(signerRole) : (_optionalProfileValue(profile['job_title']) ?? 'Signatory');
+    final email = _optionalProfileValue(profile['email']);
+    final phone = _optionalProfileValue(profile['phone_number']);
+    final website = _optionalProfileValue(profile['website']);
+    final location = _optionalProfileValue(profile['location']);
+
+    if (compact) {
+      final signatureWidget = _buildSignatureVisual(signatureData, displayName);
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Container(height: 1.2, width: double.infinity, color: _brandRed),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            displayName,
+            style: pw.TextStyle(
+              fontSize: 9.5,
+              fontWeight: pw.FontWeight.bold,
+              color: _brandRed,
+            ),
+          ),
+          pw.Text(
+            displayRole,
+            style: pw.TextStyle(
+              fontSize: 7.5,
+              color: _brandRed,
+            ),
+          ),
+          if (phone != null)
+            pw.Text(
+              phone,
+              style: pw.TextStyle(fontSize: 7.5, color: _brandRed),
+            ),
+          if (email != null)
+            pw.Text(
+              email,
+              style: pw.TextStyle(fontSize: 7.5, color: _brandRed),
+            ),
+          if (signedAt != null)
+            pw.Text(
+              _formatIsoDate(signedAt),
+              style: pw.TextStyle(fontSize: 7.5, color: _brandRed),
+            ),
+          pw.SizedBox(height: 4),
+          pw.SizedBox(
+            height: 24,
+            child: signatureWidget,
+          ),
+        ],
+      );
+    }
+
+    return pw.Padding(
+      padding: compact ? pw.EdgeInsets.zero : const pw.EdgeInsets.fromLTRB(40, 14, 40, 0),
+      child: pw.Container(
+        decoration: pw.BoxDecoration(
+          color: PdfColors.white,
+          border: pw.Border.all(color: PdfColors.grey300, width: 0.8),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Container(height: 4, width: double.infinity, color: _brandRed),
+            pw.Padding(
+              padding: pw.EdgeInsets.fromLTRB(14, compact ? 10 : 12, 14, compact ? 8 : 10),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          displayName,
+                          style: pw.TextStyle(fontSize: compact ? 11.5 : 13, fontWeight: pw.FontWeight.bold, color: _brandRed),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(displayRole, style: pw.TextStyle(fontSize: compact ? 8 : 9, color: _brandRed)),
+                        if (phone != null) pw.SizedBox(height: compact ? 4 : 8),
+                        if (phone != null) pw.Text(phone, style: pw.TextStyle(fontSize: compact ? 7 : 7.5, color: _brandRed)),
+                        if (email != null) pw.Text(email, style: pw.TextStyle(fontSize: compact ? 7 : 7.5, color: _brandRed)),
+                        if (!compact && website != null) pw.Text(website, style: pw.TextStyle(fontSize: 7.5, color: _brandRed)),
+                        if (!compact && location != null) pw.Text(location, style: pw.TextStyle(fontSize: 7.5, color: _brandRed)),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 16),
+                  if (branding.wordmark != null)
+                    pw.Image(branding.wordmark!, width: compact ? 96 : 120, height: compact ? 16 : 18, fit: pw.BoxFit.contain)
+                  else
+                    pw.Text(
+                      'KHONOLOGY',
+                      style: pw.TextStyle(fontSize: compact ? 12 : 14, fontWeight: pw.FontWeight.bold, color: _brandRed, letterSpacing: 1.2),
+                    ),
+                ],
+              ),
+            ),
+            pw.Padding(
+              padding: pw.EdgeInsets.fromLTRB(14, 2, 14, compact ? 8 : 12),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Expanded(
+                    child: pw.SizedBox(
+                      height: compact ? 34 : 42,
+                      child: _buildSignatureVisual(signatureData, displayName),
+                    ),
+                  ),
+                  pw.SizedBox(width: 16),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      if (signedAt != null)
+                        pw.Text(
+                          _formatIsoDate(signedAt),
+                          style: pw.TextStyle(fontSize: compact ? 8.5 : 9.5, color: PdfColors.grey700),
+                        ),
+                      if (email != null)
+                        pw.Text(
+                          email,
+                          style: pw.TextStyle(fontSize: compact ? 8.5 : 9.5, color: PdfColors.grey700),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int _maxInt(int a, int b) => a > b ? a : b;
 
   pw.Widget _kvLine(String label, String value) {
     return pw.Padding(
@@ -1473,18 +1912,6 @@ class ReportExportService {
     return out.isEmpty ? null : out;
   }
   
-  String _formatDateTime(String dateTimeString) {
-    try {
-      final parsed = DateTime.parse(dateTimeString);
-      // Convert to the user's local timezone for accurate display
-      final dateTime = parsed.toLocal();
-      return '${dateTime.day}/${dateTime.month}/${dateTime.year} '
-             '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return dateTimeString;
-    }
-  }
-  
   String _formatRole(String role) {
     switch (role.toLowerCase()) {
       case 'deliverylead':
@@ -1498,6 +1925,18 @@ class ReportExportService {
       default:
         return role;
     }
+  }
+
+  String _profileFullName(Map<String, dynamic> profile) {
+    final first = _optionalProfileValue(profile['first_name']);
+    final last = _optionalProfileValue(profile['last_name']);
+    final full = [first, last].whereType<String>().where((v) => v.trim().isNotEmpty).join(' ').trim();
+    return full.isNotEmpty ? full : 'Unknown';
+  }
+
+  String? _optionalProfileValue(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
   }
   
   /// Generate SHA-256 hash of file bytes
@@ -1516,52 +1955,83 @@ class ReportExportService {
     return File(path);
   }
 
-  /// Build signature image with error handling for PDF export
-  pw.Widget _buildSignatureImage(String? signatureData) {
-    if (signatureData == null || signatureData.isEmpty) {
-      return pw.Container(
-        height: 70,
-        width: 150,
-        color: PdfColors.grey200,
-        child: pw.Center(
-          child: pw.Text('No signature'),
+  pw.Widget _buildSignatureVisual(String? signatureData, String signerName) {
+    final parsed = _parseSignaturePayload(signatureData);
+    if (parsed == null) {
+      return pw.SizedBox();
+    }
+
+    if (parsed.imageBytes != null) {
+      return pw.Image(
+        pw.MemoryImage(parsed.imageBytes!),
+        fit: pw.BoxFit.contain,
+      );
+    }
+
+    final typedText = parsed.typedText?.trim();
+    if (typedText != null && typedText.isNotEmpty) {
+      return pw.Center(
+        child: pw.Text(
+          typedText,
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            fontSize: 24,
+            fontStyle: pw.FontStyle.italic,
+            color: _brandRed,
+          ),
         ),
       );
     }
 
+    return pw.Center(
+      child: pw.Text(
+        signerName,
+        style: pw.TextStyle(
+          fontSize: 20,
+          fontStyle: pw.FontStyle.italic,
+          color: _brandRed,
+        ),
+      ),
+    );
+  }
+
+  _ParsedSignaturePayload? _parseSignaturePayload(String? signatureData) {
+    if (signatureData == null || signatureData.isEmpty) {
+      return null;
+    }
+
     try {
-      // Check if signatureData looks like JSON
       final trimmedData = signatureData.trim();
-      if (trimmedData.startsWith('{') || trimmedData.startsWith('[') || 
+      if (trimmedData.startsWith('data:text/plain;base64,')) {
+        final plain = utf8.decode(base64Decode(trimmedData.split(',').last));
+        return _ParsedSignaturePayload(typedText: plain);
+      }
+      if (trimmedData.startsWith('{') || trimmedData.startsWith('[') ||
           trimmedData.startsWith('"success"') || trimmedData.startsWith('"error"')) {
-        return pw.Container(
-          height: 70,
-          width: 150,
-          color: PdfColors.grey200,
-          child: pw.Center(
-            child: pw.Text('Invalid signature data'),
-          ),
-        );
+        return null;
       }
 
       final normalized = (signatureData.contains(',') ? signatureData.split(',').last : signatureData)
           .replaceAll(RegExp(r'\s+'), '');
       final Uint8List imageBytes = base64Decode(normalized);
-      
-      return pw.Image(
-        pw.MemoryImage(imageBytes),
-        fit: pw.BoxFit.contain,
-      );
-    } catch (e) {
-      return pw.Container(
-        height: 70,
-        width: 150,
-        color: PdfColors.grey200,
-        child: pw.Center(
-          child: pw.Text('Invalid signature format'),
-        ),
-      );
+      return _ParsedSignaturePayload(imageBytes: imageBytes);
+    } catch (_) {
+      return null;
     }
   }
+}
+
+class _DeliveryMetricBarItem {
+  final String label;
+  final int value;
+  final int maxValue;
+  final PdfColor color;
+
+  const _DeliveryMetricBarItem({
+    required this.label,
+    required this.value,
+    required this.maxValue,
+    required this.color,
+  });
 }
 

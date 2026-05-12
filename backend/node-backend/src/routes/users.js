@@ -4,6 +4,29 @@ const router = express.Router();
 const { User, UserProfile } = require('../models');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
+function looksLikeUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || '').trim()
+  );
+}
+
+async function findUserByIdentifier(identifier, options = {}) {
+  const raw = String(identifier || '').trim();
+  if (!raw) return null;
+
+  if (looksLikeUuid(raw)) {
+    return User.findByPk(raw, options);
+  }
+
+  return User.findOne({
+    ...options,
+    where: {
+      ...(options.where || {}),
+      email: raw,
+    },
+  });
+}
+
 /**
  * @route GET /api/users
  * @desc Get all users with pagination and search
@@ -69,7 +92,7 @@ router.get('/:id', authenticateToken, requireRole(['systemAdmin', 'admin', 'deli
   try {
     const { id } = req.params;
     
-    const user = await User.findByPk(id, {
+    const user = await findUserByIdentifier(id, {
       attributes: [
         'id',
         'email',
@@ -113,7 +136,7 @@ router.put('/:id/role', authenticateToken, requireRole(['systemAdmin', 'admin'])
       });
     }
 
-    const user = await User.findByPk(id);
+    const user = await findUserByIdentifier(id);
     if (!user) {
       return res.status(404).json({
         error: 'User not found',
@@ -177,7 +200,7 @@ router.put('/:id', authenticateToken, requireRole(['systemAdmin', 'admin']), asy
       is_active 
     } = req.body;
     
-    const user = await User.findByPk(id);
+    const user = await findUserByIdentifier(id);
     
     if (!user) {
       return res.status(404).json({
@@ -239,7 +262,7 @@ router.delete('/:id', authenticateToken, requireRole(['systemAdmin', 'admin']), 
   try {
     const { id } = req.params;
     
-    const user = await User.findByPk(id);
+    const user = await findUserByIdentifier(id);
     
     if (!user) {
       return res.status(404).json({

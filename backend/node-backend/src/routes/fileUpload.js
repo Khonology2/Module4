@@ -15,28 +15,9 @@ const upload = multer({
         fileSize: 10 * 1024 * 1024, // 10MB limit
     },
     fileFilter: (req, file, cb) => {
-        const allowedTypes = [
-            'image/jpeg',
-            'image/png', 
-            'image/gif',
-            'image/webp',
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-powerpoint',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'text/plain',
-            'application/octet-stream'
-        ];
-
-        const mt = file.mimetype || '';
-        if (allowedTypes.includes(mt)) {
-            cb(null, true);
-        } else {
-            cb(new Error(`File type not allowed: ${mt}`), false);
-        }
+        // Repository uploads must accept any document/file type. Preview/open
+        // handling is decided later by the client based on file extension.
+        cb(null, true);
     }
 });
 

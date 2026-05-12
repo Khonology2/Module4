@@ -155,67 +155,67 @@ class SprintMetrics {
   }
 
   factory SprintMetrics.fromJson(Map<String, dynamic> json) {
-    dynamic _pick(List<String> keys) {
+    dynamic pick(List<String> keys) {
       for (final k in keys) {
         if (json.containsKey(k) && json[k] != null) return json[k];
       }
       return null;
     }
 
-    String _pickString(List<String> keys, {String fallback = ''}) {
-      final v = _pick(keys);
+    String pickString(List<String> keys, {String fallback = ''}) {
+      final v = pick(keys);
       if (v == null) return fallback;
       return v.toString();
     }
 
-    int _pickInt(List<String> keys, {int fallback = 0}) {
-      final v = _pick(keys);
+    int pickInt(List<String> keys, {int fallback = 0}) {
+      final v = pick(keys);
       if (v is int) return v;
       return int.tryParse(v?.toString() ?? '') ?? fallback;
     }
 
-    double _pickDouble(List<String> keys, {double fallback = 0.0}) {
-      final v = _pick(keys);
+    double pickDouble(List<String> keys, {double fallback = 0.0}) {
+      final v = pick(keys);
       if (v is double) return v;
       if (v is int) return v.toDouble();
       return double.tryParse(v?.toString() ?? '') ?? fallback;
     }
 
-    DateTime _pickDateTime(List<String> keys) {
-      final v = _pick(keys);
+    DateTime pickDateTime(List<String> keys) {
+      final v = pick(keys);
       final s = v?.toString();
       if (s == null || s.isEmpty) return DateTime.now();
       return DateTime.tryParse(s) ?? DateTime.now();
     }
 
-    final sprintId = _pickString(['sprintId', 'sprint_id'], fallback: '');
-    final id = _pickString(['id', 'metricId', 'metric_id'], fallback: DateTime.now().millisecondsSinceEpoch.toString());
+    final sprintId = pickString(['sprintId', 'sprint_id'], fallback: '');
+    final id = pickString(['id', 'metricId', 'metric_id'], fallback: DateTime.now().millisecondsSinceEpoch.toString());
 
     return SprintMetrics(
       id: id,
       sprintId: sprintId,
-      committedPoints: _pickInt(['committedPoints', 'committed_points']),
-      completedPoints: _pickInt(['completedPoints', 'completed_points']),
-      carriedOverPoints: _pickInt(['carriedOverPoints', 'carried_over_points']),
-      testPassRate: _pickDouble(['testPassRate', 'test_pass_rate']),
-      defectsOpened: _pickInt(['defectsOpened', 'defects_opened']),
-      defectsClosed: _pickInt(['defectsClosed', 'defects_closed']),
-      criticalDefects: _pickInt(['criticalDefects', 'critical_defects']),
-      highDefects: _pickInt(['highDefects', 'high_defects']),
-      mediumDefects: _pickInt(['mediumDefects', 'medium_defects']),
-      lowDefects: _pickInt(['lowDefects', 'low_defects']),
-      codeReviewCompletion: _pickDouble(['codeReviewCompletion', 'code_review_completion']),
-      documentationStatus: _pickDouble(['documentationStatus', 'documentation_status']),
-      risks: _pick(['risks'])?.toString(),
-      mitigations: _pick(['mitigations'])?.toString(),
-      scopeChanges: _pick(['scopeChanges', 'scope_changes'])?.toString(),
-      pointsAddedDuringSprint: _pickInt(['pointsAddedDuringSprint', 'points_added', 'points_added_during_sprint']),
-      pointsRemovedDuringSprint: _pickInt(['pointsRemovedDuringSprint', 'points_removed', 'points_removed_during_sprint']),
-      blockers: _pick(['blockers'])?.toString(),
-      decisions: _pick(['decisions'])?.toString(),
-      uatNotes: _pick(['uatNotes', 'uat_notes'])?.toString(),
-      recordedAt: _pickDateTime(['recordedAt', 'recorded_at', 'created_at', 'updated_at']),
-      recordedBy: _pickString(['recordedBy', 'recorded_by', 'created_by'], fallback: ''),
+      committedPoints: pickInt(['committedPoints', 'committed_points']),
+      completedPoints: pickInt(['completedPoints', 'completed_points']),
+      carriedOverPoints: pickInt(['carriedOverPoints', 'carried_over_points']),
+      testPassRate: pickDouble(['testPassRate', 'test_pass_rate']),
+      defectsOpened: pickInt(['defectsOpened', 'defects_opened']),
+      defectsClosed: pickInt(['defectsClosed', 'defects_closed']),
+      criticalDefects: pickInt(['criticalDefects', 'critical_defects']),
+      highDefects: pickInt(['highDefects', 'high_defects']),
+      mediumDefects: pickInt(['mediumDefects', 'medium_defects']),
+      lowDefects: pickInt(['lowDefects', 'low_defects']),
+      codeReviewCompletion: pickDouble(['codeReviewCompletion', 'code_review_completion']),
+      documentationStatus: pickDouble(['documentationStatus', 'documentation_status']),
+      risks: pick(['risks'])?.toString(),
+      mitigations: pick(['mitigations'])?.toString(),
+      scopeChanges: pick(['scopeChanges', 'scope_changes'])?.toString(),
+      pointsAddedDuringSprint: pickInt(['pointsAddedDuringSprint', 'points_added', 'points_added_during_sprint']),
+      pointsRemovedDuringSprint: pickInt(['pointsRemovedDuringSprint', 'points_removed', 'points_removed_during_sprint']),
+      blockers: pick(['blockers'])?.toString(),
+      decisions: pick(['decisions'])?.toString(),
+      uatNotes: pick(['uatNotes', 'uat_notes'])?.toString(),
+      recordedAt: pickDateTime(['recordedAt', 'recorded_at', 'created_at', 'updated_at']),
+      recordedBy: pickString(['recordedBy', 'recorded_by', 'created_by'], fallback: ''),
     );
   }
 

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/sprint_metrics.dart';
 import '../providers/service_providers.dart';
 import '../services/api_client.dart';
 import '../theme/flownet_theme.dart';

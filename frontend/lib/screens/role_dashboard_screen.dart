@@ -48,8 +48,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   List<Map<String, dynamic>> _pendingReports = [];
   bool _isLoadingPendingReports = false;
   String? _pendingReportsError;
-  Map<String, dynamic> _teamMetrics = {};
-  bool _isLoadingTeamMetrics = false;
   String? _selectedTeamFilter;
   String? _hoveredTeamFilter;
   String? _selectedAdminFilter;
@@ -129,7 +127,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   // Missing variables
-  String _selectedChartType = 'velocity';
+  final String _selectedChartType = 'velocity';
   bool _isLoadingClientMetrics = false;
   Map<String, dynamic> _clientReviewMetrics = {};
 
@@ -159,7 +157,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     _loadReviewHistoryReports();
     _loadPendingReports();
     _loadClientReviewMetrics();
-    _computeTeamMetrics();
     _setupRealtimeListeners();
   }
 
@@ -190,7 +187,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     try {
       final items = await ApiService.getSprints();
       _dashboardSprints = items;
-      _computeTeamMetrics();
     } finally {
       if (mounted) setState(() => _isLoadingDashboardSprints = false);
     }
@@ -204,8 +200,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
 
       // Pre-populate user cache for better performance
       await _preloadUserNames(items);
-
-      _computeTeamMetrics();
     } finally {
       if (mounted) setState(() => _isLoadingDashboardDeliverables = false);
     }
@@ -250,7 +244,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           });
         }
       }
-      _computeTeamMetrics();
     } finally {
       if (mounted) setState(() => _isLoadingDashboardProjects = false);
     }
@@ -1403,33 +1396,607 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildDeliveryLeadDashboard() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+  Widget _buildStandaloneAssetIcon(
+    String assetPath, {
+    double size = 34,
+  }) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        assetPath,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          final altPath = assetPath.startsWith('frontend/')
+              ? assetPath.replaceFirst('frontend/', '')
+              : 'frontend/$assetPath';
+          return Image.asset(
+            altPath,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Icon(
+                Icons.image_not_supported_outlined,
+                size: size,
+                color: FlownetColors.crimsonRed,
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTeamHeaderAssetIconButton({
+    required String assetPath,
+    required VoidCallback onTap,
+    double buttonSize = 40,
+    double iconSize = 22,
+  }) {
+    return Material(
+      color: _dashboardSurfaceColor(),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: buttonSize,
+          height: buttonSize,
+          child: Center(
+            child: Image.asset(
+              assetPath,
+              width: iconSize,
+              height: iconSize,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  Icons.image_not_supported_outlined,
+                  size: iconSize,
+                  color: FlownetColors.crimsonRed,
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Map<String, int> _computeDeliverableStatusCounts() {
+    final now = DateTime.now();
+    int completed = 0;
+    int inProgress = 0;
+    int overdue = 0;
+    for (final d in _dashboardDeliverables) {
+      final status = (d['status'] ?? '').toString().toLowerCase();
+      final isCompleted =
+          status == 'completed' || status == 'done' || status == 'approved';
+      if (isCompleted) {
+        completed++;
+      } else {
+        inProgress++;
+      }
+      if (!isCompleted) {
+        final rawDue =
+            (d['due_date'] ?? d['dueDate'] ?? d['deadline'] ?? '').toString();
+        DateTime? due;
+        if (rawDue.isNotEmpty) {
+          try {
+            due = DateTime.parse(rawDue);
+          } catch (_) {}
+        }
+        if (due != null && due.isBefore(now)) {
+          overdue++;
+        }
+      }
+    }
+    return {
+      'total': _dashboardDeliverables.length,
+      'completed': completed,
+      'inProgress': inProgress,
+      'overdue': overdue,
+    };
+  }
+
+  Widget _buildDeliveryLeadReviewMetricsCards({bool compact = false}) {
+    final cards = [
+      _buildDeliveryLeadMetricAssetCard(
+        'Submitted',
+        '${_clientReviewMetrics['submitted'] ?? 0}',
+        'assets/Icons/submitted_red_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Approved',
+        '${_clientReviewMetrics['approved'] ?? 0}',
+        'assets/Icons/approved_red_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Changes Requested',
+        '${_clientReviewMetrics['changes'] ?? 0}',
+        'assets/Icons/changes_request_red_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Rejected',
+        '${_clientReviewMetrics['rejected'] ?? 0}',
+        'assets/Icons/rejected_red_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Average Review Time',
+        '${_clientReviewMetrics['avg_review_time'] ?? '-'}',
+        'assets/Icons/review_time_red_icon.png',
+      ),
+    ];
+
+    if (compact) {
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: cards.map((c) => SizedBox(width: 240, child: c)).toList(),
+      );
+    }
+
+    return Row(
+      children: [
+        for (int i = 0; i < cards.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Expanded(child: cards[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDeliveryLeadTopHeader() {
+    return Row(
+      children: [
+        Expanded(
+          child: Row(
+            children: [
+              Text(
+                'Delivery Manager Dashboard',
+                style: _dashboardTextStyle(size: 28, weight: FontWeight.w700),
+              ),
+              const SizedBox(width: 14),
+              Text(
+                'Hello, ${_currentUser?.name ?? 'Name Surname'}',
+                style: _dashboardTextStyle(size: 14, weight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+        _buildTeamHeaderAssetIconButton(
+          assetPath: 'assets/Message.png',
+          onTap: () => context.go('/notifications'),
+        ),
+        const SizedBox(width: 10),
+        _buildTeamHeaderAssetIconButton(
+          assetPath: 'assets/notification.png',
+          onTap: () => _loadPendingReports(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeliveryLeadApprovalRemindersPanel({bool compact = false}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _dashboardSurfaceColor(),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          _buildStandaloneAssetIcon('assets/Icons/reminder_icon.png', size: 44),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Approval Reminders',
+                  style: _dashboardTextStyle(
+                    size: compact ? 20 : 22,
+                    weight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  'Dream BIG, work hard and stay focused - make it a productive day!',
+                  style: _dashboardTextStyle(size: 11, weight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _buildTeamPillButton(
+                'SEND REMINDER',
+                () => context.go('/send-reminder'),
+              ),
+              _buildTeamPillButton(
+                'TRIGGER ESCALATION',
+                _triggerEscalation,
+              ),
+              _buildTeamPillButton(
+                'DELIVERABLES OVERVIEW',
+                () => context.go('/deliverables-overview'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveryLeadTeamMetricsCards({bool compact = false}) {
+    final counts = _computeDeliverableStatusCounts();
+    final total = counts['total'] ?? 0;
+    final completed = counts['completed'] ?? 0;
+    final inProgress = counts['inProgress'] ?? 0;
+    final overdue = counts['overdue'] ?? 0;
+    final pendingReviews = _pendingReports.length;
+    final completionRate =
+        total > 0 ? ((completed / total) * 100).round() : 0;
+
+    final cards = [
+      _buildDeliveryLeadMetricAssetCard(
+        'Deliverables',
+        '$total',
+        'assets/Icons/deliverables_kpi_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'In Progress',
+        '$inProgress',
+        'assets/Icons/progress_kpi_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Completed',
+        '$completed',
+        'assets/Icons/completed_kpi_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Overdue',
+        '$overdue',
+        'assets/Icons/overdue_kpi_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Active Sprints',
+        '${_dashboardSprints.length}',
+        'assets/Icons/active_sprints_kpi_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Active Projects',
+        '${_dashboardProjects.length}',
+        'assets/Icons/active_projects_kpi_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Pending Reviews',
+        '$pendingReviews',
+        'assets/Icons/review_kpi_icon.png',
+      ),
+      _buildDeliveryLeadMetricAssetCard(
+        'Completion Rate',
+        '$completionRate%',
+        'assets/Icons/completion_kpi_icon.png',
+      ),
+    ];
+
+    if (compact) {
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: cards.map((c) => SizedBox(width: 240, child: c)).toList(),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            for (int i = 0; i < 4; i++) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(child: cards[i]),
+            ],
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            for (int i = 4; i < 8; i++) ...[
+              if (i > 4) const SizedBox(width: 10),
+              Expanded(child: cards[i]),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeliveryLeadVelocityPanel() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _dashboardSurfaceColor(),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildWelcomeCard(),
-          const SizedBox(height: 24),
-          _buildReminderQuickActions(),
-          const SizedBox(height: 24),
-          _buildTeamMetrics(),
-          const SizedBox(height: 24),
-          _buildReviewMetrics(),
-          const SizedBox(height: 24),
-          _buildSprintOverview(),
-          const SizedBox(height: 24),
-          _buildKanbanLinkCard(),
-          const SizedBox(height: 24),
-          _buildDeliverablesOverview(),
-          const SizedBox(height: 24),
-          _buildProjectsOverview(),
-          const SizedBox(height: 24),
-          _buildPendingReviews(),
-          const SizedBox(height: 24),
-          _buildTeamPerformance(),
+          Row(
+            children: [
+              _buildStandaloneAssetIcon(
+                'assets/Icons/revenue_forecast_icon.png',
+                size: 38,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Revenue Forecast',
+                      style: _dashboardTextStyle(
+                        size: 20,
+                        weight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Projected vs Actual Revenue',
+                      style: _dashboardTextStyle(size: 11),
+                    ),
+                  ],
+                ),
+              ),
+              _buildStandaloneAssetIcon(
+                'assets/Icons/notification_icon.png',
+                size: 24,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 220,
+            child: SprintPerformanceChart(
+              sprints: _dashboardSprints,
+              chartType: _selectedChartType,
+              showTitle: false,
+              useCard: false,
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDeliveryLeadKpiCard({
+    required String title,
+    required String value,
+    required String assetPath,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _dashboardSurfaceColor(),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: _dashboardTextStyle(size: 16, weight: FontWeight.w700),
+          ),
+          Text(
+            'Additional description information to include.',
+            style: _dashboardTextStyle(size: 10, weight: FontWeight.w500),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                value,
+                style: _dashboardTextStyle(size: 16, weight: FontWeight.w700),
+              ),
+              const Spacer(),
+              _buildStandaloneAssetIcon(assetPath, size: 38),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveryLeadMetricAssetCard(
+    String title,
+    String value,
+    String assetPath,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _dashboardSurfaceColor(),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: _dashboardTextStyle(size: 18, weight: FontWeight.w700),
+          ),
+          Text(
+            'Additional detail if required.',
+            style: _dashboardTextStyle(size: 11),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Text(
+                value,
+                style: _dashboardTextStyle(size: 18, weight: FontWeight.w700),
+              ),
+              const Spacer(),
+              _buildStandaloneAssetIcon(assetPath, size: 38),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveryLeadVelocitySection({required bool compact}) {
+    final total = _dashboardDeliverables.length;
+    final completed = _dashboardDeliverables
+        .where(
+          (d) => (d['status'] ?? '').toString().toLowerCase() == 'completed',
+        )
+        .length;
+    final planned = total;
+    final carryOver = (planned - completed) < 0 ? 0 : (planned - completed);
+    final avgVelocity =
+        planned > 0 ? ((completed / planned) * 100).round() : 0;
+
+    final cards = [
+      _buildDeliveryLeadKpiCard(
+        title: 'Average Velocity',
+        value: '$avgVelocity%',
+        assetPath: 'assets/Icons/average_red_icon.png',
+      ),
+      _buildDeliveryLeadKpiCard(
+        title: 'Planned',
+        value: '$planned',
+        assetPath: 'assets/Icons/planned_red_icon.png',
+      ),
+      _buildDeliveryLeadKpiCard(
+        title: 'Completed',
+        value: '$completed',
+        assetPath: 'assets/Icons/completed_red_icon.png',
+      ),
+      _buildDeliveryLeadKpiCard(
+        title: 'Carry Over',
+        value: '$carryOver',
+        assetPath: 'assets/Icons/carry_over_red_icon.png',
+      ),
+      _buildDeliveryLeadKpiCard(
+        title: 'Defects',
+        value: '0',
+        assetPath: 'assets/Icons/defects_red_icon.png',
+      ),
+    ];
+
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color textColor = isDarkMode ? Colors.white : Colors.black;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Velocity Trend',
+          style: TextStyle(
+            color: textColor,
+            fontSize: compact ? 22 : 26,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildDeliveryLeadVelocityPanel(),
+        const SizedBox(height: 10),
+        if (compact)
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: cards.map((c) => SizedBox(width: 240, child: c)).toList(),
+          )
+        else
+          Row(
+            children: [
+              for (int i = 0; i < cards.length; i++) ...[
+                if (i > 0) const SizedBox(width: 10),
+                Expanded(child: cards[i]),
+              ],
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDeliveryLeadDashboard() {
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color textColor = isDarkMode ? Colors.white : Colors.black;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool compact = constraints.maxWidth < 980;
+        final double headingSize = compact ? 22 : 26;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(10, 2, 10, 14),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1380),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDeliveryLeadTopHeader(),
+                  const SizedBox(height: 12),
+                  _buildDeliveryLeadApprovalRemindersPanel(compact: compact),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Team Metrics Overview',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: headingSize,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDeliveryLeadTeamMetricsCards(compact: compact),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Review Metrics Overview',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: headingSize,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDeliveryLeadReviewMetricsCards(compact: compact),
+                  const SizedBox(height: 12),
+                  compact
+                      ? Column(
+                          children: [
+                            _buildAdminDeliverablesPanel(),
+                            const SizedBox(height: 12),
+                            _buildAdminProjectsPanel(),
+                          ],
+                        )
+                      : Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: _buildAdminDeliverablesPanel(),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: _buildAdminProjectsPanel(),
+                            ),
+                          ],
+                        ),
+                  const SizedBox(height: 12),
+                  _buildSprintOverview(),
+                  const SizedBox(height: 12),
+                  _buildDeliveryLeadVelocitySection(compact: compact),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1987,51 +2554,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         : const Color(0xFFCFCFCF);
   }
 
-  Widget _buildReminderQuickActions() {
-    final canShow = _currentUser != null &&
-        (_currentUser!.isDeliveryLead || _currentUser!.isSystemAdmin);
-    if (!canShow) return const SizedBox.shrink();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildCardHeader(Icons.notifications_active, 'Approval Reminders',
-                route: '/approval-requests'),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: [
-                _buildActionButton(
-                  icon: Icons.assignment,
-                  label: 'Send Reminder',
-                  onTap: () => context.push('/send-reminder'),
-                ),
-                _buildActionButton(
-                  icon: Icons.trending_up,
-                  label: 'Trigger Escalation',
-                  onTap: _triggerEscalation,
-                ),
-                _buildActionButton(
-                  icon: Icons.analytics_outlined,
-                  label: 'Deliverables Overview',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) =>
-                            const DeliverablesMetricsScreen()),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _triggerEscalation() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -2461,107 +2983,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildDeliverablesOverview() {
-    // Filter out completed deliverables for the overview
-    final overviewDeliverables = _dashboardDeliverables.where((d) {
-      final status =
-          (d['status'] ?? d['reviewStatus'] ?? '').toString().toLowerCase();
-      return status != 'completed';
-    }).toList();
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _isLoadingDashboardDeliverables
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildCardHeader(Icons.assignment_outlined,
-                      'Deliverables Overview (${overviewDeliverables.length})',
-                      route: '/deliverables'),
-                  const SizedBox(height: 8),
-                  if (overviewDeliverables.isEmpty)
-                    const Text('No active deliverables'),
-                  ...overviewDeliverables.take(6).map((d) {
-                    final title = d['title'] ??
-                        d['name'] ??
-                        d['deliverableName'] ??
-                        'Untitled Deliverable';
-                    final status =
-                        (d['status'] ?? d['reviewStatus'] ?? '').toString();
-                    final id =
-                        (d['id']?.toString() ?? d['uuid']?.toString() ?? '');
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.assignment_outlined, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: Text(status.isNotEmpty
-                                      ? '$title • $status'
-                                      : title)),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            children: [
-                              _priorityChip((d['priority'] ?? '').toString()),
-                              _dueDateChip(d['due_date'] ??
-                                  d['dueDate'] ??
-                                  d['deadline']),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              TextButton.icon(
-                                onPressed: id.isEmpty
-                                    ? null
-                                    : () => _editDeliverable(d),
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                                label: const Text('Edit'),
-                              ),
-                              const SizedBox(width: 4),
-                              TextButton.icon(
-                                onPressed: id.isEmpty
-                                    ? null
-                                    : () => _updateDeliverableStatus(
-                                        id, 'completed'),
-                                icon: const Icon(Icons.check_circle_outline,
-                                    size: 18),
-                                label: const Text('Complete'),
-                              ),
-                              const Spacer(),
-                              IconButton(
-                                onPressed: () {
-                                  if (id.isNotEmpty) {
-                                    _openSprintReportForDeliverable(d);
-                                    return;
-                                  }
-                                  context.go('/deliverables');
-                                },
-                                icon: const Icon(Icons.open_in_new),
-                                tooltip: 'Open',
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-              ),
-      ),
-    );
-  }
-
   // ignore: unused_element
   Widget _buildRecentActivity() {
     return Card(
@@ -2622,60 +3043,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildTeamMetrics() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildCardHeader(Icons.group_outlined, 'Team Metrics', route: null),
-            const SizedBox(height: 12),
-            if (_isLoadingTeamMetrics)
-              const Center(child: CircularProgressIndicator())
-            else if (_teamMetrics.isEmpty)
-              const Text('No team data available')
-            else
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _metricTile('Deliverables', _teamMetrics['deliverables'] ?? 0,
-                      Icons.assignment_outlined, Colors.blue),
-                  _metricTile('In Progress', _teamMetrics['in_progress'] ?? 0,
-                      Icons.play_circle_outline, Colors.orange),
-                  _metricTile('Completed', _teamMetrics['completed'] ?? 0,
-                      Icons.check_circle_outline, Colors.green),
-                  _metricTile('Overdue', _teamMetrics['overdue'] ?? 0,
-                      Icons.warning_amber_outlined, Colors.red),
-                  _metricTile(
-                      'Active Sprints',
-                      _teamMetrics['active_sprints'] ?? 0,
-                      Icons.flag_outlined,
-                      Colors.purple),
-                  _metricTile(
-                      'Active Projects',
-                      _teamMetrics['active_projects'] ?? 0,
-                      Icons.folder_open_outlined,
-                      Colors.indigo),
-                  _metricTile(
-                      'Pending Reviews',
-                      _teamMetrics['pending_reviews'] ?? 0,
-                      Icons.rule_folder_outlined,
-                      Colors.blueGrey),
-                  _metricTile(
-                      'Completion Rate',
-                      _teamMetrics['completion_rate'] ?? '-',
-                      Icons.pie_chart_outline,
-                      Colors.teal),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildSprintOverview() {
     return Card(
       child: Padding(
@@ -2727,53 +3094,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
-  Widget _buildTeamPerformance() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                    child: _buildCardHeader(
-                        Icons.insights_outlined, 'Team Performance',
-                        route: null)),
-                const SizedBox(width: 12),
-                DropdownButton<String>(
-                  value: _selectedChartType,
-                  items: const [
-                    DropdownMenuItem(
-                        value: 'velocity', child: Text('Velocity')),
-                    DropdownMenuItem(
-                        value: 'burndown', child: Text('Burndown')),
-                    DropdownMenuItem(value: 'burnup', child: Text('Burnup')),
-                    DropdownMenuItem(value: 'defects', child: Text('Defects')),
-                    DropdownMenuItem(
-                        value: 'test_pass_rate', child: Text('Test Pass Rate')),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) {
-                      setState(() {
-                        _selectedChartType = v;
-                      });
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        SprintPerformanceChart(
-            sprints: _dashboardSprints, chartType: _selectedChartType),
-        const SizedBox(height: 12),
-        _teamPerformanceSummary(),
-      ],
-    );
-  }
-
   Widget _buildReviewMetrics() {
     return Card(
       child: Padding(
@@ -2816,76 +3136,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildProjectsOverview() {
-    if (_isLoadingDashboardProjects) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final now = DateTime.now();
-    final overdueProjects = _dashboardProjects.where((p) {
-      try {
-        final status = (p['status'] ?? '').toString().toLowerCase();
-        if (status == 'completed' || status == 'cancelled') {
-          return false;
-        }
-        final endStr =
-            p['end_date']?.toString() ?? p['endDate']?.toString() ?? '';
-        if (endStr.isEmpty) return false;
-        final end = DateTime.parse(endStr);
-        return now.isAfter(end);
-      } catch (_) {
-        return false;
-      }
-    }).toList();
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildCardHeader(Icons.folder_outlined,
-                'Projects Overview (${_dashboardProjects.length})',
-                route: null),
-            const SizedBox(height: 8),
-            if (_dashboardProjects.isEmpty) const Text('No active projects'),
-            ..._dashboardProjects.take(3).map((p) {
-              final title = p['name'] ?? 'Untitled Project';
-              final status = (p['status'] ?? '').toString();
-              final id = p['id']?.toString() ?? '';
-              final isOverdue =
-                  overdueProjects.any((op) => op['id'] == p['id']);
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: InkWell(
-                  onTap: id.isNotEmpty
-                      ? () => context.go('/project-workspace/$id')
-                      : null,
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.folder_open,
-                        size: 18,
-                        color: isOverdue ? Colors.redAccent : null,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: Text(
-                              status.isNotEmpty ? '$title • $status' : title)),
-                    ],
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPendingReviews() {
-    return _buildPendingApprovals();
   }
 
   Widget _buildPendingApprovals() {
@@ -3255,84 +3505,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       });
       messenger
           .showSnackBar(SnackBar(content: Text('Status updated to $status')));
-      _computeTeamMetrics();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Failed to update: $e')));
-    }
-  }
-
-  void _computeTeamMetrics() {
-    if (!mounted) return;
-    setState(() => _isLoadingTeamMetrics = true);
-    try {
-      final int totalDeliverables = _dashboardDeliverables.length;
-      int completed = 0;
-      int inProgress = 0;
-      int overdue = 0;
-      for (final d in _dashboardDeliverables) {
-        final status =
-            (d['status'] ?? d['state'] ?? '').toString().toLowerCase();
-        if (status == 'completed' || status == 'done' || status == 'approved') {
-          completed++;
-        }
-        if (status == 'in_progress' ||
-            status == 'in-progress' ||
-            status == 'progress') {
-          inProgress++;
-        }
-        final dueStr =
-            (d['due_date'] ?? d['dueDate'] ?? d['deadline'] ?? '').toString();
-        final due = DateTime.tryParse(dueStr);
-        if (due != null &&
-            due.isBefore(DateTime.now()) &&
-            status != 'completed' &&
-            status != 'done' &&
-            status != 'approved') {
-          overdue++;
-        }
-      }
-      int activeSprints = 0;
-      for (final s in _dashboardSprints) {
-        final status =
-            (s['status'] ?? s['state'] ?? '').toString().toLowerCase();
-        if (status == 'active' ||
-            status == 'in_progress' ||
-            status == 'in-progress') {
-          activeSprints++;
-        }
-      }
-      int activeProjects = 0;
-      for (final p in _dashboardProjects) {
-        final status = (p['status'] ?? '').toString().toLowerCase();
-        if (status != 'completed' && status != 'archived') activeProjects++;
-      }
-      final pendingReviews = _pendingReports.length;
-      String completionRateStr;
-      if (totalDeliverables > 0) {
-        final rate = (completed / totalDeliverables * 100).toStringAsFixed(1);
-        completionRateStr = '$rate%';
-      } else {
-        completionRateStr = '-';
-      }
-      final m = <String, dynamic>{
-        'deliverables': totalDeliverables,
-        'completed': completed,
-        'in_progress': inProgress,
-        'overdue': overdue,
-        'active_sprints': activeSprints,
-        'active_projects': activeProjects,
-        'pending_reviews': pendingReviews,
-        'completion_rate': completionRateStr,
-      };
-      if (mounted) {
-        setState(() {
-          _teamMetrics = m;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _teamMetrics = {});
-    } finally {
-      if (mounted) setState(() => _isLoadingTeamMetrics = false);
     }
   }
 
@@ -3400,7 +3574,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                 statusRaw == 'underreview';
           }).toList();
         });
-        _computeTeamMetrics();
       } else {
         setState(() {
           _pendingReports = [];
@@ -3503,44 +3676,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     } finally {
       if (mounted) setState(() => _isLoadingClientMetrics = false);
     }
-  }
-
-  Widget _teamPerformanceSummary() {
-    double planned = 0;
-    double completed = 0;
-    double defects = 0;
-    for (final s in _dashboardSprints) {
-      final p = s['planned_points'] ?? s['planned'] ?? 0;
-      final c = s['completed_points'] ?? s['completed'] ?? 0;
-      final d = s['defects_opened'] ?? s['defect_count'] ?? 0;
-      planned += (p is num) ? p.toDouble() : double.tryParse(p.toString()) ?? 0;
-      completed +=
-          (c is num) ? c.toDouble() : double.tryParse(c.toString()) ?? 0;
-      defects += (d is num) ? d.toDouble() : double.tryParse(d.toString()) ?? 0;
-    }
-    final avgVelocity = _dashboardSprints.isNotEmpty
-        ? (completed / _dashboardSprints.length)
-        : 0;
-    final carryover = planned - completed;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: [
-          _metricTile('Avg Velocity', avgVelocity.toStringAsFixed(1),
-              Icons.speed, Colors.blue),
-          _metricTile('Planned', planned.toStringAsFixed(1), Icons.trending_up,
-              Colors.orange),
-          _metricTile('Completed', completed.toStringAsFixed(1),
-              Icons.check_circle_outline, Colors.green),
-          _metricTile('Carryover', carryover.toStringAsFixed(1),
-              Icons.sync_problem, Colors.red),
-          _metricTile('Defects', defects.toStringAsFixed(0), Icons.bug_report,
-              Colors.purple),
-        ],
-      ),
-    );
   }
 
   Future<void> _approveReport(String reportId) async {
@@ -3971,58 +4106,6 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
 
   void _handleRoleChanged(dynamic _) {
     _loadCurrentUser();
-  }
-
-  Widget _buildKanbanLinkCard() {
-    return InkWell(
-      onTap: () => context.push('/deliverables-overview'),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-          border: Border.all(
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.3)),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.view_kanban,
-                  color: Theme.of(context).primaryColor),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Deliverables Board',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).primaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Track progress and manage status',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.arrow_forward_ios,
-                size: 16, color: Theme.of(context).primaryColor),
-          ],
-        ),
-      ),
-    );
   }
 
   void _handleLogout() async {
