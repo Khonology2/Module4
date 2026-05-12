@@ -94,4 +94,8 @@ flutter:
   assets:
     - assets/
     - assets/dashboard_team_member/
+    # Subdirectories of assets/ are not included by "assets/" alone (Flutter pubspec rules).
+    - assets/Icons/
+    - assets/Icons/images/
     - assets/Icons/Account_User_Profile/red_user_profile.png
+    - assets/Points.png

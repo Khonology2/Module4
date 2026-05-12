@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../services/sprint_database_service.dart';
 import '../services/auth_service.dart';
+import '../theme/flownet_theme.dart';
 
 class CreateSprintScreen extends StatefulWidget {
   final String? projectId;
@@ -20,6 +22,8 @@ class CreateSprintScreen extends StatefulWidget {
 }
 
 class _CreateSprintScreenState extends State<CreateSprintScreen> {
+  static const Color _brandRed = Color(0xFFD70E0E);
+
   final SprintDatabaseService _sprintService = SprintDatabaseService();
 
   final _formKey = GlobalKey<FormState>();
@@ -85,7 +89,7 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Only Delivery Leads, System Admins, or Project Owners can create sprints.')),
       );
-      Navigator.of(context).pop(false);
+      if (context.canPop()) context.pop(false);
       return;
     }
 
@@ -95,7 +99,7 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You do not have permission to edit this sprint.')),
       );
-      Navigator.of(context).pop(false);
+      if (context.canPop()) context.pop(false);
       return;
     }
 
@@ -108,7 +112,7 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Missing project context for sprint.')),
       );
-      Navigator.of(context).pop(false);
+      if (context.canPop()) context.pop(false);
       return;
     }
 
@@ -126,7 +130,7 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Only the Project Owner can edit sprint details.')),
         );
-        Navigator.of(context).pop(false);
+        if (context.canPop()) context.pop(false);
         return;
       }
     } catch (_) {
@@ -134,7 +138,7 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Unable to verify sprint permissions.')),
       );
-      Navigator.of(context).pop(false);
+      if (context.canPop()) context.pop(false);
       return;
     }
   }
@@ -472,7 +476,7 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(_isEditing ? 'Sprint updated successfully!' : 'Sprint created successfully!')),
         );
-        Navigator.pop(context, true);
+        context.pop(true);
       }
     } catch (e) {
       debugPrint('Error saving sprint: $e');
@@ -519,11 +523,76 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
   Widget _buildNumberField(TextEditingController controller, String label, {bool isDouble = false}) {
     return TextFormField(
       controller: controller,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: Colors.white,
+      ),
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
       ),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      keyboardType: TextInputType.numberWithOptions(decimal: isDouble),
+    );
+  }
+
+  /// Matches project form field geometry so inputs line up on the background.
+  ThemeData _alignedFieldTheme(BuildContext context) {
+    final base = Theme.of(context);
+    return base.copyWith(
+      textTheme: base.textTheme.copyWith(
+        bodyLarge: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: Colors.white,
+        ),
+        bodyMedium: const TextStyle(fontSize: 13, color: Colors.white),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF3F4146),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _brandRed, width: 1.4),
+        ),
+        labelStyle: TextStyle(
+          color: Colors.white.withValues(alpha: 0.9),
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
+        floatingLabelStyle: const TextStyle(
+          color: _brandRed,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        hintStyle: TextStyle(
+          color: Colors.white.withValues(alpha: 0.72),
+          fontSize: 14,
+        ),
+        prefixIconColor: _brandRed,
+        suffixIconColor: Colors.white70,
+      ),
+      expansionTileTheme: ExpansionTileThemeData(
+        backgroundColor: Colors.transparent,
+        collapsedBackgroundColor: Colors.transparent,
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        iconColor: Colors.white.withValues(alpha: 0.75),
+        collapsedIconColor: Colors.white.withValues(alpha: 0.75),
+        textColor: Colors.white,
+        collapsedTextColor: Colors.white,
+      ),
     );
   }
 
@@ -531,41 +600,85 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
   Widget build(BuildContext context) {
     debugPrint('🟢 CreateSprintScreen.build() called - projectId: ${widget.projectId}, projectName: ${widget.projectName}');
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEditing
-            ? 'Edit Sprint - ${_nameController.text}'
-            : (widget.projectName == null
-                ? 'Create Sprint'
-                : 'Create Sprint - ${widget.projectName}')),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            tooltip: 'Back',
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/sprint-console');
+              }
+            },
+          ),
+          title: Text(
+            _isEditing
+                ? 'Edit Sprint - ${_nameController.text}'
+                : (widget.projectName == null
+                    ? 'Create Sprint'
+                    : 'Create Sprint - ${widget.projectName}'),
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: FlownetColors.pureWhite,
+            ),
+          ),
+          backgroundColor: Colors.transparent,
+          foregroundColor: FlownetColors.pureWhite,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+          centerTitle: false,
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1100),
+              child: Theme(
+                data: _alignedFieldTheme(context),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
               // Project selection dropdown (only show if no project was pre-selected)
               if (widget.projectId == null) ...[
                 _isLoadingProjects
                     ? const Padding(
                         padding: EdgeInsets.all(16.0),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(
+                          child: CircularProgressIndicator(color: _brandRed),
+                        ),
                       )
                     : DropdownButtonFormField<Map<String, dynamic>>(
-                        initialValue: _selectedProject,
+                        // ignore: deprecated_member_use
+                        value: _selectedProject,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF3F4146),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
                         decoration: const InputDecoration(
                           labelText: 'Project *',
+                          hintText: 'Select a project',
                           border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.folder),
+                          prefixIcon: Icon(Icons.folder_outlined),
                         ),
-                        hint: const Text('Select a project'),
                         items: _projects.map((project) {
                           return DropdownMenuItem<Map<String, dynamic>>(
                             value: project,
-                            child: Text(project['name']?.toString() ?? 'Unnamed Project'),
+                            child: Text(
+                              project['name']?.toString() ?? 'Unnamed Project',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14,
+                              ),
+                            ),
                           );
                         }).toList(),
                         onChanged: (Map<String, dynamic>? project) {
@@ -619,15 +732,24 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                   padding: const EdgeInsets.only(bottom: 8.0),
                   child: Text(
                     'Project: ${widget.projectName}',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               TextFormField(
                 controller: _nameController,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Sprint Name',
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.timeline),
+                  prefixIcon: Icon(Icons.timeline_outlined),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -639,10 +761,15 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _descriptionController,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Description',
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.description),
+                  prefixIcon: Icon(Icons.description_outlined),
                 ),
                 maxLines: 3,
               ),
@@ -656,17 +783,24 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Start Date',
                           border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.calendar_today),
+                          prefixIcon: Icon(Icons.calendar_today_outlined),
                         ),
                         child: Text(
                           _startDate != null
                               ? '${_startDate!.day}/${_startDate!.month}/${_startDate!.year}'
                               : 'Select start date',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: _startDate != null
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.55),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: InkWell(
                       onTap: _selectEndDate,
@@ -674,12 +808,19 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         decoration: const InputDecoration(
                           labelText: 'End Date',
                           border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.calendar_today),
+                          prefixIcon: Icon(Icons.event_outlined),
                         ),
                         child: Text(
                           _endDate != null
                               ? '${_endDate!.day}/${_endDate!.month}/${_endDate!.year}'
                               : 'Select end date',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: _endDate != null
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.55),
+                          ),
                         ),
                       ),
                     ),
@@ -689,26 +830,39 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _plannedPointsController,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Planned Points',
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.assessment),
+                  prefixIcon: Icon(Icons.analytics_outlined),
                 ),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 24),
 
               ExpansionTile(
-                title: const Text('Outcomes', style: TextStyle(fontWeight: FontWeight.bold)),
+                title: const Text(
+                  'Outcomes',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                ),
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(8.0),
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(
                           children: [
                             Expanded(child: _buildNumberField(_committedPointsController, 'Committed Pts')),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 12),
                             Expanded(child: _buildNumberField(_completedPointsController, 'Completed Pts')),
                           ],
                         ),
@@ -718,7 +872,7 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         Row(
                           children: [
                             Expanded(child: _buildNumberField(_defectsOpenedController, 'Defects Opened')),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 12),
                             Expanded(child: _buildNumberField(_defectsClosedController, 'Defects Closed')),
                           ],
                         ),
@@ -726,13 +880,18 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         Row(
                           children: [
                             Expanded(child: _buildNumberField(_testPassRateController, 'Pass Rate %', isDouble: true)),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 12),
                             Expanded(child: _buildNumberField(_codeCoverageController, 'Coverage %')),
                           ],
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _uatNotesController,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
                           decoration: const InputDecoration(
                             labelText: 'UAT Notes',
                             border: OutlineInputBorder(),
@@ -746,11 +905,19 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
               ),
 
               ExpansionTile(
-                title: const Text('Quality Signals', style: TextStyle(fontWeight: FontWeight.bold)),
+                title: const Text(
+                  'Quality Signals',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                ),
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(8.0),
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _buildNumberField(_escapedDefectsController, 'Escaped Defects'),
                         const SizedBox(height: 16),
@@ -758,6 +925,11 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _documentationStatusController,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
                           decoration: const InputDecoration(
                             labelText: 'Documentation Status',
                             border: OutlineInputBorder(),
@@ -772,14 +944,27 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
               ),
 
               ExpansionTile(
-                title: const Text('Notes & Risks', style: TextStyle(fontWeight: FontWeight.bold)),
+                title: const Text(
+                  'Notes & Risks',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                ),
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(8.0),
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                          TextFormField(
                           controller: _risksController,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
                           decoration: const InputDecoration(
                             labelText: 'Risks (Free-text)',
                             border: OutlineInputBorder(),
@@ -789,6 +974,11 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _blockersController,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
                           decoration: const InputDecoration(
                             labelText: 'Blockers',
                             border: OutlineInputBorder(),
@@ -798,6 +988,11 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _decisionsController,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
                           decoration: const InputDecoration(
                             labelText: 'Decisions',
                             border: OutlineInputBorder(),
@@ -826,10 +1021,13 @@ class _CreateSprintScreenState extends State<CreateSprintScreen> {
                   ),
                 ),
               ),
-            ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
-      ),
-    );
+      );
   }
 }

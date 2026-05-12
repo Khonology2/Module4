@@ -52,6 +52,7 @@ import 'screens/skill_assessment_screen.dart';
 import 'screens/deliverable_detail_screen.dart';
 import 'screens/environment_management_screen.dart';
 import 'screens/project_workspace_screen.dart';
+import 'screens/create_sprint_screen.dart';
 import 'screens/project_details_screen.dart';
 import 'screens/ai_assistant_screen.dart';
 
@@ -92,11 +93,27 @@ class KhonoApp extends ConsumerWidget {
       textTheme: FlownetTheme.lightTheme.textTheme.apply(fontFamily: 'Poppins'),
       primaryTextTheme:
           FlownetTheme.lightTheme.primaryTextTheme.apply(fontFamily: 'Poppins'),
+      appBarTheme: FlownetTheme.lightTheme.appBarTheme.copyWith(
+        titleTextStyle: const TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+      ),
     );
     final darkTheme = FlownetTheme.darkTheme.copyWith(
       textTheme: FlownetTheme.darkTheme.textTheme.apply(fontFamily: 'Poppins'),
       primaryTextTheme:
           FlownetTheme.darkTheme.primaryTextTheme.apply(fontFamily: 'Poppins'),
+      appBarTheme: FlownetTheme.darkTheme.appBarTheme.copyWith(
+        titleTextStyle: const TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+      ),
     );
     return MaterialApp.router(
       title: 'Flownet Workspaces - Project Management Hub',
@@ -411,6 +428,33 @@ final GoRouter _router = GoRouter(
                 ),
               );
             },
+    ),
+    GoRoute(
+      path: '/sprint-create',
+      builder: (context, state) {
+        final q = state.uri.queryParameters;
+        final projectId = q['projectId'];
+        final projectName = q['projectName'];
+        Map<String, dynamic>? sprintMap;
+        final extra = state.extra;
+        if (extra is Map<String, dynamic>) {
+          sprintMap = extra;
+        }
+        return RouteGuard(
+          route: '/sprint-console',
+          child: SidebarScaffold(
+            child: CreateSprintScreen(
+              projectId: projectId,
+              projectName: projectName,
+              sprint: sprintMap,
+            ),
+          ),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/sprints',
+      redirect: (context, state) => '/sprint-console',
     ),
     GoRoute(
       path: '/sprint-board/:sprintId',

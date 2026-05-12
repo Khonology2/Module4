@@ -25,6 +25,7 @@ class EnhancedDeliverableSetupScreen extends ConsumerStatefulWidget {
 
 class _EnhancedDeliverableSetupScreenState
     extends ConsumerState<EnhancedDeliverableSetupScreen> {
+  static const Color _brandRed = Color(0xFFD70E0E);
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -240,11 +241,20 @@ class _EnhancedDeliverableSetupScreenState
             ),
           ),
           actions: [
-            TextButton(
+            ElevatedButton(
               onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brandRed,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
               child: const Text('Cancel'),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () {
                 if (controller.text.isNotEmpty) {
                   setState(() {
@@ -253,6 +263,15 @@ class _EnhancedDeliverableSetupScreenState
                   Navigator.pop(context);
                 }
               },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brandRed,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
               child: const Text('Add'),
             ),
           ],
@@ -276,11 +295,20 @@ class _EnhancedDeliverableSetupScreenState
             ),
           ),
           actions: [
-            TextButton(
+            ElevatedButton(
               onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brandRed,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
               child: const Text('Cancel'),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () {
                 if (controller.text.isNotEmpty) {
                   setState(() {
@@ -289,6 +317,15 @@ class _EnhancedDeliverableSetupScreenState
                   Navigator.pop(context);
                 }
               },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brandRed,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
               child: const Text('Add'),
             ),
           ],
@@ -672,36 +709,96 @@ class _EnhancedDeliverableSetupScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: FlownetColors.charcoalBlack,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          tooltip: 'Back',
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/deliverables-overview');
+            }
+          },
+        ),
         title: const Text('Create Deliverable'),
-        backgroundColor: FlownetColors.charcoalBlack,
+        backgroundColor: Colors.transparent,
         foregroundColor: FlownetColors.pureWhite,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         centerTitle: false,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1100),
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                textTheme: Theme.of(context).textTheme.copyWith(
+                  bodyLarge: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                  bodyMedium: const TextStyle(
+                    fontSize: 13,
+                    color: Colors.white,
+                  ),
+                ),
+                inputDecorationTheme: InputDecorationTheme(
+                  filled: true,
+                  fillColor: const Color(0xFF3F4146),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: _brandRed, width: 1.4),
+                  ),
+                  labelStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  floatingLabelStyle: const TextStyle(
+                    color: _brandRed,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.72),
+                    fontSize: 14,
+                  ),
+                  prefixIconColor: Colors.white70,
+                  suffixIconColor: Colors.white70,
+                ),
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
-              Text(
-                'Create Deliverable',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: FlownetColors.pureWhite,
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: 24),
-
               // Basic Information
               _buildSectionHeader('Basic Information'),
               const SizedBox(height: 16),
 
               TextFormField(
                 controller: _titleController,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Deliverable Title',
                   border: OutlineInputBorder(),
@@ -729,12 +826,18 @@ class _EnhancedDeliverableSetupScreenState
 
               TextFormField(
                 controller: _descriptionController,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Description',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.description),
                 ),
-                maxLines: 3,
+                minLines: 2,
+                maxLines: 2,
                 onChanged: (value) {
                   debugPrint('📝 Title changed to: "$value"');
                   // Trigger rebuild so AI widget can analyze
@@ -753,6 +856,11 @@ class _EnhancedDeliverableSetupScreenState
 
               // Owner Dropdown
               DropdownButtonFormField<String?>(
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
                 value: _users.any((u) => u['id']?.toString() == _ownerId)
                     ? _ownerId
                     : null,
@@ -778,6 +886,11 @@ class _EnhancedDeliverableSetupScreenState
 
               // Project Dropdown
               DropdownButtonFormField<String?>(
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
                 value: _projects
                         .any((p) => p['id']?.toString() == _selectedProjectId)
                     ? _selectedProjectId
@@ -839,7 +952,7 @@ class _EnhancedDeliverableSetupScreenState
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
               // Sprint Selection
               _buildSectionHeader('Contributing Sprints'),
@@ -893,6 +1006,11 @@ class _EnhancedDeliverableSetupScreenState
                                 final compact = constraints.maxWidth < 520;
 
                                 final dropdown = DropdownButtonFormField<String?>(
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white,
+                                  ),
                                   initialValue: remaining.any((s) => (s['id']?.toString() ?? '') == _pendingSprintId)
                                       ? _pendingSprintId
                                       : null,
@@ -940,7 +1058,7 @@ class _EnhancedDeliverableSetupScreenState
                                               _pendingSprintId = null;
                                             });
                                           },
-                                    style: ElevatedButton.styleFrom(backgroundColor: FlownetColors.electricBlue),
+                                    style: _primaryActionStyle(),
                                     child: const Text('Add', overflow: TextOverflow.ellipsis),
                                   ),
                                 );
@@ -1009,12 +1127,12 @@ class _EnhancedDeliverableSetupScreenState
                 Text(
                   '${_selectedSprints.length} sprint(s) selected',
                   style: const TextStyle(
-                    color: FlownetColors.electricBlue,
+                    color: _brandRed,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
               // Definition of Done
               _buildSectionHeader('Definition of Done'),
@@ -1043,11 +1161,9 @@ class _EnhancedDeliverableSetupScreenState
                 onPressed: _addDoDItem,
                 icon: const Icon(Icons.add),
                 label: const Text('Add DoD Item'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: FlownetColors.electricBlue,
-                ),
+                style: _primaryActionStyle(),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
               // Evidence Links
               _buildSectionHeader('Evidence & Artifacts'),
@@ -1057,7 +1173,7 @@ class _EnhancedDeliverableSetupScreenState
                 (link) => Card(
                   color: FlownetColors.graphiteGray,
                   child: ListTile(
-                    leading: const Icon(Icons.link, color: Colors.blue),
+                    leading: const Icon(Icons.link, color: _brandRed),
                     title: Text(link),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
@@ -1075,13 +1191,16 @@ class _EnhancedDeliverableSetupScreenState
                 onPressed: _addEvidenceLink,
                 icon: const Icon(Icons.add),
                 label: const Text('Add Evidence Link'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: FlownetColors.electricBlue,
-                ),
+                style: _primaryActionStyle(),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _artifactDescriptionController,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Document description (optional)',
                   border: OutlineInputBorder(),
@@ -1102,9 +1221,7 @@ class _EnhancedDeliverableSetupScreenState
                         )
                       : const Icon(Icons.upload_file),
                   label: const Text('Upload document(s)'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: FlownetColors.electricBlue,
-                  ),
+                  style: _primaryActionStyle(),
                 ),
               ),
               if (_artifactFiles.isNotEmpty) ...[
@@ -1129,7 +1246,7 @@ class _EnhancedDeliverableSetupScreenState
                   );
                 }),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
               // AI-Powered Release Readiness Gate
               _buildSectionHeader('AI Release Readiness Gate'),
@@ -1162,7 +1279,7 @@ class _EnhancedDeliverableSetupScreenState
                   );
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
 
               // Submit Button
               SizedBox(
@@ -1180,9 +1297,12 @@ class _EnhancedDeliverableSetupScreenState
                             : _currentReadinessStatus == ReadinessStatus.amber
                                 ? Colors.orange
                                 : _hasInternalApproval
-                                    ? Colors.blue
-                                    : Colors.red,
+                                    ? _brandRed
+                                    : _brandRed,
                     padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
                   child: _isSubmitting
                       ? const CircularProgressIndicator(color: Colors.white)
@@ -1199,6 +1319,9 @@ class _EnhancedDeliverableSetupScreenState
                 ),
               ),
             ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -1210,8 +1333,19 @@ class _EnhancedDeliverableSetupScreenState
       title,
       style: Theme.of(context).textTheme.titleLarge?.copyWith(
             color: FlownetColors.pureWhite,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w700,
           ),
+    );
+  }
+
+  ButtonStyle _primaryActionStyle() {
+    return ElevatedButton.styleFrom(
+      backgroundColor: _brandRed,
+      foregroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
     );
   }
 

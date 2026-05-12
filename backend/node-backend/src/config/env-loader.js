@@ -2,8 +2,8 @@ const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
 
-// Get environment from NODE_ENV or default to 'development'
-const environment = process.env.NODE_ENV || 'development';
+const initialNodeEnv = process.env.NODE_ENV;
+const environment = String(initialNodeEnv || 'development').toLowerCase();
 
 // Load base .env first (if present), then load env-specific .env.<env> (if present).
 // This prevents a missing key in .env.<env> from "hiding" a key that exists in .env.
@@ -12,9 +12,18 @@ const baseCandidates = [
 	path.resolve(__dirname, '..', '..', '..', '.env'),              // backend/.env
 	path.resolve(__dirname, '..', '..', '..', '..', '.env')         // repo root .env
 ];
+// Prefer .env.<NODE_ENV>; if NODE_ENV was unset or is "development", also try common local files
+// (e.g. only .env.sit exists — typical when pointing a dev machine at a shared SIT config).
 const envSpecificCandidates = [
-	path.resolve(__dirname, '..', '..', `.env.${environment}`),     // node-backend/.env.development, .env.sit, etc.
+	path.resolve(__dirname, '..', '..', `.env.${environment}`),
 ];
+if (!initialNodeEnv || environment === 'development') {
+	envSpecificCandidates.push(
+		path.resolve(__dirname, '..', '..', '.env.local'),
+		path.resolve(__dirname, '..', '..', '.env.sit'),
+		path.resolve(__dirname, '..', '..', '.env.staging')
+	);
+}
 
 const loadedPaths = [];
 for (const p of baseCandidates) {
@@ -61,8 +70,9 @@ try {
 	process.env.ENV_LOADED_FROM = loadedPaths.join(';');
 } catch (_) {}
 
+const resolvedEnv = String(process.env.NODE_ENV || 'development').toLowerCase();
 console.log('='.repeat(50));
-console.log(`🌍 Environment: ${environment.toUpperCase()}`);
+console.log(`🌍 Environment: ${resolvedEnv.toUpperCase()}`);
 console.log('='.repeat(50));
 console.log('Environment variables loaded from:', loadedPaths.length > 0 ? loadedPaths.join(' -> ') : 'process.env (none found)');
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? '*** (set)' : 'undefined');

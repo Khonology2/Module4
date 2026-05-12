@@ -105,10 +105,10 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Sprints Management',
+                        'User Management',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 24,
+                          fontSize: 20,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -117,7 +117,7 @@ class _RoleManagementScreenState extends State<RoleManagementScreen> {
                         'Manage different users and their roles.',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 18,
+                          fontSize: 13,
                           fontWeight: FontWeight.w400,
                         ),
                       ),
