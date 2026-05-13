@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BC5 SIT",
+  "version": "Ver 2026.05BC7 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-13T14:46:27Z",
+  "generated_at": "2026-05-13T15:15:42Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "feat: add auto-login and improve CORS",
+      "timestamp": "2026-05-13T17:13:23+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-13]",
+      "timestamp": "2026-05-13T14:46:27Z"
+    },
     {
       "author": "thabang127",
       "message": "feat(storage): add cloudinary storage, update api domains and refactor docs",
@@ -29,6 +39,6 @@
       "timestamp": "2026-05-13T14:30:35+02:00"
     }
   ],
-  "total_commits": 5,
+  "total_commits": 7,
   "date_range": "2026-05-13"
 }
