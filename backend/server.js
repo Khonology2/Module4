@@ -3964,13 +3964,28 @@ app.get('/api/v1/sprints/:sprintId/report', authenticateToken, async (req, res) 
     const { sprintId } = req.params;
     const { statusCategory, ownerId, dueFrom, dueTo } = req.query || {};
 
-    const sprintResult = await pool.query(
-      `SELECT s.*, p.id as project_id, p.name as project_name, p.key as project_key
-       FROM sprints s
-       LEFT JOIN projects p ON s.project_id = p.id
-       WHERE s.id::text = $1::text`,
-      [String(sprintId)],
-    );
+    let sprintResult;
+    try {
+      sprintResult = await pool.query(
+        `SELECT s.*, p.id as project_id, p.name as project_name, p.key as project_key
+         FROM sprints s
+         LEFT JOIN projects p ON s.project_id = p.id
+         WHERE s.id::text = $1::text`,
+        [String(sprintId)],
+      );
+    } catch (e) {
+      if (e && e.code === '42703') {
+        sprintResult = await pool.query(
+          `SELECT s.*, p.id as project_id, p.name as project_name, NULL::text as project_key
+           FROM sprints s
+           LEFT JOIN projects p ON s.project_id = p.id
+           WHERE s.id::text = $1::text`,
+          [String(sprintId)],
+        );
+      } else {
+        throw e;
+      }
+    }
     if (!sprintResult.rows.length) {
       return res.status(404).json({ success: false, error: 'Sprint not found' });
     }
@@ -5559,8 +5574,25 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
         const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
         const stats = fs.statSync(file.path);
         const fileSize = stats.size;
-        const pid = projectId || project_id || null;
+        let pid = projectId || project_id || null;
+        const sid = sprintId || sprint_id || null;
+        const did = deliverableId || deliverable_id || null;
+        if (!pid && did) {
+          try {
+            const r = await pool.query('SELECT project_id FROM deliverables WHERE id::text = $1::text LIMIT 1', [String(did)]);
+            pid = r.rows[0]?.project_id ?? null;
+          } catch (_) {}
+        }
+        if (!pid && sid) {
+          try {
+            const r = await pool.query('SELECT project_id FROM sprints WHERE id::text = $1::text LIMIT 1', [String(sid)]);
+            pid = r.rows[0]?.project_id ?? null;
+          } catch (_) {}
+        }
         const uid = String(req.user.id);
+        if (!pid) {
+          return;
+        }
         const insertAttempts = [
           {
             sql: `
@@ -5687,6 +5719,12 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
     const fileSize = stats.size;
     
     const pid = normalizedProjectId;
+    if (!pid) {
+      return res.status(400).json({
+        success: false,
+        error: 'projectId is required for repository uploads',
+      });
+    }
     const uid = String(userId);
     const insertAttempts = [
       {

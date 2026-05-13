@@ -282,6 +282,19 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
   Future<void> _performUpload(String filePath) async {
     Navigator.pop(context);
 
+    if (_selectedProjectId == null) {
+      if (_projects.length == 1) {
+        final onlyId = _projects.first['id']?.toString();
+        if (onlyId != null && onlyId.isNotEmpty) {
+          _selectedProjectId = onlyId;
+        }
+      }
+    }
+    if (_selectedProjectId == null) {
+      _showErrorSnackBar('Please select a project before uploading a repository document.');
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -397,6 +410,19 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
 
     if (pickedFile.bytes == null) {
       _showErrorSnackBar('Failed to read file. Please try again.');
+      return;
+    }
+
+    if (_selectedProjectId == null) {
+      if (_projects.length == 1) {
+        final onlyId = _projects.first['id']?.toString();
+        if (onlyId != null && onlyId.isNotEmpty) {
+          _selectedProjectId = onlyId;
+        }
+      }
+    }
+    if (_selectedProjectId == null) {
+      _showErrorSnackBar('Please select a project before uploading a repository document.');
       return;
     }
 
