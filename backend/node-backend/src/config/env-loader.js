@@ -2,8 +2,8 @@ const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
 
-// Get environment from NODE_ENV or default to 'development'
-const environment = process.env.NODE_ENV || 'development';
+const initialNodeEnv = process.env.NODE_ENV;
+const environment = String(initialNodeEnv || 'development').toLowerCase();
 
 // Try a few sensible locations for environment files
 const candidates = [
@@ -12,6 +12,20 @@ const candidates = [
 	path.resolve(__dirname, '..', '..', '..', '.env'),              // backend/.env
 	path.resolve(__dirname, '..', '..', '..', '..', '.env')         // repo root .env (last fallback)
 ];
+	path.resolve(__dirname, '..', '..', '..', '..', '.env')         // repo root .env
+];
+// Prefer .env.<NODE_ENV>; if NODE_ENV was unset or is "development", also try common local files
+// (e.g. only .env.sit exists — typical when pointing a dev machine at a shared SIT config).
+const envSpecificCandidates = [
+	path.resolve(__dirname, '..', '..', `.env.${environment}`),
+];
+if (!initialNodeEnv || environment === 'development') {
+	envSpecificCandidates.push(
+		path.resolve(__dirname, '..', '..', '.env.local'),
+		path.resolve(__dirname, '..', '..', '.env.sit'),
+		path.resolve(__dirname, '..', '..', '.env.staging')
+	);
+}
 
 let loadedPath = null;
 for (const p of candidates) {
@@ -22,13 +36,33 @@ for (const p of candidates) {
 	}
 }
 
-// If none found, fall back to default dotenv behaviour (will use process.env)
-if (!loadedPath) {
-	dotenv.config();
+if (loadedPaths.length === 0) {
+	dotenv.config({ override: false });
 }
 
+try {
+	if (!process.env.GEMINI_API_KEY) {
+		const keys = Object.keys(process.env || {});
+		const normalizedTarget = 'GEMINI_API_KEY';
+		const candidate = keys.find((k) => {
+			if (!k || k === normalizedTarget) return false;
+			const norm = String(k).replace(/[^\w]/g, '');
+			return norm === normalizedTarget;
+		});
+		if (candidate && process.env[candidate]) {
+			process.env.GEMINI_API_KEY = process.env[candidate];
+			console.log('Normalized GEMINI_API_KEY from env key:', candidate);
+		}
+	}
+} catch (_) {}
+
+try {
+	process.env.ENV_LOADED_FROM = loadedPaths.join(';');
+} catch (_) {}
+
+const resolvedEnv = String(process.env.NODE_ENV || 'development').toLowerCase();
 console.log('='.repeat(50));
-console.log(`🌍 Environment: ${environment.toUpperCase()}`);
+console.log(`🌍 Environment: ${resolvedEnv.toUpperCase()}`);
 console.log('='.repeat(50));
 console.log('Environment variables loaded from:', loadedPath || 'process.env (none found)');
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? '*** (set)' : 'undefined');

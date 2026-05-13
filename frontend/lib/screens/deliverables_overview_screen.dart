@@ -37,7 +37,7 @@ class _DeliverablesOverviewScreenState
   String? _error;
   String _filterStatus = 'All';
   String _searchQuery = '';
-  bool _isKanbanView = false;
+  bool _isKanbanView = true;
   int _currentNavIndex = 0;
   bool _isDragging = false;
   final bool _hasRealTimeConnection = false;
@@ -447,103 +447,139 @@ class _DeliverablesOverviewScreenState
   @override
   Widget build(BuildContext context) {
     final canCreate = _authService.canCreateDeliverable();
+    final isDesktop = MediaQuery.of(context).size.width >= 1000;
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Text('Deliverables'),
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
-        actions: [
-          if (_hasRealTimeConnection)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.green[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.wifi, size: 16, color: Colors.green[800]),
-                  const SizedBox(width: 4),
-                  const Text(
-                    'Live Sync',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+        scrolledUnderElevation: 0,
+        toolbarHeight: kToolbarHeight + 14,
+        title: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: Colors.white,
+                child: ClipOval(
+                  child: Transform.scale(
+                    scale: 1.6,
+                    child: Image.asset(
+                      'assets/Deliverables.png',
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.flight, size: 18),
                     ),
                   ),
-                ],
+                ),
               ),
+              const SizedBox(width: 12),
+              const Text(
+                'Deliverables',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (_hasRealTimeConnection)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green[100],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.wifi, size: 16, color: Colors.green[800]),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Live Sync',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _loadDeliverables,
+                ),
+                IconButton(
+                  icon: Icon(_isKanbanView ? Icons.list : Icons.view_kanban),
+                  onPressed: () {
+                    setState(() {
+                      _isKanbanView = !_isKanbanView;
+                    });
+                  },
+                  tooltip: _isKanbanView ? 'List View' : 'Kanban View',
+                ),
+                if (canCreate)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      height: 36,
+                      child: ElevatedButton(
+                        onPressed: () => context.go('/deliverable-setup'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD70E0E),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        child: const Text(
+                          'Create Deliverable',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDeliverables,
-          ),
-          IconButton(
-            icon: Icon(_isKanbanView ? Icons.list : Icons.view_kanban),
-            onPressed: () {
-              setState(() {
-                _isKanbanView = !_isKanbanView;
-              });
-            },
-            tooltip: _isKanbanView ? 'List View' : 'Kanban View',
-          ),
-          if (canCreate)
-            IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () => context.go('/deliverable-setup'),
-              tooltip: 'Create Deliverable',
-            ),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'All',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.edit_document),
-            label: 'Draft',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.loop),
-            label: 'In Progress',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.rate_review),
-            label: 'In Review',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.check_circle),
-            label: 'Signed Off',
           ),
         ],
-        currentIndex: _currentNavIndex,
-        selectedItemColor: FlownetColors.crimsonRed,
-        unselectedItemColor: FlownetColors.graphiteGray,
-        selectedFontSize: 12,
-        unselectedFontSize: 12,
-        iconSize: 22,
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        onTap: _onNavTapped,
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Expanded(
+                SizedBox(
+                  width: isDesktop ? 340 : 280,
                   child: TextField(
-                    decoration: const InputDecoration(
-                      hintText: 'Search deliverables...',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      hintText: 'Search board',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                     onChanged: (value) {
                       setState(() {
@@ -555,6 +591,23 @@ class _DeliverablesOverviewScreenState
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _buildStatusTab(index: 0, icon: Icons.dashboard, label: 'All'),
+                  _buildStatusTab(index: 1, icon: Icons.edit_document, label: 'Draft'),
+                  _buildStatusTab(index: 2, icon: Icons.loop, label: 'In Progress'),
+                  _buildStatusTab(index: 3, icon: Icons.rate_review, label: 'In Review'),
+                  _buildStatusTab(index: 4, icon: Icons.check_circle, label: 'Signed Off'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -612,6 +665,40 @@ class _DeliverablesOverviewScreenState
                               ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStatusTab({
+    required int index,
+    required IconData icon,
+    required String label,
+  }) {
+    final isActive = _currentNavIndex == index;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        avatar: Icon(
+          icon,
+          size: 16,
+          color: isActive ? Colors.white : FlownetColors.graphiteGray,
+        ),
+        selected: isActive,
+        label: Text(label),
+        onSelected: (_) => _onNavTapped(index),
+        selectedColor: FlownetColors.crimsonRed,
+        backgroundColor: Colors.grey.shade900,
+        labelStyle: TextStyle(
+          color: isActive ? Colors.white : FlownetColors.graphiteGray,
+          fontWeight: FontWeight.w600,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: isActive ? FlownetColors.crimsonRed : Colors.grey.shade700,
+          ),
+        ),
+        visualDensity: const VisualDensity(horizontal: -1, vertical: -2),
       ),
     );
   }

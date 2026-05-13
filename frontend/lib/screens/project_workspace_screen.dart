@@ -5,7 +5,8 @@ import '../models/project.dart';
 import '../models/deliverable.dart';
 import '../models/sprint.dart';
 import '../models/user.dart';
-import '../widgets/glass_card.dart';
+import '../models/user_role.dart';
+import '../theme/flownet_theme.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_data_service.dart';
@@ -24,6 +25,8 @@ class ProjectWorkspaceScreen extends ConsumerStatefulWidget {
 }
 
 class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen> {
+  static const Color _brandRed = Color(0xFFD70E0E);
+
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
     final _descriptionController = TextEditingController();
@@ -163,18 +166,92 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
     try {
       final deliverables = await ApiService.getDeliverables();
       final sprints = await ApiService.getSprints();
-      
+
       List<User> users = [];
       try {
-        final rawUsers = await ApiService.getUsers();
-        users = rawUsers
-            .map((u) => User.fromJson(Map<String, dynamic>.from(u)))
-            .where((u) => u.id.isNotEmpty)
-            .toList();
-        debugPrint('✅ Loaded ${users.length} users via ApiService.getUsers()');
+        debugPrint('🔍 Trying direct API call for users...');
+        final backend = BackendApiService();
+        final response = await backend.getUsers(limit: 1000);
+
+        if (response.isSuccess && response.data != null) {
+          debugPrint('✅ Direct API call successful - response type: ${response.data.runtimeType}');
+
+          final responseData = response.data;
+          List<dynamic> usersDataList = [];
+
+          if (responseData is Map && responseData['data'] is List) {
+            usersDataList = responseData['data'];
+            debugPrint('📦 Extracted ${usersDataList.length} users from data array');
+          } else if (responseData is List) {
+            usersDataList = responseData;
+            debugPrint('📦 Extracted ${usersDataList.length} users from direct list');
+          }
+
+          users = usersDataList.map((userData) {
+            String displayName;
+            if (userData['name'] != null && userData['name'].toString().isNotEmpty) {
+              displayName = userData['name'];
+            } else {
+              displayName = userData['email'] ?? 'Unknown User';
+            }
+
+            UserRole userRole = UserRole.teamMember;
+            final roleString = userData['role']?.toString().toLowerCase();
+            if (roleString != null) {
+              switch (roleString) {
+                case 'systemadmin':
+                  userRole = UserRole.systemAdmin;
+                  break;
+                case 'projectmanager':
+                  userRole = UserRole.projectManager;
+                  break;
+                case 'deliverylead':
+                  userRole = UserRole.deliveryLead;
+                  break;
+                case 'developer':
+                  userRole = UserRole.developer;
+                  break;
+                case 'qaengineer':
+                  userRole = UserRole.qaEngineer;
+                  break;
+                case 'client':
+                  userRole = UserRole.client;
+                  break;
+                case 'clientreviewer':
+                  userRole = UserRole.clientReviewer;
+                  break;
+                case 'scrummaster':
+                  userRole = UserRole.scrumMaster;
+                  break;
+                case 'stakeholder':
+                  userRole = UserRole.stakeholder;
+                  break;
+                default:
+                  userRole = UserRole.teamMember;
+              }
+            }
+
+            debugPrint('👤 Processing user: $displayName (${userData['id']}) - Role: ${userRole.name}');
+
+            return User(
+              id: userData['id'],
+              email: userData['email'] ?? '',
+              name: displayName,
+              role: userRole,
+              isActive: userData['is_active'] ?? userData['isActive'] ?? true,
+              emailVerified: userData['emailVerified'] ?? true,
+              createdAt: DateTime.tryParse(userData['createdAt'] ?? '') ?? DateTime.now(),
+            );
+          }).toList();
+
+          debugPrint('✅ Successfully processed ${users.length} users from direct API');
+        } else {
+          debugPrint('❌ Direct API call failed: ${response.error}');
+          throw Exception('Direct API call failed');
+        }
       } catch (e) {
-        debugPrint('❌ Loading users via ApiService failed, trying UserDataService: $e');
-        
+        debugPrint('❌ Direct API call failed, trying UserDataService: $e');
+
         try {
           users = await UserDataService().getUsers(limit: 1000);
           debugPrint('✅ Successfully loaded ${users.length} users from UserDataService');
@@ -183,7 +260,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
           users = [];
         }
       }
-      
+
       setState(() {
         _availableDeliverables = deliverables.map((d) => Deliverable.fromJson(d)).toList();
         _availableSprints = sprints.map((s) => Sprint.fromJson(s)).toList();
@@ -191,19 +268,18 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
 
         debugPrint('📊 Final state: ${_availableUsers.length} users available');
 
-        // Set default owner if creating new project
         if (!_isEditing && _selectedOwner == null) {
-           final currentUserId = AuthService().currentUser?.id;
-           if (currentUserId != null) {
-             try {
-               _selectedOwner = _availableUsers.firstWhere((u) => u.id == currentUserId);
-               debugPrint('✅ Set default owner: ${_selectedOwner?.name}');
-             } catch (_) {
-               debugPrint('⚠️ Current user not found in available users');
-             }
-           }
+          final currentUserId = AuthService().currentUser?.id;
+          if (currentUserId != null) {
+            try {
+              _selectedOwner = _availableUsers.firstWhere((u) => u.id == currentUserId);
+              debugPrint('✅ Set default owner: ${_selectedOwner?.name}');
+            } catch (_) {
+              debugPrint('⚠️ Current user not found in available users');
+            }
+          }
         }
-        
+
         debugPrint('✅ Loaded ${_availableUsers.length} available users for project owner selection');
         for (final user in _availableUsers) {
           debugPrint('  - ${user.name} (${user.id}) - ${user.role.name}');
@@ -369,6 +445,12 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
     }
   }
 
+  void _removeMember(String userId) {
+    setState(() {
+      _members.removeWhere((m) => m.userId == userId);
+    });
+  }
+
   void _openMemberSelectionDialog() {
     showDialog(
       context: context,
@@ -377,17 +459,16 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
         selectedUserIds: _members.map((m) => m.userId).toList(),
         onSelect: (selectedUsers) {
           setState(() {
-            // Keep existing members who are still selected
-            final existingMembers = _members.where((m) => selectedUsers.any((u) => u.id == m.userId)).toList();
-            
-            // Add new members
-            for (var user in selectedUsers) {
+            final existingMembers =
+                _members.where((m) => selectedUsers.any((u) => u.id == m.userId)).toList();
+
+            for (final user in selectedUsers) {
               if (!existingMembers.any((m) => m.userId == user.id)) {
                 existingMembers.add(ProjectMember(
                   userId: user.id,
                   userName: user.name,
                   userEmail: user.email,
-                  role: ProjectRole.contributor, // Default role
+                  role: ProjectRole.contributor,
                   assignedAt: DateTime.now(),
                 ));
               }
@@ -397,12 +478,6 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
         },
       ),
     );
-  }
-
-  void _removeMember(String userId) {
-    setState(() {
-      _members.removeWhere((m) => m.userId == userId);
-    });
   }
 
   void _addDeliverable() {
@@ -486,16 +561,30 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          tooltip: 'Back',
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/projects');
+            }
+          },
+        ),
         title: Text(
           _isEditing ? 'Edit Project' : 'Create New Project',
           style: const TextStyle(
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: FlownetColors.pureWhite,
           ),
         ),
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
+        foregroundColor: FlownetColors.pureWhite,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: false,
       ),
       body: _isLoading
           ? Center(
@@ -504,841 +593,806 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
               ),
             )
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildBasicInfoSection(colorScheme),
-                    const SizedBox(height: 24),
-                    _buildMetadataSection(colorScheme),
-                    const SizedBox(height: 24),
-                    _buildDatesSection(colorScheme),
-                    const SizedBox(height: 24),
-                    _buildMembersSection(colorScheme),
-                    const SizedBox(height: 24),
-                    _buildDeliverablesSection(colorScheme),
-                    const SizedBox(height: 24),
-                    _buildSprintsSection(colorScheme),
-                    const SizedBox(height: 32),
-                    _buildActionButtons(colorScheme),
-                  ],
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1100),
+                  child: Theme(
+                    data: _projectFormTheme(context),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildBasicInfoSection(colorScheme),
+                          const SizedBox(height: 24),
+                          _buildMetadataSection(colorScheme),
+                          const SizedBox(height: 24),
+                          _buildDatesSection(colorScheme),
+                          const SizedBox(height: 24),
+                          _buildMembersSection(colorScheme),
+                          const SizedBox(height: 24),
+                          _buildDeliverablesSection(colorScheme),
+                          const SizedBox(height: 24),
+                          _buildSprintsSection(colorScheme),
+                          const SizedBox(height: 32),
+                          _buildActionButtons(colorScheme),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
+    );
+  }
+
+  ThemeData _projectFormTheme(BuildContext context) {
+    final base = Theme.of(context);
+    return base.copyWith(
+      textTheme: base.textTheme.copyWith(
+        bodyLarge: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: Colors.white,
+        ),
+        bodyMedium: const TextStyle(
+          fontSize: 13,
+          color: Colors.white,
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF3F4146),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: _brandRed, width: 1.4),
+        ),
+        labelStyle: TextStyle(
+          color: Colors.white.withValues(alpha: 0.9),
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
+        floatingLabelStyle: const TextStyle(
+          color: _brandRed,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        hintStyle: TextStyle(
+          color: Colors.white.withValues(alpha: 0.72),
+          fontSize: 14,
+        ),
+        prefixIconColor: _brandRed,
+        suffixIconColor: Colors.white70,
+        helperStyle: TextStyle(
+          color: Colors.white.withValues(alpha: 0.65),
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Text(
+      title,
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: FlownetColors.pureWhite,
+            fontWeight: FontWeight.w700,
+          ),
     );
   }
 
   Widget _buildBasicInfoSection(ColorScheme colorScheme) {
-    return GlassCard(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          colorScheme.primary.withAlpha(20),
-          colorScheme.secondary.withAlpha(10),
-        ],
-      ),
-      border: Border.all(
-        color: colorScheme.primary.withAlpha(40),
-        width: 1.0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.info_outline,
-                color: colorScheme.primary,
-                size: 24,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Basic Information',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: colorScheme.onSurface,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Basic Information'),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _nameController,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
+          ),
+          decoration: const InputDecoration(
+            labelText: 'Project Name *',
+            hintText: 'Enter project name',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.work_outline),
+          ),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Project name is required';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _descriptionController,
+          maxLines: 3,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
+          ),
+          decoration: const InputDecoration(
+            labelText: 'Description *',
+            hintText: 'Describe the project goals and objectives',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.description_outlined),
+          ),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Description is required';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _clientNameController,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
+          ),
+          decoration: const InputDecoration(
+            labelText: 'Client Name',
+            hintText: 'Enter client or customer name',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.business_outlined),
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _clientProjectOwnerController,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
+          ),
+          decoration: const InputDecoration(
+            labelText: 'Project Owner (Client Side)',
+            hintText: 'Enter client-side project owner',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.badge_outlined),
+          ),
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<User>(
+          // ignore: deprecated_member_use
+          value: _selectedOwner,
+          onChanged: (value) {
+            setState(() {
+              _selectedOwner = value;
+            });
+          },
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
+          ),
+          dropdownColor: const Color(0xFF3F4146),
+          decoration: const InputDecoration(
+            labelText: 'Project Manager *',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.person_outline),
+          ),
+          items: _availableUsers.map((user) {
+            return DropdownMenuItem(
+              value: user,
+              child: Text(
+                user.name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          TextFormField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: 'Project Name *',
-              hintText: 'Enter project name',
-              prefixIcon: Icon(Icons.work_outline, color: colorScheme.primary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.primary, width: 2),
-              ),
-              filled: true,
-              fillColor: colorScheme.surface.withAlpha(100),
-            ),
-            style: TextStyle(
-              fontSize: 16,
-              color: colorScheme.onSurface,
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Project name is required';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _descriptionController,
-            maxLines: 3,
-            decoration: InputDecoration(
-              labelText: 'Description *',
-              hintText: 'Describe the project goals and objectives',
-              prefixIcon: Icon(Icons.description_outlined, color: colorScheme.primary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.primary, width: 2),
-              ),
-              filled: true,
-              fillColor: colorScheme.surface.withAlpha(100),
-            ),
-            style: TextStyle(
-              fontSize: 16,
-              color: colorScheme.onSurface,
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Description is required';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _clientNameController,
-            decoration: InputDecoration(
-              labelText: 'Client Name',
-              hintText: 'Enter client or customer name',
-              prefixIcon: Icon(Icons.business_outlined, color: colorScheme.primary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.primary, width: 2),
-              ),
-              filled: true,
-              fillColor: colorScheme.surface.withAlpha(100),
-            ),
-            style: TextStyle(
-              fontSize: 16,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _clientProjectOwnerController,
-            decoration: InputDecoration(
-              labelText: 'Project Owner (Client Side)',
-              hintText: 'Enter client-side project owner',
-              prefixIcon: Icon(Icons.badge_outlined, color: colorScheme.primary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.primary, width: 2),
-              ),
-              filled: true,
-              fillColor: colorScheme.surface.withAlpha(100),
-            ),
-            style: TextStyle(
-              fontSize: 16,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<User>(
-            // ignore: deprecated_member_use
-            value: _selectedOwner,
-            // Allow owner selection for System Admins or during editing
-            onChanged: (value) {
-              setState(() {
-                _selectedOwner = value;
-              });
-            },
-            decoration: InputDecoration(
-              labelText: 'Project Manager *',
-              prefixIcon: Icon(Icons.person_outline, color: colorScheme.primary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.primary, width: 2),
-              ),
-              filled: true,
-              fillColor: _isEditing ? colorScheme.surface.withAlpha(100) : colorScheme.surface.withAlpha(50), // Visual cue for disabled state
-            ),
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.black87,
-            ),
-            items: _availableUsers.map((user) {
-              return DropdownMenuItem(
-                value: user,
-                child: Text(
-                  user.name,
-                  style: const TextStyle(
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              );
-            }).toList(),
-            validator: (value) {
-              if (value == null) {
-                return 'Project manager is required';
-              }
-              return null;
-            },
-          ),
-        ],
-      ),
+            );
+          }).toList(),
+          validator: (value) {
+            if (value == null) {
+              return 'Project manager is required';
+            }
+            return null;
+          },
+        ),
+      ],
     );
   }
 
   Widget _buildMetadataSection(ColorScheme colorScheme) {
-    return GlassCard(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          colorScheme.secondary.withAlpha(20),
-          colorScheme.tertiary.withAlpha(10),
-        ],
-      ),
-      border: Border.all(
-        color: colorScheme.secondary.withAlpha(40),
-        width: 1.0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.settings_outlined,
-                color: colorScheme.secondary,
-                size: 24,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Project Metadata',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Project Metadata'),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<ProjectStatus>(
+          // ignore: deprecated_member_use
+          value: _selectedStatus,
+          dropdownColor: const Color(0xFF3F4146),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
           ),
-          const SizedBox(height: 20),
-          DropdownButtonFormField<ProjectStatus>(
-            initialValue: _selectedStatus,
-            decoration: InputDecoration(
-              labelText: 'Status',
-              prefixIcon: Icon(Icons.flag_outlined, color: colorScheme.secondary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.secondary, width: 2),
-              ),
-              filled: true,
-              fillColor: colorScheme.surface.withAlpha(100),
-            ),
-            style: TextStyle(
-              fontSize: 16,
-              color: colorScheme.onSurface,
-            ),
-            items: ProjectStatus.values.map((status) {
-              return DropdownMenuItem(
-                value: status,
-                child: Text(status.name),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedStatus = value!;
-              });
-            },
+          decoration: const InputDecoration(
+            labelText: 'Status',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.flag_outlined),
           ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<ProjectPriority>(
-            initialValue: _selectedPriority,
-            decoration: InputDecoration(
-              labelText: 'Priority',
-              prefixIcon: Icon(Icons.priority_high_outlined, color: colorScheme.secondary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
+          items: ProjectStatus.values.map((status) {
+            return DropdownMenuItem(
+              value: status,
+              child: Text(
+                status.name,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.secondary, width: 2),
-              ),
-              filled: true,
-              fillColor: colorScheme.surface.withAlpha(100),
-            ),
-            style: TextStyle(
-              fontSize: 16,
-              color: colorScheme.onSurface,
-            ),
-            items: ProjectPriority.values.map((priority) {
-              return DropdownMenuItem(
-                value: priority,
-                child: Text(priority.name),
-              );
-            }).toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedPriority = value!;
-              });
-            },
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _selectedStatus = value;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<ProjectPriority>(
+          // ignore: deprecated_member_use
+          value: _selectedPriority,
+          dropdownColor: const Color(0xFF3F4146),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
           ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            // ignore: deprecated_member_use
-            value: const ['software', 'hardware', 'research', 'consulting', 'other'].contains(_selectedProjectType)
-                ? _selectedProjectType
-                : null,
-            decoration: InputDecoration(
-              labelText: 'Project Type',
-              prefixIcon: Icon(Icons.category_outlined, color: colorScheme.secondary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.secondary, width: 2),
-              ),
-              filled: true,
-              fillColor: colorScheme.surface.withAlpha(100),
-            ),
-            style: TextStyle(
-              fontSize: 16,
-              color: colorScheme.onSurface,
-            ),
-            items: const [
-              DropdownMenuItem(value: 'software', child: Text('Software')),
-              DropdownMenuItem(value: 'hardware', child: Text('Hardware')),
-              DropdownMenuItem(value: 'research', child: Text('Research')),
-              DropdownMenuItem(value: 'consulting', child: Text('Consulting')),
-              DropdownMenuItem(value: 'other', child: Text('Other')),
-            ],
-            onChanged: (value) {
-              setState(() {
-                _selectedProjectType = value!;
-              });
-            },
+          decoration: const InputDecoration(
+            labelText: 'Priority',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.priority_high_outlined),
           ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _tagsController,
-            decoration: InputDecoration(
-              labelText: 'Tags (comma-separated)',
-              hintText: 'e.g. mobile, frontend, urgent',
-              prefixIcon: Icon(Icons.tag_outlined, color: colorScheme.secondary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(100)),
+          items: ProjectPriority.values.map((priority) {
+            return DropdownMenuItem(
+              value: priority,
+              child: Text(
+                priority.name,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.outline.withAlpha(50)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: colorScheme.secondary, width: 2),
-              ),
-              filled: true,
-              fillColor: colorScheme.surface.withAlpha(100),
-              helperText: 'Enter tags separated by commas',
-            ),
-            style: TextStyle(
-              fontSize: 16,
-              color: colorScheme.onSurface,
-            ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _selectedPriority = value;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          // ignore: deprecated_member_use
+          value: const ['software', 'hardware', 'research', 'consulting', 'other']
+                  .contains(_selectedProjectType)
+              ? _selectedProjectType
+              : null,
+          dropdownColor: const Color(0xFF3F4146),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
           ),
-        ],
-      ),
+          decoration: const InputDecoration(
+            labelText: 'Project Type',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.category_outlined),
+          ),
+          items: const [
+            DropdownMenuItem(
+              value: 'software',
+              child: Text('Software',
+                  style: TextStyle(color: Colors.white, fontSize: 14)),
+            ),
+            DropdownMenuItem(
+              value: 'hardware',
+              child: Text('Hardware',
+                  style: TextStyle(color: Colors.white, fontSize: 14)),
+            ),
+            DropdownMenuItem(
+              value: 'research',
+              child: Text('Research',
+                  style: TextStyle(color: Colors.white, fontSize: 14)),
+            ),
+            DropdownMenuItem(
+              value: 'consulting',
+              child: Text('Consulting',
+                  style: TextStyle(color: Colors.white, fontSize: 14)),
+            ),
+            DropdownMenuItem(
+              value: 'other',
+              child: Text('Other',
+                  style: TextStyle(color: Colors.white, fontSize: 14)),
+            ),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _selectedProjectType = value;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _tagsController,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
+          ),
+          decoration: const InputDecoration(
+            labelText: 'Tags (comma-separated)',
+            hintText: 'e.g. mobile, frontend, urgent',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.tag_outlined),
+            helperText: 'Enter tags separated by commas',
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildDatesSection(ColorScheme colorScheme) {
-    return GlassCard(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          colorScheme.tertiary.withAlpha(20),
-          colorScheme.primary.withAlpha(10),
-        ],
-      ),
-      border: Border.all(
-        color: colorScheme.tertiary.withAlpha(40),
-        width: 1.0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.date_range_outlined,
-                color: colorScheme.tertiary,
-                size: 24,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Project Dates',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: colorScheme.outline.withAlpha(50),
-              ),
-              color: colorScheme.surface.withAlpha(100),
-            ),
-            child: ListTile(
-              leading: Icon(Icons.calendar_today, color: colorScheme.tertiary),
-              title: Text(
-                'Start Date',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              subtitle: Text(
-                _currentProject?.formattedStartDate ?? 'Not set',
-                style: TextStyle(
-                  color: colorScheme.onSurface.withAlpha(180),
-                ),
-              ),
-              trailing: Icon(Icons.arrow_drop_down, color: colorScheme.tertiary),
-              onTap: () async {
-                debugPrint('🗓️ Start date picker opened');
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: _startDate ?? DateTime.now(),
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime(2030),
-                );
-                if (date != null) {
-                  debugPrint('🗓️ Start date selected: $date');
-                  setState(() {
-                    _startDate = date;
-                    debugPrint('🗓️ _startDate updated to: $_startDate');
-                  });
-                } else {
-                  debugPrint('🗓️ Start date selection cancelled');
-                }
-              },
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: colorScheme.outline.withAlpha(50),
-              ),
-              color: colorScheme.surface.withAlpha(100),
-            ),
-            child: ListTile(
-              leading: Icon(Icons.event_outlined, color: colorScheme.tertiary),
-              title: Text(
-                'End Date',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              subtitle: Text(
-                _currentProject?.formattedEndDate ?? 'Not set',
-                style: TextStyle(
-                  color: colorScheme.onSurface.withAlpha(180),
-                ),
-              ),
-              trailing: Icon(Icons.arrow_drop_down, color: colorScheme.tertiary),
-              onTap: () async {
-                debugPrint('🗓️ End date picker opened');
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: _endDate ?? DateTime.now().add(const Duration(days: 30)),
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime(2030),
-                );
-                if (date != null) {
-                  debugPrint('🗓️ End date selected: $date');
-                  setState(() {
-                    _endDate = date;
-                    debugPrint('🗓️ _endDate updated to: $_endDate');
-                  });
-                } else {
-                  debugPrint('🗓️ End date selection cancelled');
-                }
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (_isEditing && _currentProject != null && _selectedOwner != null && _endDate != null)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _isSendingReminder ? null : _sendDueDateReminder,
-                icon: _isSendingReminder
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+    final localeDates = MaterialLocalizations.of(context);
+    final effectiveStart = _startDate ?? _currentProject?.startDate;
+    final effectiveEnd = _endDate ?? _currentProject?.endDate;
+
+    String formatOptional(DateTime? d) {
+      if (d == null) return 'Not set';
+      return localeDates.formatMediumDate(d);
+    }
+
+    Widget dateField({
+      required IconData leading,
+      required String title,
+      required String valueText,
+      required VoidCallback onTap,
+    }) {
+      return Material(
+        color: const Color(0xFF3F4146),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(leading, color: _brandRed, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.85),
                         ),
-                      )
-                    : Icon(
-                        Icons.notifications_active_outlined,
-                        color: colorScheme.primary,
-                        size: 18,
                       ),
-                label: Text(
-                  'Remind Project Owner',
-                  style: TextStyle(
-                    color: colorScheme.primary,
+                      const SizedBox(height: 2),
+                      Text(
+                        valueText,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: valueText == 'Not set'
+                              ? Colors.white.withValues(alpha: 0.55)
+                              : Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Colors.white.withValues(alpha: 0.75),
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final startField = dateField(
+      leading: Icons.calendar_today_outlined,
+      title: 'Start date',
+      valueText: formatOptional(effectiveStart),
+      onTap: () async {
+        final date = await showDatePicker(
+          context: context,
+          initialDate: effectiveStart ?? DateTime.now(),
+          firstDate: DateTime(2020),
+          lastDate: DateTime(2030),
+        );
+        if (date != null) {
+          setState(() => _startDate = date);
+        }
+      },
+    );
+
+    final endField = dateField(
+      leading: Icons.event_outlined,
+      title: 'End date',
+      valueText: formatOptional(effectiveEnd),
+      onTap: () async {
+        final date = await showDatePicker(
+          context: context,
+          initialDate: effectiveEnd ??
+              effectiveStart?.add(const Duration(days: 30)) ??
+              DateTime.now().add(const Duration(days: 30)),
+          firstDate: effectiveStart ?? DateTime(2020),
+          lastDate: DateTime(2030),
+        );
+        if (date != null) {
+          setState(() => _endDate = date);
+        }
+      },
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Project Dates'),
+        const SizedBox(height: 16),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final sideBySide = constraints.maxWidth >= 520;
+            if (sideBySide) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: startField),
+                  const SizedBox(width: 12),
+                  Expanded(child: endField),
+                ],
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                startField,
+                const SizedBox(height: 12),
+                endField,
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        if (_isEditing &&
+            _currentProject != null &&
+            _selectedOwner != null &&
+            _endDate != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _isSendingReminder ? null : _sendDueDateReminder,
+              icon: _isSendingReminder
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.notifications_active_outlined,
+                      color: _brandRed,
+                      size: 18,
+                    ),
+              label: const Text(
+                'Remind Project Owner',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 
   Widget _buildMembersSection(ColorScheme colorScheme) {
     final currentUserId = AuthService().currentUser?.id;
     final isOwner = _selectedOwner?.id != null && _selectedOwner!.id == currentUserId;
-    // Allow member assignment if it's a new project or if the current user is the owner
-    // User requirement: "only the project owner can assign users to projects."
     final canAssignMembers = !_isEditing || isOwner;
 
-    return GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.people_outline, color: Colors.blue, size: 24),
-              const SizedBox(width: 8),
-              Text(
-                'Team Members',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (!canAssignMembers)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: Text(
-                'Only the project owner can assign members.',
-                style: TextStyle(color: colorScheme.error, fontStyle: FontStyle.italic),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Team Members'),
+        const SizedBox(height: 16),
+        if (!canAssignMembers)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text(
+              'Only the project owner can assign members.',
+              style: TextStyle(
+                color: Colors.red.shade300,
+                fontStyle: FontStyle.italic,
               ),
             ),
-          InkWell(
-            onTap: canAssignMembers ? _openMemberSelectionDialog : null,
-            child: InputDecorator(
-              decoration: InputDecoration(
-                labelText: 'Assign Members',
-                prefixIcon: Icon(Icons.group_add_outlined, color: canAssignMembers ? colorScheme.primary : colorScheme.outline),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                enabled: canAssignMembers,
-                filled: true,
-                fillColor: canAssignMembers ? colorScheme.surface.withAlpha(100) : colorScheme.surface.withAlpha(50),
-                suffixIcon: Icon(Icons.arrow_drop_down, color: canAssignMembers ? colorScheme.primary : colorScheme.outline),
-              ),
-              child: _members.isEmpty
-                  ? Text('Select members...', style: TextStyle(color: colorScheme.onSurface.withAlpha(100)))
-                  : Wrap(
-                      spacing: 8.0,
-                      runSpacing: 4.0,
-                      children: _members.map((member) => Chip(
-                        label: Text(member.userName),
-                        onDeleted: canAssignMembers ? () => _removeMember(member.userId) : null,
-                      )).toList(),
+          ),
+        InkWell(
+          onTap: canAssignMembers ? _openMemberSelectionDialog : null,
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Assign Members',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.group_add_outlined),
+              suffixIcon: Icon(Icons.arrow_drop_down),
+            ),
+            child: _members.isEmpty
+                ? Text(
+                    'Select members...',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
                     ),
-            ),
+                  )
+                : Wrap(
+                    spacing: 8.0,
+                    runSpacing: 4.0,
+                    children: _members
+                        .map(
+                          (member) => Chip(
+                            label: Text(
+                              member.userName,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            backgroundColor: const Color(0xFF2C2C2E),
+                            onDeleted: canAssignMembers
+                                ? () => _removeMember(member.userId)
+                                : null,
+                          ),
+                        )
+                        .toList(),
+                  ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildDeliverablesSection(ColorScheme colorScheme) {
-    return GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Linked Deliverables',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildSectionHeader('Linked Deliverables'),
+            IconButton(
+              onPressed: _addDeliverable,
+              icon: const Icon(Icons.add, color: Colors.white),
+              tooltip: 'Add deliverable',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_deliverableIds.isEmpty)
+          Text(
+            'No deliverables linked yet',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+          )
+        else
+          ..._deliverableIds.map((id) {
+            final deliverable = _availableDeliverables.firstWhere(
+              (d) => d.id == id,
+              orElse: () => Deliverable(
+                id: id,
+                title: 'Unknown',
+                description: '',
+                status: DeliverableStatus.draft,
+                createdAt: DateTime.now(),
+                dueDate: DateTime.now(),
+                sprintIds: [],
+                definitionOfDone: [],
               ),
-              IconButton(
-                onPressed: _addDeliverable,
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_deliverableIds.isEmpty)
-            const Text('No deliverables linked yet')
-          else
-            ..._deliverableIds.map((id) {
-              final deliverable = _availableDeliverables.firstWhere(
-                (d) => d.id == id,
-                orElse: () => Deliverable(
-                  id: id,
-                  title: 'Unknown',
-                  description: '',
-                  status: DeliverableStatus.draft,
-                  createdAt: DateTime.now(),
-                  dueDate: DateTime.now(),
-                  sprintIds: [],
-                  definitionOfDone: [],
-                ),
-              );
-              return ListTile(
-                onTap: () {
-                  GoRouter.of(context).push('/deliverable-detail', extra: deliverable);
-                },
-                title: Text(deliverable.title),
-                subtitle: Text(deliverable.statusDisplayName),
-                trailing: IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _deliverableIds.remove(id);
-                    });
+            );
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: const Color(0xFF3F4146),
+                borderRadius: BorderRadius.circular(14),
+                child: ListTile(
+                  onTap: () {
+                    GoRouter.of(context)
+                        .push('/deliverable-detail', extra: deliverable);
                   },
-                  icon: const Icon(Icons.remove, color: Colors.red),
+                  title: Text(
+                    deliverable.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    deliverable.statusDisplayName,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  trailing: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _deliverableIds.remove(id);
+                      });
+                    },
+                    icon: const Icon(Icons.remove_circle_outline, color: _brandRed),
+                  ),
                 ),
-              );
-            }),
-        ],
-      ),
+              ),
+            );
+          }),
+      ],
     );
   }
 
   Widget _buildSprintsSection(ColorScheme colorScheme) {
-    return GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Associated Sprints',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildSectionHeader('Associated Sprints'),
+            IconButton(
+              onPressed: _addSprint,
+              icon: const Icon(Icons.add, color: Colors.white),
+              tooltip: 'Add sprint',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_sprintIds.isEmpty)
+          Text(
+            'No sprints associated yet',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+          )
+        else
+          ..._sprintIds.map((id) {
+            final sprint = _availableSprints.firstWhere(
+              (s) => s.id == id,
+              orElse: () => Sprint(
+                id: id,
+                name: 'Unknown',
+                startDate: DateTime.now(),
+                endDate: DateTime.now(),
+                committedPoints: 0,
+                completedPoints: 0,
+                velocity: 0,
+                testPassRate: 0.0,
+                defectCount: 0,
               ),
-              IconButton(
-                onPressed: _addSprint,
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_sprintIds.isEmpty)
-            const Text('No sprints associated yet')
-          else
-            ..._sprintIds.map((id) {
-              final sprint = _availableSprints.firstWhere(
-                (s) => s.id == id,
-                orElse: () => Sprint(
-                  id: id,
-                  name: 'Unknown',
-                  startDate: DateTime.now(),
-                  endDate: DateTime.now(),
-                  committedPoints: 0,
-                  completedPoints: 0,
-                  velocity: 0,
-                  testPassRate: 0.0,
-                  defectCount: 0,
-                ),
-              );
-              return ListTile(
-                onTap: () {
-                  final projectId = widget.projectId;
-                  final sprintId = sprint.id;
-                  
-                  if (sprintId.isNotEmpty) {
-                    final queryParams = <String, String>{
-                      'sprintId': sprintId,
-                    };
-                    if (projectId != null && projectId.isNotEmpty && projectId != 'new') {
-                      queryParams['projectId'] = projectId;
+            );
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: const Color(0xFF3F4146),
+                borderRadius: BorderRadius.circular(14),
+                child: ListTile(
+                  onTap: () {
+                    final projectId = widget.projectId;
+                    final sprintId = sprint.id;
+
+                    if (sprintId.isNotEmpty) {
+                      final queryParams = <String, String>{
+                        'sprintId': sprintId,
+                      };
+                      if (projectId != null &&
+                          projectId.isNotEmpty &&
+                          projectId != 'new') {
+                        queryParams['projectId'] = projectId;
+                      }
+                      final uri = Uri(
+                        path: '/sprint-console',
+                        queryParameters: queryParams,
+                      );
+                      context.go(uri.toString());
+                    } else {
+                      context.go('/sprint-console');
                     }
-                    final uri = Uri(path: '/sprint-console', queryParameters: queryParams);
-                    context.go(uri.toString());
-                  } else {
-                    context.go('/sprint-console');
-                  }
-                },
-                title: Text(sprint.name),
-                subtitle: Text(sprint.statusText),
-                trailing: IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _sprintIds.remove(id);
-                    });
                   },
-                  icon: const Icon(Icons.remove, color: Colors.red),
+                  title: Text(
+                    sprint.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    sprint.statusText,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  trailing: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _sprintIds.remove(id);
+                      });
+                    },
+                    icon: const Icon(Icons.remove_circle_outline, color: _brandRed),
+                  ),
                 ),
-              );
-            }),
-        ],
-      ),
+              ),
+            );
+          }),
+      ],
     );
   }
 
   Widget _buildActionButtons(ColorScheme colorScheme) {
-    return GlassCard(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          colorScheme.primary.withAlpha(30),
-          colorScheme.secondary.withAlpha(20),
-        ],
-      ),
-      border: Border.all(
-        color: colorScheme.primary.withAlpha(50),
-        width: 1.0,
-      ),
-      child: Row(
-        children: [
-          Expanded(
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 48,
             child: ElevatedButton(
               onPressed: _isLoading ? null : _saveProject,
               style: ElevatedButton.styleFrom(
-                backgroundColor: colorScheme.primary,
-                foregroundColor: colorScheme.onPrimary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: _brandRed,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(999),
                 ),
-                elevation: 2,
               ),
               child: _isLoading
-                  ? SizedBox(
-                      height: 20,
-                      width: 20,
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
+                        color: Colors.white,
                       ),
                     )
-                  : _isEditing 
-                  ? const Text(
-                      'Update Project',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    )
-                  : const Text(
-                      'Create Project',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                  : Text(
+                      _isEditing ? 'Update Project' : 'Create Project',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: SizedBox(
+            height: 48,
             child: OutlinedButton(
               onPressed: () {
                 if (Navigator.of(context).canPop()) {
@@ -1348,24 +1402,26 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
                 }
               },
               style: OutlinedButton.styleFrom(
-                foregroundColor: colorScheme.onSurface,
-                side: BorderSide(color: colorScheme.outline),
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                foregroundColor: Colors.white,
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(999),
                 ),
               ),
               child: const Text(
                 'Cancel',
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1373,7 +1429,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
 class _SelectMembersDialog extends StatefulWidget {
   final List<User> availableUsers;
   final List<String> selectedUserIds;
-  final Function(List<User>) onSelect;
+  final void Function(List<User>) onSelect;
 
   const _SelectMembersDialog({
     required this.availableUsers,
@@ -1406,7 +1462,7 @@ class _SelectMembersDialogState extends State<_SelectMembersDialog> {
           itemBuilder: (context, index) {
             final user = widget.availableUsers[index];
             final isSelected = _selectedIds.contains(user.id);
-            
+
             return CheckboxListTile(
               title: Text(user.name),
               subtitle: Text(user.email),
@@ -1447,7 +1503,7 @@ class _SelectMembersDialogState extends State<_SelectMembersDialog> {
 class _SelectDeliverablesDialog extends StatefulWidget {
   final List<Deliverable> availableDeliverables;
   final List<String> selectedIds;
-  final Function(List<String>) onSelect;
+  final void Function(List<String>) onSelect;
 
   const _SelectDeliverablesDialog({
     required this.availableDeliverables,
@@ -1456,7 +1512,8 @@ class _SelectDeliverablesDialog extends StatefulWidget {
   });
 
   @override
-  State<_SelectDeliverablesDialog> createState() => _SelectDeliverablesDialogState();
+  State<_SelectDeliverablesDialog> createState() =>
+      _SelectDeliverablesDialogState();
 }
 
 class _SelectDeliverablesDialogState extends State<_SelectDeliverablesDialog> {
@@ -1480,7 +1537,7 @@ class _SelectDeliverablesDialogState extends State<_SelectDeliverablesDialog> {
           itemBuilder: (context, index) {
             final deliverable = widget.availableDeliverables[index];
             final isSelected = _selectedIds.contains(deliverable.id);
-            
+
             return CheckboxListTile(
               title: Text(deliverable.title),
               subtitle: Text(deliverable.statusDisplayName),
@@ -1518,7 +1575,7 @@ class _SelectDeliverablesDialogState extends State<_SelectDeliverablesDialog> {
 class _SelectSprintsDialog extends StatefulWidget {
   final List<Sprint> availableSprints;
   final List<String> selectedIds;
-  final Function(List<String>) onSelect;
+  final void Function(List<String>) onSelect;
 
   const _SelectSprintsDialog({
     required this.availableSprints,
@@ -1561,6 +1618,7 @@ class _SelectSprintsDialogState extends State<_SelectSprintsDialog> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String?>(
+                    // ignore: deprecated_member_use
                     initialValue: remaining.any((s) => s.id == _pendingSprintId)
                         ? _pendingSprintId
                         : null,

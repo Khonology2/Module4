@@ -16,8 +16,6 @@ import '../services/project_service.dart';
 import '../services/jira_service.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/glass_card.dart';
-import '../widgets/glass_button.dart';
-import 'create_sprint_screen.dart';
 
 class SprintConsoleScreen extends StatefulWidget {
   final String? initialProjectKey;
@@ -29,6 +27,8 @@ class SprintConsoleScreen extends StatefulWidget {
 }
 
 class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
+  static const Color _headerCtaRed = Color(0xFFD70E0E);
+
   final SprintDatabaseService _sprintService = SprintDatabaseService();
   // State variables
   final List<Map<String, dynamic>> _projects = [];
@@ -516,8 +516,11 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return AppScaffold(
-        useBackgroundImage: true,
+        useBackgroundImage: false,
+        useGlassContainer: false,
         centered: false,
+        scrollable: false,
+        appBar: _buildSprintAppBar(),
         body: Center(
           child: CircularProgressIndicator(
             valueColor: AlwaysStoppedAnimation<Color>(
@@ -528,22 +531,21 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     }
 
     return AppScaffold(
-      useBackgroundImage: true,
+      useBackgroundImage: false,
+      useGlassContainer: false,
       centered: false,
+      scrollable: false,
+      appBar: _buildSprintAppBar(),
       body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          _buildHeader(),
-          const SizedBox(height: 24),
-
           // Projects or Sprints Section
           if (_selectedProjectKey == null) ...[
             _buildProjectsSection(),
@@ -569,61 +571,136 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  PreferredSizeWidget _buildSprintAppBar() {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
-    final onSurfaceColor = theme.colorScheme.onSurface;
+    final onSurface = theme.colorScheme.onSurface;
+    final auth = AuthService();
+    final canCreateSprint = auth.hasPermission('create_sprint');
+    final canManageProjects = auth.hasPermission('manage_projects');
+    final showListActions = _selectedProjectKey == null;
 
-    return GlassCard(
-      padding: const EdgeInsets.all(20),
-      blur: 8.0,
-      color: Colors.white.withAlpha(12),
-      border: Border.all(color: Colors.white.withAlpha(18), width: 0.8),
-      boxShadow: const [
-        BoxShadow(
-          color: Color.fromARGB(16, 0, 0, 0),
-          blurRadius: 8,
-          spreadRadius: 0.5,
-          offset: Offset(0, 4),
+    return AppBar(
+      automaticallyImplyLeading: false,
+      toolbarHeight: kToolbarHeight + 40,
+      titleSpacing: 16,
+      title: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: Colors.white,
+              child: ClipOval(
+                child: Transform.scale(
+                  scale: 1.6,
+                  child: Image.asset(
+                    'assets/Points.png',
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.dashboard,
+                      size: 18,
+                      color: primaryColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Sprints Management',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Manage your projects, sprints, and tickets in one place',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: onSurface.withAlpha(230),
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: primaryColor.withAlpha(51),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: primaryColor.withAlpha(128)),
+      ),
+      actions: [
+        if (showListActions && (canCreateSprint || canManageProjects))
+          Padding(
+            padding: const EdgeInsets.only(top: 10, right: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (canCreateSprint)
+                  SizedBox(
+                    height: 36,
+                    child: ElevatedButton(
+                      onPressed: _showCreateSprintDialog,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _headerCtaRed,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      child: const Text(
+                        'Create Sprint',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (canCreateSprint && canManageProjects) const SizedBox(width: 8),
+                if (canManageProjects)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: SizedBox(
+                      height: 36,
+                      child: ElevatedButton(
+                        onPressed: _navigateToCreateProject,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _headerCtaRed,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      child: const Text(
+                        'Create Project',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  Icons.dashboard,
-                  color: primaryColor,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                'Sprint Management',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: onSurfaceColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Manage your projects, sprints, and tickets in one place',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: onSurfaceColor.withAlpha(230),
+              ],
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -631,59 +708,25 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     final theme = Theme.of(context);
     final onSurfaceColor = theme.colorScheme.onSurface;
     final primaryColor = theme.colorScheme.primary;
-    final auth = AuthService();
-    final canCreateSprint = auth.hasPermission('create_sprint');
-    final canManageProjects = auth.hasPermission('manage_projects');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Projects',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: onSurfaceColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (_selectedProjectKey == null)
-                  Text(
-                    'Select a project to create sprints',
-                    style: TextStyle(
-                      color: onSurfaceColor.withAlpha(179),
-                      fontSize: 12,
-                    ),
-                  ),
-              ],
-            ),
-            Row(
-              children: [
-                if (canCreateSprint)
-                  GlassButton(
-                    text: 'Create Sprint',
-                    onPressed: _showCreateSprintDialog,
-                    icon: const Icon(Icons.timeline, size: 16),
-                    height: 40,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                if (canCreateSprint && canManageProjects) const SizedBox(width: 8),
-                if (canManageProjects)
-                  GlassButton(
-                    text: 'Create Project',
-                    onPressed: () => _navigateToCreateProject(),
-                    icon: const Icon(Icons.add, size: 16),
-                    height: 40,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                  ),
-              ],
-            ),
-          ],
+        Text(
+          'Projects',
+          style: theme.textTheme.titleLarge?.copyWith(
+            color: onSurfaceColor,
+            fontWeight: FontWeight.bold,
+          ),
         ),
+        if (_selectedProjectKey == null)
+          Text(
+            'Select a project to create sprints',
+            style: TextStyle(
+              color: onSurfaceColor.withAlpha(179),
+              fontSize: 12,
+            ),
+          ),
         const SizedBox(height: 16),
         if (_selectedProjectKey != null)
           Padding(
@@ -1008,6 +1051,25 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     }
   }
 
+  Future<bool?> _openCreateSprintRoute({
+    String? projectId,
+    String? projectName,
+    Map<String, dynamic>? sprint,
+  }) async {
+    final params = <String, String>{};
+    if (projectId != null && projectId.isNotEmpty) {
+      params['projectId'] = projectId;
+    }
+    if (projectName != null && projectName.isNotEmpty) {
+      params['projectName'] = projectName;
+    }
+    final uri = Uri(
+      path: '/sprint-create',
+      queryParameters: params.isEmpty ? null : params,
+    );
+    return context.push<bool>(uri.toString(), extra: sprint);
+  }
+
   Future<void> _editSprint(Map<String, dynamic> sprint) async {
     if (!_canEditSprint(sprint)) {
       _showSnackBar('You do not have permission to edit this sprint', isError: true);
@@ -1028,15 +1090,10 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
       } catch (_) {}
     }
 
-    final ok = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CreateSprintScreen(
-          projectId: projectId,
-          projectName: projectName,
-          sprint: sprint,
-        ),
-      ),
+    final ok = await _openCreateSprintRoute(
+      projectId: projectId,
+      projectName: projectName,
+      sprint: sprint,
     );
 
     if (ok == true) {
@@ -1401,17 +1458,9 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     // Always show CreateSprintScreen - never redirect to project creation
     debugPrint(
         '🔵 Pushing CreateSprintScreen with projectId: $projectId, projectName: $projectName');
-    final result = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (context) {
-          debugPrint('🔵 Building CreateSprintScreen widget');
-          return CreateSprintScreen(
-            projectId: projectId, // Can be null - screen will show dropdown
-            projectName: projectName,
-          );
-        },
-      ),
+    final result = await _openCreateSprintRoute(
+      projectId: projectId,
+      projectName: projectName,
     );
 
     debugPrint('🔵 CreateSprintScreen returned: $result');

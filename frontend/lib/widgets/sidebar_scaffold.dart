@@ -294,7 +294,7 @@ class _SidebarScaffoldState extends State<SidebarScaffold> {
                 child: Row(
                   children: [
                     Image.asset(
-                      'assets/images/flownet_logo.png',
+                      'assets/logo.png',
                       height: 32,
                       width: 32,
                     ),
