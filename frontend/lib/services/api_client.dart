@@ -79,14 +79,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
                 .timeout(const Duration(seconds: 6));
           } catch (_) {}
         });
-        () async {
-          try {
-            final url = '$_baseUrlWithVersion/health';
-            await http
-                .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
-                .timeout(const Duration(seconds: 4));
-          } catch (_) {}
-        }();
+        unawaited(warmUpBackend(maxWait: const Duration(seconds: 20)));
       }
 
       _initialized = true;
@@ -224,6 +217,15 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       } catch (_) {}
     }
     return false;
+  }
+
+  Future<bool> warmUpBackend({
+    Duration maxWait = const Duration(seconds: 20),
+  }) async {
+    try {
+      await _resolveAndSetApiBaseUrlOverride(force: true);
+    } catch (_) {}
+    return _waitForBackendReady(maxWait);
   }
 
   // Token management
@@ -858,23 +860,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     final maxTotalWait = isProdLike ? const Duration(seconds: 25) : const Duration(seconds: 10);
     final startedAt = DateTime.now();
 
-    Future<bool> pingHealthOnce() async {
-      try {
-        await _resolveAndSetApiBaseUrlOverride(force: true);
-      } catch (_) {}
-      try {
-        final url = '$_baseUrlWithVersion/health';
-        final resp = await http
-            .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 4));
-        if (resp.statusCode < 200 || resp.statusCode >= 300) return false;
-        final ct = (resp.headers['content-type'] ?? '').toLowerCase();
-        if (!ct.contains('application/json')) return false;
-        final body = resp.body.trimLeft();
-        if (body.startsWith('<!DOCTYPE') || body.startsWith('<html')) return false;
-        return true;
-      } catch (_) {}
-      return false;
+    if (isProdLike) {
+      final ready = await warmUpBackend(maxWait: const Duration(seconds: 20));
+      if (!ready) {
+        return ApiResponse.error('Backend still warming up. Please try again.', 0);
+      }
     }
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -889,33 +879,28 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
 
       try {
-        final healthy = await pingHealthOnce();
-        if (!healthy) {
+        String url = '$_baseUrlWithVersion/auth/login';
+        final raw = await http
+            .post(
+              Uri.parse(url),
+              headers: const {'Accept': 'application/json'},
+              body: {
+                'email': email,
+                'password': password,
+              },
+            )
+            .timeout(const Duration(seconds: 12));
+
+        bool looksHtml(http.Response r) {
+          final ct = (r.headers['content-type'] ?? '').toLowerCase();
+          final b = r.body.trimLeft();
+          return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
+        }
+
+        if (looksHtml(raw) || raw.statusCode == 502 || raw.statusCode == 503 || raw.statusCode == 504) {
           response = ApiResponse.error('Backend still warming up. Please try again.', 0);
         } else {
-          String url = '$_baseUrlWithVersion/auth/login';
-          final raw = await http
-              .post(
-                Uri.parse(url),
-                headers: const {'Accept': 'application/json'},
-                body: {
-                  'email': email,
-                  'password': password,
-                },
-              )
-              .timeout(const Duration(seconds: 12));
-
-          bool looksHtml(http.Response r) {
-            final ct = (r.headers['content-type'] ?? '').toLowerCase();
-            final b = r.body.trimLeft();
-            return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
-          }
-
-          if (looksHtml(raw) || raw.statusCode == 502 || raw.statusCode == 503 || raw.statusCode == 504) {
-            response = ApiResponse.error('Backend still warming up. Please try again.', 0);
-          } else {
-            response = _handleResponse(raw);
-          }
+          response = _handleResponse(raw);
         }
       } on TimeoutException {
         response = ApiResponse.error('Backend still warming up. Please try again.', 0);
@@ -930,6 +915,9 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
       // statusCode == 0 means transport-level failure (e.g. Failed to fetch).
       if (attempt < maxAttempts) {
+        if (isProdLike) {
+          await warmUpBackend(maxWait: const Duration(seconds: 6));
+        }
         final backoffSeconds = (attempt <= 6) ? 2 : 4;
         await Future.delayed(Duration(seconds: backoffSeconds));
       }
