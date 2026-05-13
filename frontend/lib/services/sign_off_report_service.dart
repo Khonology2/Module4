@@ -1,13 +1,9 @@
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '../services/auth_service.dart';
 import '../services/api_client.dart';
-import '../config/api_config.dart';
 
 class SignOffReportService {
   final AuthService _authService;
   final ApiClient _apiClient = ApiClient();
-  String get _baseUrl => ApiConfig.getFullUrl('/sign-off-reports');
 
   SignOffReportService(this._authService);
 
@@ -23,12 +19,8 @@ class SignOffReportService {
   }) async {
     try {
       await _apiClient.initialize();
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final uri = Uri.parse(_baseUrl).replace(queryParameters: {
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      final queryParams = <String, String>{
         if (status != null) 'status': status,
         if (search != null) 'search': search,
         if (deliverableId != null) 'deliverableId': deliverableId,
@@ -36,49 +28,8 @@ class SignOffReportService {
         if (sprintId != null) 'sprintId': sprintId,
         if (from != null) 'from': from,
         if (to != null) 'to': to,
-      },);
-
-      final response = await http.get(
-        uri,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      // Check if response is HTML (error pages) instead of JSON
-      final contentType = response.headers['content-type'] ?? '';
-      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
-        String errorMsg = 'Server returned HTML instead of JSON';
-        if (response.statusCode == 404) {
-          errorMsg = 'Endpoint not found (404). Check the API endpoint path.';
-        } else if (response.statusCode >= 500) {
-          errorMsg = 'Server error (${response.statusCode})';
-        }
-        return ApiResponse.error(errorMsg, response.statusCode);
-      }
-
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is List) {
-          return ApiResponse.success(decoded, response.statusCode);
-        }
-        if (decoded is Map<String, dynamic>) {
-          final data = decoded.containsKey('data') ? decoded['data'] : decoded;
-          return ApiResponse.success(data, response.statusCode);
-        }
-        return ApiResponse.success(decoded, response.statusCode);
-      } else {
-        try {
-          final decoded = jsonDecode(response.body);
-          if (decoded is Map<String, dynamic>) {
-            return ApiResponse.error(decoded['error'] ?? decoded['message'] ?? 'Failed to load sign-off reports', response.statusCode);
-          }
-          return ApiResponse.error('Failed to load sign-off reports', response.statusCode);
-        } catch (e) {
-          return ApiResponse.error('Failed to load sign-off reports (${response.statusCode})', response.statusCode);
-        }
-      }
+      };
+      return await _apiClient.get('/sign-off-reports', queryParams: queryParams);
     } catch (e) {
       return ApiResponse.error('Error loading sign-off reports: $e');
     }
@@ -87,26 +38,9 @@ class SignOffReportService {
   // Send reminder for a sign-off report review
   Future<ApiResponse> sendReminder(String reportId) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$reportId/remind'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to send reminder');
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports/$reportId/remind');
     } catch (e) {
       return ApiResponse.error('Error sending reminder: $e');
     }
@@ -115,26 +49,9 @@ class SignOffReportService {
   // Escalate a sign-off report
   Future<ApiResponse> escalateReport(String reportId) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$reportId/escalate'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to escalate report');
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports/$reportId/escalate');
     } catch (e) {
       return ApiResponse.error('Error escalating report: $e');
     }
@@ -143,44 +60,9 @@ class SignOffReportService {
   // Get single sign-off report
   Future<ApiResponse> getSignOffReport(String reportId) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.get(
-        Uri.parse('$_baseUrl/$reportId'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      // Check if response is HTML (error pages) instead of JSON
-      final contentType = response.headers['content-type'] ?? '';
-      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
-        String errorMsg = 'Server returned HTML instead of JSON';
-        if (response.statusCode == 404) {
-          errorMsg = 'Report not found (404)';
-        } else if (response.statusCode >= 500) {
-          errorMsg = 'Server error (${response.statusCode})';
-        }
-        return ApiResponse.error(errorMsg, response.statusCode);
-      }
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        // Backend returns { success: true, data: {...} }
-        // Extract the data field for consistency with ApiClient
-        return ApiResponse.success(data['data'] ?? data, response.statusCode);
-      } else {
-        try {
-          final data = jsonDecode(response.body);
-          return ApiResponse.error(data['error'] ?? data['message'] ?? 'Failed to load sign-off report', response.statusCode);
-        } catch (e) {
-          return ApiResponse.error('Failed to load sign-off report (${response.statusCode})', response.statusCode);
-        }
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.get('/sign-off-reports/$reportId');
     } catch (e) {
       return ApiResponse.error('Error loading sign-off report: $e');
     }
@@ -189,45 +71,9 @@ class SignOffReportService {
   // Get audit history for sign-off report
   Future<ApiResponse> getReportAudit(String reportId) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.get(
-        Uri.parse(ApiConfig.getFullUrl('/audit/signoff/$reportId')),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      // Check if response is HTML (error pages) instead of JSON
-      final contentType = response.headers['content-type'] ?? '';
-      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
-        String errorMsg = 'Server returned HTML instead of JSON';
-        if (response.statusCode == 404) {
-          errorMsg = 'Audit history not found (404)';
-        } else if (response.statusCode >= 500) {
-          errorMsg = 'Server error (${response.statusCode})';
-        }
-        return ApiResponse.error(errorMsg, response.statusCode);
-      }
-
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        final auditData = (decoded is Map<String, dynamic> && decoded.containsKey('data'))
-            ? decoded['data']
-            : decoded;
-        return ApiResponse.success({'audit': auditData}, response.statusCode);
-      } else {
-        try {
-          final data = jsonDecode(response.body);
-          return ApiResponse.error(data['error'] ?? data['message'] ?? 'Failed to load audit history', response.statusCode);
-        } catch (e) {
-          return ApiResponse.error('Failed to load audit history (${response.statusCode})', response.statusCode);
-        }
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.get('/audit/signoff/$reportId');
     } catch (e) {
       return ApiResponse.error('Error loading audit history: $e');
     }
@@ -236,26 +82,9 @@ class SignOffReportService {
   // Submit report
   Future<ApiResponse> submitReport(String reportId) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$reportId/submit'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to submit report');
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports/$reportId/submit');
     } catch (e) {
       return ApiResponse.error('Error submitting report: $e');
     }
@@ -264,30 +93,12 @@ class SignOffReportService {
   // Approve report
   Future<ApiResponse> approveReport(String reportId, {String? comment, String? digitalSignature}) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$reportId/approve'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          if (comment != null) 'comment': comment,
-          if (digitalSignature != null) 'digitalSignature': digitalSignature,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to approve report');
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports/$reportId/approve', body: {
+        if (comment != null) 'comment': comment,
+        if (digitalSignature != null) 'digitalSignature': digitalSignature,
+      });
     } catch (e) {
       return ApiResponse.error('Error approving report: $e');
     }
@@ -296,26 +107,9 @@ class SignOffReportService {
   // Seal report
   Future<ApiResponse> sealReport(String reportId) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$reportId/seal'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to seal report');
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports/$reportId/seal');
     } catch (e) {
       return ApiResponse.error('Error sealing report: $e');
     }
@@ -324,26 +118,9 @@ class SignOffReportService {
   // Archive report
   Future<ApiResponse> archiveReport(String reportId) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$reportId/archive'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to archive report');
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports/$reportId/archive');
     } catch (e) {
       return ApiResponse.error('Error archiving report: $e');
     }
@@ -352,30 +129,12 @@ class SignOffReportService {
   // Request changes
   Future<ApiResponse> requestChanges(String reportId, {String? changeRequestDetails, required String digitalSignature}) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$reportId/request-changes'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          if (changeRequestDetails != null) 'changeRequestDetails': changeRequestDetails,
-          'digitalSignature': digitalSignature,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to request changes');
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports/$reportId/request-changes', body: {
+        if (changeRequestDetails != null) 'changeRequestDetails': changeRequestDetails,
+        'digitalSignature': digitalSignature,
+      });
     } catch (e) {
       return ApiResponse.error('Error requesting changes: $e');
     }
@@ -383,30 +142,12 @@ class SignOffReportService {
 
   Future<ApiResponse> rejectReport(String reportId, {String? comment, required String digitalSignature}) async {
     try {
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse('$_baseUrl/$reportId/reject'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          if (comment != null) 'comment': comment,
-          'digitalSignature': digitalSignature,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to reject report');
-      }
+      await _apiClient.initialize();
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports/$reportId/reject', body: {
+        if (comment != null) 'comment': comment,
+        'digitalSignature': digitalSignature,
+      });
     } catch (e) {
       return ApiResponse.error('Error rejecting report: $e');
     }
@@ -424,51 +165,16 @@ class SignOffReportService {
   }) async {
     try {
       await _apiClient.initialize();
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.post(
-        Uri.parse(_baseUrl),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'deliverableId': deliverableId,
-          'reportTitle': reportTitle,
-          'reportContent': reportContent,
-          if (sprintIds != null) 'sprintIds': sprintIds,
-          if (sprintPerformanceData != null) 'sprintPerformanceData': sprintPerformanceData,
-          if (knownLimitations != null) 'knownLimitations': knownLimitations,
-          if (nextSteps != null) 'nextSteps': nextSteps,
-        }),
-      );
-
-      // Check if response is HTML (error pages) instead of JSON
-      final contentType = response.headers['content-type'] ?? '';
-      if (contentType.contains('text/html') || response.body.trim().startsWith('<!DOCTYPE')) {
-        String errorMsg = 'Server returned HTML instead of JSON';
-        if (response.statusCode == 404) {
-          errorMsg = 'Endpoint not found (404). Check the API endpoint path.';
-        } else if (response.statusCode >= 500) {
-          errorMsg = 'Server error (${response.statusCode})';
-        }
-        return ApiResponse.error(errorMsg, response.statusCode);
-      }
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data['data'] ?? data, response.statusCode);
-      } else {
-        try {
-          final data = jsonDecode(response.body);
-          return ApiResponse.error(data['error'] ?? data['message'] ?? 'Failed to create sign-off report', response.statusCode);
-        } catch (e) {
-          return ApiResponse.error('Failed to create sign-off report (${response.statusCode})', response.statusCode);
-        }
-      }
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.post('/sign-off-reports', body: {
+        'deliverableId': deliverableId,
+        'reportTitle': reportTitle,
+        'reportContent': reportContent,
+        if (sprintIds != null) 'sprintIds': sprintIds,
+        if (sprintPerformanceData != null) 'sprintPerformanceData': sprintPerformanceData,
+        if (knownLimitations != null) 'knownLimitations': knownLimitations,
+        if (nextSteps != null) 'nextSteps': nextSteps,
+      });
     } catch (e) {
       return ApiResponse.error('Error creating sign-off report: $e');
     }
@@ -486,34 +192,15 @@ class SignOffReportService {
   }) async {
     try {
       await _apiClient.initialize();
-      final token = _authService.accessToken;
-      if (token == null) {
-        return ApiResponse.error('Not authenticated');
-      }
-
-      final response = await http.put(
-        Uri.parse('$_baseUrl/$reportId'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          if (reportTitle != null) 'reportTitle': reportTitle,
-          if (reportContent != null) 'reportContent': reportContent,
-          if (sprintIds != null) 'sprintIds': sprintIds,
-          if (sprintPerformanceData != null) 'sprintPerformanceData': sprintPerformanceData,
-          if (knownLimitations != null) 'knownLimitations': knownLimitations,
-          if (nextSteps != null) 'nextSteps': nextSteps,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(data, response.statusCode);
-      } else {
-        final data = jsonDecode(response.body);
-        return ApiResponse.error(data['error'] ?? 'Failed to update sign-off report');
-      }
+      if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
+      return await _apiClient.put('/sign-off-reports/$reportId', body: {
+        if (reportTitle != null) 'reportTitle': reportTitle,
+        if (reportContent != null) 'reportContent': reportContent,
+        if (sprintIds != null) 'sprintIds': sprintIds,
+        if (sprintPerformanceData != null) 'sprintPerformanceData': sprintPerformanceData,
+        if (knownLimitations != null) 'knownLimitations': knownLimitations,
+        if (nextSteps != null) 'nextSteps': nextSteps,
+      });
     } catch (e) {
       return ApiResponse.error('Error updating sign-off report: $e');
     }

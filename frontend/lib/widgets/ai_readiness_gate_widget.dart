@@ -17,6 +17,7 @@ class AIReadinessGateWidget extends StatefulWidget {
   final String deliverableDescription;
   final List<String> definitionOfDone;
   final List<String> evidenceLinks;
+  final int artifactCount;
   final List<String> sprintIds;
   final Map<String, dynamic>? sprintMetrics;
   final String? knownLimitations;
@@ -30,6 +31,7 @@ class AIReadinessGateWidget extends StatefulWidget {
     required this.deliverableDescription,
     required this.definitionOfDone,
     required this.evidenceLinks,
+    required this.artifactCount,
     required this.sprintIds,
     this.sprintMetrics,
     this.knownLimitations,
@@ -56,6 +58,7 @@ class _AIReadinessGateWidgetState extends State<AIReadinessGateWidget> {
     debugPrint('🤖 AI: Title: "${widget.deliverableTitle}"');
     debugPrint('🤖 AI: DoD: ${widget.definitionOfDone.length} items');
     debugPrint('🤖 AI: Evidence: ${widget.evidenceLinks.length} items');
+    debugPrint('🤖 AI: Artifacts: ${widget.artifactCount} items');
     debugPrint('🤖 AI: Sprints: ${widget.sprintIds.length} items');
     debugPrint('🤖 AI: ========================================');
     
@@ -81,12 +84,13 @@ class _AIReadinessGateWidgetState extends State<AIReadinessGateWidget> {
         !_listsEqual(oldWidget.definitionOfDone, widget.definitionOfDone);
     final evidenceChanged = oldWidget.evidenceLinks.length != widget.evidenceLinks.length ||
         !_listsEqual(oldWidget.evidenceLinks, widget.evidenceLinks);
+    final artifactsChanged = oldWidget.artifactCount != widget.artifactCount;
     final sprintsChanged = oldWidget.sprintIds.length != widget.sprintIds.length ||
         !_listsEqual(oldWidget.sprintIds, widget.sprintIds);
     
-    debugPrint('🤖 AI: Changes detected - Title: $titleChanged, DoD: $dodChanged, Evidence: $evidenceChanged, Sprints: $sprintsChanged');
+    debugPrint('🤖 AI: Changes detected - Title: $titleChanged, DoD: $dodChanged, Evidence: $evidenceChanged, Artifacts: $artifactsChanged, Sprints: $sprintsChanged');
     
-    if (titleChanged || dodChanged || evidenceChanged || sprintsChanged) {
+    if (titleChanged || dodChanged || evidenceChanged || artifactsChanged || sprintsChanged) {
       debugPrint('🤖 AI: Widget data changed, re-analyzing...');
       _analyzeReadiness();
     } else {
@@ -110,11 +114,12 @@ class _AIReadinessGateWidgetState extends State<AIReadinessGateWidget> {
     final hasData = hasTitle || 
                     widget.definitionOfDone.isNotEmpty || 
                     widget.evidenceLinks.isNotEmpty ||
+                    widget.artifactCount > 0 ||
                     widget.sprintIds.isNotEmpty;
     
     debugPrint('🤖 AI: Data check - hasTitle: $hasTitle, hasData: $hasData');
     debugPrint('🤖 AI: Title: "${widget.deliverableTitle}"');
-    debugPrint('🤖 AI: DoD: ${widget.definitionOfDone.length}, Evidence: ${widget.evidenceLinks.length}, Sprints: ${widget.sprintIds.length}');
+    debugPrint('🤖 AI: DoD: ${widget.definitionOfDone.length}, Evidence: ${widget.evidenceLinks.length}, Artifacts: ${widget.artifactCount}, Sprints: ${widget.sprintIds.length}');
     
     if (!hasData) {
       debugPrint('🤖 AI: ❌ Skipping analysis - no data provided yet');
@@ -127,6 +132,7 @@ class _AIReadinessGateWidgetState extends State<AIReadinessGateWidget> {
     debugPrint('🤖 AI: Title: "${widget.deliverableTitle}"');
     debugPrint('🤖 AI: DoD items: ${widget.definitionOfDone.length}');
     debugPrint('🤖 AI: Evidence links: ${widget.evidenceLinks.length}');
+    debugPrint('🤖 AI: Artifacts: ${widget.artifactCount}');
     debugPrint('🤖 AI: Sprints: ${widget.sprintIds.length}');
     debugPrint('🤖 AI: ========================================');
 
@@ -139,6 +145,7 @@ class _AIReadinessGateWidgetState extends State<AIReadinessGateWidget> {
         deliverableDescription: widget.deliverableDescription,
         definitionOfDone: widget.definitionOfDone,
         evidenceLinks: widget.evidenceLinks,
+        artifactCount: widget.artifactCount,
         sprintIds: widget.sprintIds,
         sprintMetrics: widget.sprintMetrics,
         knownLimitations: widget.knownLimitations,

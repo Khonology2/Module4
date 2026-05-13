@@ -4940,7 +4940,17 @@ app.get('/api/v1/deliverables/:deliverableId/artifacts', authenticateToken, asyn
       `SELECT * FROM deliverable_artifacts WHERE deliverable_id::text = $1::text ORDER BY created_at DESC`,
       [String(deliverableId)],
     );
-    res.json({ success: true, data: result.rows });
+    const mapped = (result.rows || []).map(r => ({
+      ...r,
+      filename: r.filename || r.file_name || '',
+      original_name: r.original_name || r.original_filename || '',
+      file_type: r.file_type || r.filetype || '',
+      file_size: r.file_size || r.filesize || r.size || 0,
+      uploaded_by: r.uploaded_by || r.uploadedby || '',
+      uploader_name: r.uploader_name || r.uploader || r.uploadername || null,
+      created_at: r.created_at || r.createdat || null,
+    }));
+    res.json({ success: true, data: mapped });
   } catch (error) {
     if (error && error.code === '42P01') {
       return res.json({ success: true, data: [] });
@@ -4961,57 +4971,78 @@ app.post('/api/v1/deliverables/:deliverableId/artifacts', authenticateToken, upl
     const fileType = fileExtension.startsWith('.') ? fileExtension.substring(1) : fileExtension;
     const url = `/uploads/${file.filename}`;
 
-    let deliverableKey = deliverableId;
-    if (/^\d+$/.test(String(deliverableId))) {
-      deliverableKey = Number(deliverableId);
-    }
+    const deliverableKey = String(deliverableId);
+    const uploaderName = req.user?.name || null;
 
-    let inserted;
-    try {
-      inserted = await pool.query(
-        `
-        INSERT INTO deliverable_artifacts (
-          deliverable_id, filename, original_name, file_type, file_size, url, uploaded_by, uploader_name, created_at
-        ) VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, NOW())
-        RETURNING *
-      `,
-        [
-          deliverableKey,
-          file.filename,
-          file.originalname,
-          fileType,
-          file.size,
-          url,
-          String(userId),
-          req.user?.name || null,
-        ],
-      );
-    } catch (e) {
-      if (e && e.code === '42703') {
-        inserted = await pool.query(
-          `
+    const attempts = [
+      {
+        sql: `
           INSERT INTO deliverable_artifacts (
-            deliverable_id, filename, original_name, file_type, file_size, url, uploaded_by, uploader_name
-          ) VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text)
+            deliverable_id, filename, original_name, file_type, file_size, url, uploaded_by, uploader_name, created_at
+          ) VALUES ($1::text, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, NOW())
           RETURNING *
         `,
-          [
-            deliverableKey,
-            file.filename,
-            file.originalname,
-            fileType,
-            file.size,
-            url,
-            String(userId),
-            req.user?.name || null,
-          ],
-        );
-      } else {
+        values: [deliverableKey, file.filename, file.originalname, fileType, file.size, url, String(userId), uploaderName],
+      },
+      {
+        sql: `
+          INSERT INTO deliverable_artifacts (
+            deliverable_id, file_name, original_name, file_type, file_size, url, uploaded_by, uploader_name, created_at
+          ) VALUES ($1::text, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, NOW())
+          RETURNING *
+        `,
+        values: [deliverableKey, file.filename, file.originalname, fileType, file.size, url, String(userId), uploaderName],
+      },
+      {
+        sql: `
+          INSERT INTO deliverable_artifacts (
+            deliverable_id, filename, original_name, file_type, file_size, url, uploaded_by, uploader_name
+          ) VALUES ($1::text, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text)
+          RETURNING *
+        `,
+        values: [deliverableKey, file.filename, file.originalname, fileType, file.size, url, String(userId), uploaderName],
+      },
+      {
+        sql: `
+          INSERT INTO deliverable_artifacts (
+            deliverable_id, file_name, original_name, file_type, file_size, url, uploaded_by, uploader_name
+          ) VALUES ($1::text, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text)
+          RETURNING *
+        `,
+        values: [deliverableKey, file.filename, file.originalname, fileType, file.size, url, String(userId), uploaderName],
+      },
+    ];
+
+    let inserted = null;
+    let lastError = null;
+    for (const a of attempts) {
+      try {
+        inserted = await pool.query(a.sql, a.values);
+        break;
+      } catch (e) {
+        lastError = e;
+        if (e && (e.code === '42703' || e.code === '42883' || e.code === '42804' || e.code === '22P02')) {
+          continue;
+        }
         throw e;
       }
     }
 
-    res.status(201).json({ success: true, data: inserted.rows[0] });
+    if (!inserted) {
+      throw lastError || new Error('Failed to upload artifact');
+    }
+
+    const row = inserted.rows[0] || {};
+    const mapped = {
+      ...row,
+      filename: row.filename || row.file_name || file.filename,
+      original_name: row.original_name || row.original_filename || file.originalname,
+      file_type: row.file_type || fileType,
+      file_size: row.file_size || file.size,
+      uploaded_by: row.uploaded_by || String(userId),
+      uploader_name: row.uploader_name || uploaderName,
+    };
+    res.status(201).json({ success: true, data: mapped });
   } catch (error) {
     if (error && error.code === '42P01') {
       return res.status(404).json({ success: false, error: 'Artifacts table not found' });
@@ -5298,29 +5329,56 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
         const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
         const stats = fs.statSync(file.path);
         const fileSize = stats.size;
-        await pool.query(
-          `
-          INSERT INTO repository_files (
-            project_id, filename, original_filename, file_name, file_path, file_type, file_size,
-            content_hash, uploaded_by, description, tags,
-            uploaded_at, last_modified, is_active
-          )
-          VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::text, $7::bigint, $8::text, $9::text, $10::text, $11::text, NOW(), NOW(), true)
-        `,
-          [
-            projectId || project_id || null,
-            file.filename,
-            file.originalname,
-            file.originalname,
-            url,
-            fileType,
-            fileSize,
-            hash,
-            String(req.user.id),
-            description || '',
-            tags || '',
-          ],
-        );
+        try {
+          await pool.query(
+            `
+            INSERT INTO repository_files (
+              project_id, file_name, file_path, file_type, file_size,
+              content_hash, uploaded_by, description, tags,
+              uploaded_at, last_modified, is_active
+            )
+            VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, $9::text, NOW(), NOW(), true)
+          `,
+            [
+              projectId || project_id || null,
+              file.originalname,
+              url,
+              fileType,
+              fileSize,
+              hash,
+              String(req.user.id),
+              description || '',
+              tags || '',
+            ],
+          );
+        } catch (dbError) {
+          if (dbError && dbError.code === '42703') {
+            await pool.query(
+              `
+              INSERT INTO repository_files (
+                project_id, filename, original_filename, file_path, file_type, file_size,
+                content_hash, uploaded_by, description, tags,
+                uploaded_at, last_modified, is_active
+              )
+              VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, $8::text, $9::text, $10::text, NOW(), NOW(), true)
+            `,
+              [
+                projectId || project_id || null,
+                file.filename,
+                file.originalname,
+                url,
+                fileType,
+                fileSize,
+                hash,
+                String(req.user.id),
+                description || '',
+                tags || '',
+              ],
+            );
+          } else {
+            throw dbError;
+          }
+        }
       }
     } catch (_) {}
     res.status(201).json({
@@ -5365,30 +5423,59 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
     const stats = fs.statSync(file.path);
     const fileSize = stats.size;
     
-    // Insert document record
-    // Note: table has old schema columns (filename VARCHAR, original_filename VARCHAR) and new schema (file_name TEXT)
-    // We need to populate all of them for compatibility
-    const result = await pool.query(`
-      INSERT INTO repository_files (
-        project_id, filename, original_filename, file_name, file_path, file_type, file_size, 
-        content_hash, uploaded_by, description, tags, 
-        uploaded_at, last_modified, is_active
-      )
-      VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::text, $7::bigint, $8::text, $9::text, $10::text, $11::text, NOW(), NOW(), true)
-      RETURNING *
-    `, [
-      normalizedProjectId,
-      file.filename,
-      file.originalname,
-      file.originalname,
-      url,
-      fileType,
-      fileSize,
-      hash,
-      String(userId),
-      description || '',
-      tags || ''
-    ]);
+    let result;
+    try {
+      result = await pool.query(
+        `
+        INSERT INTO repository_files (
+          project_id, file_name, file_path, file_type, file_size,
+          content_hash, uploaded_by, description, tags,
+          uploaded_at, last_modified, is_active
+        )
+        VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, $9::text, NOW(), NOW(), true)
+        RETURNING *
+      `,
+        [
+          normalizedProjectId,
+          file.originalname,
+          url,
+          fileType,
+          fileSize,
+          hash,
+          String(userId),
+          description || '',
+          tags || '',
+        ],
+      );
+    } catch (dbError) {
+      if (dbError && dbError.code === '42703') {
+        result = await pool.query(
+          `
+          INSERT INTO repository_files (
+            project_id, filename, original_filename, file_path, file_type, file_size,
+            content_hash, uploaded_by, description, tags,
+            uploaded_at, last_modified, is_active
+          )
+          VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, $8::text, $9::text, $10::text, NOW(), NOW(), true)
+          RETURNING *
+        `,
+          [
+            normalizedProjectId,
+            file.filename,
+            file.originalname,
+            url,
+            fileType,
+            fileSize,
+            hash,
+            String(userId),
+            description || '',
+            tags || '',
+          ],
+        );
+      } else {
+        throw dbError;
+      }
+    }
     
     const document = result.rows[0];
     
@@ -8929,6 +9016,7 @@ app.post('/api/v1/release-readiness/analyze', authenticateToken, async (req, res
       deliverableDescription,
       definitionOfDone = [],
       evidenceLinks = [],
+      artifactCount = 0,
       sprintIds = [],
       sprintMetrics = {},
       knownLimitations,
@@ -9085,59 +9173,48 @@ Return ONLY valid JSON in this exact format:
       confidence = 0.8;
     }
 
-    // Analyze Evidence Links
-    if (normalizedEvidence.length === 0) {
-      issues.push('No evidence links provided');
-      recommendations.push('Add evidence links: demo, repository, test results, documentation');
-      missingItems.push('Evidence links (demo, repo, tests, docs)');
+    // Analyze Evidence (links OR attached artifacts)
+    const hasArtifacts = Number(artifactCount || 0) > 0;
+    if (normalizedEvidence.length === 0 && !hasArtifacts) {
+      issues.push('No evidence provided');
+      recommendations.push('Add evidence links or attach artifacts: demo, repository, test results, documentation');
+      missingItems.push('Evidence (links or artifacts)');
       status = 'red';
       confidence = 0.6;
     } else {
-      const hasDemo = normalizedEvidence.some(link => 
-        link.toLowerCase().includes('demo') || 
+      const hasDemo = normalizedEvidence.some(link =>
+        link.toLowerCase().includes('demo') ||
         link.toLowerCase().includes('video') ||
         link.toLowerCase().includes('screencast')
       );
-      const hasRepo = normalizedEvidence.some(link => 
-        link.toLowerCase().includes('repo') || 
-        link.toLowerCase().includes('github') || 
+      const hasRepo = normalizedEvidence.some(link =>
+        link.toLowerCase().includes('repo') ||
+        link.toLowerCase().includes('github') ||
         link.toLowerCase().includes('gitlab') ||
         link.toLowerCase().includes('bitbucket')
       );
-      const hasTests = normalizedEvidence.some(link => 
-        link.toLowerCase().includes('test') || 
+      const hasTests = normalizedEvidence.some(link =>
+        link.toLowerCase().includes('test') ||
         link.toLowerCase().includes('coverage') ||
         link.toLowerCase().includes('qa')
       );
-      const hasDocs = normalizedEvidence.some(link => 
-        link.toLowerCase().includes('doc') || 
+      const hasDocs = normalizedEvidence.some(link =>
+        link.toLowerCase().includes('doc') ||
         link.toLowerCase().includes('guide') ||
         link.toLowerCase().includes('wiki')
       );
 
       if (!hasDemo) {
-        issues.push('Missing demo link');
-        recommendations.push('Add a demo link or video showing the deliverable in action');
-        missingItems.push('Demo link or video');
-        if (status === 'green') status = 'amber';
+        recommendations.push('Consider adding a demo link or video');
       }
       if (!hasRepo) {
-        issues.push('Missing repository link');
-        recommendations.push('Add repository link for code review and version control');
-        missingItems.push('Repository link');
-        if (status === 'green') status = 'amber';
+        recommendations.push('Consider adding repository link for code review');
       }
       if (!hasTests) {
-        issues.push('Missing test evidence');
-        recommendations.push('Add test results or coverage report to demonstrate quality');
-        missingItems.push('Test results or coverage report');
-        if (status === 'green') status = 'amber';
+        recommendations.push('Consider adding test results or coverage report');
       }
       if (!hasDocs) {
-        issues.push('Missing documentation');
-        recommendations.push('Add user guide or technical documentation');
-        missingItems.push('Documentation (user guide or technical docs)');
-        if (status === 'green') status = 'amber';
+        recommendations.push('Consider adding user guide or technical documentation');
       }
     }
 
@@ -9186,6 +9263,9 @@ Return ONLY valid JSON in this exact format:
     } else if (issues.length >= 1 && status !== 'red') {
       status = 'amber';
       confidence = 0.85;
+    }
+    if (issues.length === 0) {
+      confidence = 1.0;
     }
 
     // Generate AI Insights

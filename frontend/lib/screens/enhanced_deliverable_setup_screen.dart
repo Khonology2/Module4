@@ -1276,6 +1276,7 @@ class _EnhancedDeliverableSetupScreenState
                     definitionOfDone:
                         _definitionOfDone.map((e) => e.text).toList(),
                     evidenceLinks: _evidenceLinks,
+                    artifactCount: _artifactFiles.length,
                     sprintIds: _selectedSprints,
                     knownLimitations: null,
                     onStatusChanged: (status) {

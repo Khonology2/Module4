@@ -27,6 +27,7 @@ class AIReadinessService {
     required String deliverableDescription,
     required List<String> definitionOfDone,
     required List<String> evidenceLinks,
+    int artifactCount = 0,
     required List<String> sprintIds,
     Map<String, dynamic>? sprintMetrics,
     String? knownLimitations,
@@ -41,6 +42,7 @@ class AIReadinessService {
         'deliverableDescription': deliverableDescription,
         'definitionOfDone': definitionOfDone,
         'evidenceLinks': evidenceLinks,
+        'artifactCount': artifactCount,
         'sprintIds': sprintIds,
         'sprintMetrics': sprintMetrics ?? {},
         'knownLimitations': knownLimitations,
@@ -76,6 +78,7 @@ class AIReadinessService {
         'deliverableTitle': deliverableTitle,
         'definitionOfDone': definitionOfDone,
         'evidenceLinks': evidenceLinks,
+        'artifactCount': artifactCount,
         'sprintIds': sprintIds,
       });
     }
@@ -85,6 +88,7 @@ class AIReadinessService {
   AIReadinessAnalysis _localAnalysis(Map<String, dynamic> data) {
     final dod = (data['definitionOfDone'] as List?)?.cast<String>() ?? [];
     final evidence = (data['evidenceLinks'] as List?)?.cast<String>() ?? [];
+    final artifactCount = (data['artifactCount'] is num) ? (data['artifactCount'] as num).toInt() : int.tryParse('${data['artifactCount'] ?? 0}') ?? 0;
     final sprints = (data['sprintIds'] as List?)?.cast<String>() ?? [];
     
     final issues = <String>[];
@@ -100,10 +104,10 @@ class AIReadinessService {
       recommendations.add('Consider adding more DoD criteria for better quality assurance');
     }
     
-    // Analyze evidence
-    if (evidence.isEmpty) {
+    // Analyze evidence (links OR attached artifacts)
+    if (evidence.isEmpty && artifactCount <= 0) {
       issues.add('No evidence links provided');
-      recommendations.add('Add evidence links: demo, repository, test results, documentation');
+      recommendations.add('Add evidence links or attach artifacts: demo, repository, test results, documentation');
     } else {
       final lower = evidence.map((e) => e.toLowerCase()).toList();
       final hasDemo = lower.any((e) => e.contains('demo') || e.contains('video') || e.contains('live'));
@@ -145,7 +149,7 @@ class AIReadinessService {
     
     return AIReadinessAnalysis(
       status: status,
-      confidence: 0.85,
+      confidence: issues.isEmpty ? 1.0 : 0.85,
       issues: issues,
       recommendations: recommendations,
       risks: risks,
