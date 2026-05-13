@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BC39 SIT",
+  "version": "Ver 2026.05BC41 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-13T23:03:21Z",
+  "generated_at": "2026-05-13T23:07:11Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix(api-client): prevent duplicate init and improve login retries",
+      "timestamp": "2026-05-14T01:06:15+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-13]",
+      "timestamp": "2026-05-13T23:03:22Z"
+    },
     {
       "author": "thabang127",
       "message": "refactor(frontend, render): optimize backend init and add keepalive cron",
@@ -199,6 +209,6 @@
       "timestamp": "2026-05-13T14:30:35+02:00"
     }
   ],
-  "total_commits": 39,
+  "total_commits": 41,
   "date_range": "2026-05-13"
 }
