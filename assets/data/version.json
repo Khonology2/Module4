@@ -1,14 +1,24 @@
 {
-  "version": "Ver 2026.05BC1 SIT",
+  "version": "Ver 2026.05BC3 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-13T12:31:38Z",
+  "generated_at": "2026-05-13T13:16:10Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix: improve user data parsing and dropdowns",
+      "timestamp": "2026-05-13T15:15:13+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-13]",
+      "timestamp": "2026-05-13T12:31:39Z"
+    },
     {
       "author": "thabang127",
       "message": "fix(env-loader): fix broken env candidate array",
       "timestamp": "2026-05-13T14:30:35+02:00"
     }
   ],
-  "total_commits": 1,
+  "total_commits": 3,
   "date_range": "2026-05-13"
 }
