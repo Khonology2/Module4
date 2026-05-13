@@ -24,7 +24,7 @@ services:
     env: node
     schedule: '*/5 * * * *'
     buildCommand: 'true'
-    startCommand: "node -e \"fetch('https://flow-space-backend.onrender.com/api/v1/health',{headers:{accept:'application/json'}}).then(r=>r.text()).then(()=>process.exit(0)).catch(()=>process.exit(0))\""
+    startCommand: "node -e \"const https=require('https'); const url='https://flow-space-backend.onrender.com/api/v1/health'; const req=https.get(url,{headers:{accept:'application/json','user-agent':'flow-space-keepalive'}},res=>{res.on('data',()=>{}); res.on('end',()=>process.exit(0));}); req.on('error',()=>process.exit(0)); req.setTimeout(8000,()=>{try{req.destroy();}catch(_){} process.exit(0);});\""
 
   # Flutter Frontend - Flutter Buildpack
   - type: web

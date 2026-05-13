@@ -79,6 +79,14 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
                 .timeout(const Duration(seconds: 6));
           } catch (_) {}
         });
+        () async {
+          try {
+            final url = '$_baseUrlWithVersion/health';
+            await http
+                .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
+                .timeout(const Duration(seconds: 4));
+          } catch (_) {}
+        }();
       }
 
       _initialized = true;
@@ -845,7 +853,10 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     // Retry a limited number of times for transient startup/network failures.
     ApiResponse response = ApiResponse.error('Login request not sent');
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
-    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 12 : 2;
+    final isProdLike = isProdFlag || Environment.isRenderDeployed;
+    final maxAttempts = isProdLike ? 12 : 2;
+    final maxTotalWait = isProdLike ? const Duration(seconds: 25) : const Duration(seconds: 10);
+    final startedAt = DateTime.now();
 
     Future<bool> pingHealthOnce() async {
       try {
@@ -855,7 +866,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         final url = '$_baseUrlWithVersion/health';
         final resp = await http
             .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 8));
+            .timeout(const Duration(seconds: 4));
         if (resp.statusCode < 200 || resp.statusCode >= 300) return false;
         final ct = (resp.headers['content-type'] ?? '').toLowerCase();
         if (!ct.contains('application/json')) return false;
@@ -867,6 +878,9 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     }
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (DateTime.now().difference(startedAt) > maxTotalWait) {
+        break;
+      }
       debugPrint('🔐 Login attempt $attempt for: $email');
       if (attempt == 1) {
         try {
@@ -875,33 +889,38 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
 
       try {
-        String url = '$_baseUrlWithVersion/auth/login';
-        final raw = await http
-            .post(
-              Uri.parse(url),
-              headers: const {'Accept': 'application/json'},
-              body: {
-                'email': email,
-                'password': password,
-              },
-            )
-            .timeout(const Duration(seconds: 12));
-
-        bool looksHtml(http.Response r) {
-          final ct = (r.headers['content-type'] ?? '').toLowerCase();
-          final b = r.body.trimLeft();
-          return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
-        }
-
-        if (looksHtml(raw) || raw.statusCode == 502 || raw.statusCode == 503 || raw.statusCode == 504) {
-          response = ApiResponse.error('Backend is starting up. Please try again.', 0);
+        final healthy = await pingHealthOnce();
+        if (!healthy) {
+          response = ApiResponse.error('Backend still warming up. Please try again.', 0);
         } else {
-          response = _handleResponse(raw);
+          String url = '$_baseUrlWithVersion/auth/login';
+          final raw = await http
+              .post(
+                Uri.parse(url),
+                headers: const {'Accept': 'application/json'},
+                body: {
+                  'email': email,
+                  'password': password,
+                },
+              )
+              .timeout(const Duration(seconds: 12));
+
+          bool looksHtml(http.Response r) {
+            final ct = (r.headers['content-type'] ?? '').toLowerCase();
+            final b = r.body.trimLeft();
+            return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
+          }
+
+          if (looksHtml(raw) || raw.statusCode == 502 || raw.statusCode == 503 || raw.statusCode == 504) {
+            response = ApiResponse.error('Backend still warming up. Please try again.', 0);
+          } else {
+            response = _handleResponse(raw);
+          }
         }
       } on TimeoutException {
-        response = ApiResponse.error('Backend is starting up. Please try again.', 0);
+        response = ApiResponse.error('Backend still warming up. Please try again.', 0);
       } catch (_) {
-        response = ApiResponse.error('Backend is starting up. Please try again.', 0);
+        response = ApiResponse.error('Backend still warming up. Please try again.', 0);
       }
 
       // Any HTTP response (2xx/4xx/5xx) should stop retrying immediately.
@@ -914,6 +933,10 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         final backoffSeconds = (attempt <= 6) ? 2 : 4;
         await Future.delayed(Duration(seconds: backoffSeconds));
       }
+    }
+
+    if (response.statusCode == 0 && DateTime.now().difference(startedAt) > maxTotalWait) {
+      response = ApiResponse.error('Backend still warming up. Please try again.', 0);
     }
 
     if (response.isSuccess && response.data != null) {
