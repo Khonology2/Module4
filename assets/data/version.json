@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BC21 SIT",
+  "version": "Ver 2026.05BC23 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-13T19:57:37Z",
+  "generated_at": "2026-05-13T20:10:51Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix(backend): add roles and fix notifications",
+      "timestamp": "2026-05-13T22:09:51+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-13]",
+      "timestamp": "2026-05-13T19:57:37Z"
+    },
     {
       "author": "thabang127",
       "message": "fix: upload validation and backend query fixes",
@@ -109,6 +119,6 @@
       "timestamp": "2026-05-13T14:30:35+02:00"
     }
   ],
-  "total_commits": 21,
+  "total_commits": 23,
   "date_range": "2026-05-13"
 }
