@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BC7 SIT",
+  "version": "Ver 2026.05BC9 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-13T15:15:42Z",
+  "generated_at": "2026-05-13T15:32:38Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "feat: add automatic api base url resolution",
+      "timestamp": "2026-05-13T17:31:30+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-13]",
+      "timestamp": "2026-05-13T15:15:43Z"
+    },
     {
       "author": "thabang127",
       "message": "feat: add auto-login and improve CORS",
@@ -39,6 +49,6 @@
       "timestamp": "2026-05-13T14:30:35+02:00"
     }
   ],
-  "total_commits": 7,
+  "total_commits": 9,
   "date_range": "2026-05-13"
 }
