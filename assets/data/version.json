@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BC23 SIT",
+  "version": "Ver 2026.05BC25 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-13T20:10:51Z",
+  "generated_at": "2026-05-13T20:37:10Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "feat: add web document previews and backend API updates",
+      "timestamp": "2026-05-13T22:36:31+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-13]",
+      "timestamp": "2026-05-13T20:10:51Z"
+    },
     {
       "author": "thabang127",
       "message": "fix(backend): add roles and fix notifications",
@@ -119,6 +129,6 @@
       "timestamp": "2026-05-13T14:30:35+02:00"
     }
   ],
-  "total_commits": 23,
+  "total_commits": 25,
   "date_range": "2026-05-13"
 }
