@@ -34,6 +34,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   String? _accessToken;
   String? _refreshToken;
   DateTime? _tokenExpiry;
+  Timer? _keepAliveTimer;
 
   // Getters
   String? get accessToken => _accessToken;
@@ -76,6 +77,18 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         }
       } catch (_) {}
     });
+
+    if (Environment.isRenderDeployed) {
+      _keepAliveTimer?.cancel();
+      _keepAliveTimer = Timer.periodic(const Duration(minutes: 4), (_) async {
+        try {
+          final url = '$_baseUrlWithVersion/health';
+          await http
+              .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
+              .timeout(const Duration(seconds: 6));
+        } catch (_) {}
+      });
+    }
     _initialized = true;
   }
 
@@ -151,6 +164,63 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
     // If nothing is healthy, do not force an override.
     // Environment.apiBaseUrl already has a production fallback that points at the backend service.
+  }
+
+  Future<bool> _waitForBackendReady(Duration maxWait) async {
+    if (Environment.isLocalDevelopment) return true;
+
+    const envDefined = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    final envBase = envDefined.trim();
+
+    String normalize(String url) {
+      final trimmed = url.trim();
+      if (trimmed.isEmpty) return trimmed;
+      if (trimmed.endsWith('/')) return trimmed.substring(0, trimmed.length - 1);
+      return trimmed;
+    }
+
+    final candidates = <String>[
+      if (envBase.isNotEmpty) normalize(envBase),
+      'https://flow-space-backend.onrender.com/api/v1',
+      'https://backend-532p.onrender.com/api/v1',
+    ].map(normalize).where((u) => u.isNotEmpty).toList();
+
+    bool looksHtml(http.Response r) {
+      final ct = (r.headers['content-type'] ?? '').toLowerCase();
+      final b = r.body.trimLeft();
+      return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
+    }
+
+    final startedAt = DateTime.now();
+    while (DateTime.now().difference(startedAt) < maxWait) {
+      for (final baseUrl in candidates) {
+        try {
+          final resp = await http
+              .get(
+                Uri.parse('$baseUrl/health'),
+                headers: const {'Accept': 'application/json'},
+              )
+              .timeout(const Duration(seconds: 6));
+          if (resp.statusCode >= 200 &&
+              resp.statusCode < 300 &&
+              !looksHtml(resp) &&
+              (resp.headers['content-type'] ?? '').toLowerCase().contains('application/json')) {
+            Environment.setOverrideApiBaseUrl(baseUrl);
+            try {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('resolved_api_base_url', baseUrl);
+            } catch (_) {}
+            return true;
+          }
+        } catch (_) {}
+      }
+
+      await Future.delayed(const Duration(seconds: 2));
+      try {
+        await _resolveAndSetApiBaseUrlOverride(force: true);
+      } catch (_) {}
+    }
+    return false;
   }
 
   // Token management
@@ -780,7 +850,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     // Retry a limited number of times for transient startup/network failures.
     ApiResponse response = ApiResponse.error('Login request not sent');
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
-    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 6 : 2;
+    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 4 : 2;
 
     Future<bool> pingHealthOnce() async {
       try {
@@ -805,11 +875,13 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       debugPrint('🔐 Login attempt $attempt for: $email');
 
       if (attempt == 1) {
-        for (int i = 0; i < 6; i++) {
-          final ok = await pingHealthOnce();
-          if (ok) break;
-          await Future.delayed(const Duration(seconds: 2));
+        if (!(await _waitForBackendReady(const Duration(seconds: 240)))) {
+          return ApiResponse.error(
+            'Backend is still starting up. Please try again in a moment.',
+            0,
+          );
         }
+        await pingHealthOnce();
       }
 
       try {
@@ -823,7 +895,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
                 'password': password,
               },
             )
-            .timeout(const Duration(seconds: 20));
+            .timeout(const Duration(seconds: 12));
 
         bool looksHtml(http.Response r) {
           final ct = (r.headers['content-type'] ?? '').toLowerCase();
