@@ -31,6 +31,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   }
 
   bool _initialized = false;
+  Future<void>? _initFuture;
   String? _accessToken;
   String? _refreshToken;
   DateTime? _tokenExpiry;
@@ -56,40 +57,34 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   // Initialize API client
   Future<void> initialize() async {
     if (_initialized) return;
-    await _resolveAndSetApiBaseUrlOverride();
-    await _loadStoredTokens();
-    DebugHelper.logEnvironmentInfo();
-    debugPrint('API Client initialized with base URL: $_baseUrlWithVersion');
-    debugPrint('DEBUG: Environment.apiBaseUrl = ${Environment.apiBaseUrl}');
-    debugPrint('DEBUG: Environment.isRenderDeployed = ${Environment.isRenderDeployed}');
-    debugPrint('FINAL DEBUG: _baseUrlWithVersion = $_baseUrlWithVersion');
-    Future.microtask(() async {
-      try {
-        final url = '$_baseUrlWithVersion/health';
-        final resp = await http
-            .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 8));
-        final ct = (resp.headers['content-type'] ?? '').toLowerCase();
-        if (resp.statusCode >= 200 &&
-            resp.statusCode < 300 &&
-            ct.contains('application/json')) {
-          return;
-        }
-      } catch (_) {}
-    });
+    final existing = _initFuture;
+    if (existing != null) return existing;
 
-    if (Environment.isRenderDeployed) {
-      _keepAliveTimer?.cancel();
-      _keepAliveTimer = Timer.periodic(const Duration(minutes: 4), (_) async {
-        try {
-          final url = '$_baseUrlWithVersion/health';
-          await http
-              .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
-              .timeout(const Duration(seconds: 6));
-        } catch (_) {}
-      });
-    }
-    _initialized = true;
+    final future = () async {
+      await _resolveAndSetApiBaseUrlOverride();
+      await _loadStoredTokens();
+      DebugHelper.logEnvironmentInfo();
+      debugPrint('API Client initialized with base URL: $_baseUrlWithVersion');
+      debugPrint('DEBUG: Environment.apiBaseUrl = ${Environment.apiBaseUrl}');
+      debugPrint('DEBUG: Environment.isRenderDeployed = ${Environment.isRenderDeployed}');
+      debugPrint('FINAL DEBUG: _baseUrlWithVersion = $_baseUrlWithVersion');
+
+      if (Environment.isRenderDeployed) {
+        _keepAliveTimer?.cancel();
+        _keepAliveTimer = Timer.periodic(const Duration(minutes: 4), (_) async {
+          try {
+            final url = '$_baseUrlWithVersion/health';
+            await http
+                .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
+                .timeout(const Duration(seconds: 6));
+          } catch (_) {}
+        });
+      }
+
+      _initialized = true;
+    }();
+    _initFuture = future;
+    return future;
   }
 
   Future<void> _resolveAndSetApiBaseUrlOverride({bool force = false}) async {
@@ -850,7 +845,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     // Retry a limited number of times for transient startup/network failures.
     ApiResponse response = ApiResponse.error('Login request not sent');
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
-    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 4 : 2;
+    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 12 : 2;
 
     Future<bool> pingHealthOnce() async {
       try {
@@ -873,15 +868,10 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       debugPrint('🔐 Login attempt $attempt for: $email');
-
       if (attempt == 1) {
-        if (!(await _waitForBackendReady(const Duration(seconds: 240)))) {
-          return ApiResponse.error(
-            'Backend is still starting up. Please try again in a moment.',
-            0,
-          );
-        }
-        await pingHealthOnce();
+        try {
+          await _resolveAndSetApiBaseUrlOverride(force: true);
+        } catch (_) {}
       }
 
       try {
@@ -910,6 +900,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         }
       } on TimeoutException {
         response = ApiResponse.error('Backend is starting up. Please try again.', 0);
+      } catch (_) {
+        response = ApiResponse.error('Backend is starting up. Please try again.', 0);
       }
 
       // Any HTTP response (2xx/4xx/5xx) should stop retrying immediately.
@@ -919,7 +911,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
       // statusCode == 0 means transport-level failure (e.g. Failed to fetch).
       if (attempt < maxAttempts) {
-        await Future.delayed(Duration(seconds: 2 * attempt));
+        final backoffSeconds = (attempt <= 6) ? 2 : 4;
+        await Future.delayed(Duration(seconds: backoffSeconds));
       }
     }
 
