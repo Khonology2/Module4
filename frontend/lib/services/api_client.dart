@@ -88,8 +88,6 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       if (envBase.isNotEmpty) normalize(envBase),
       'https://flow-space-backend.onrender.com/api/v1',
       'https://backend-532p.onrender.com/api/v1',
-      if (currentHost.isNotEmpty) 'https://$currentHost/api/v1',
-      'https://flow-space.onrender.com/api/v1',
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
     final uniqueCandidates = <String>[];
@@ -129,9 +127,13 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       try {
         final prefs = await SharedPreferences.getInstance();
         final cached = (prefs.getString('resolved_api_base_url') ?? '').trim();
-        if (cached.isNotEmpty && await isHealthy(cached)) {
-          Environment.setOverrideApiBaseUrl(cached);
-          return;
+        if (cached.isNotEmpty) {
+          if (await isHealthy(cached)) {
+            Environment.setOverrideApiBaseUrl(cached);
+            return;
+          } else {
+            await prefs.remove('resolved_api_base_url');
+          }
         }
       } catch (_) {}
     }
@@ -148,13 +150,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
     }
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cached = (prefs.getString('resolved_api_base_url') ?? '').trim();
-      if (cached.isNotEmpty) {
-        Environment.setOverrideApiBaseUrl(cached);
-      }
-    } catch (_) {}
+    // If nothing is healthy, do not force an override.
+    // Environment.apiBaseUrl already has a production fallback that points at the backend service.
   }
 
   // Token management

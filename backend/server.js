@@ -3959,6 +3959,230 @@ app.get('/api/v1/sprints/:sprintId', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/api/v1/sprints/:sprintId/report', authenticateToken, async (req, res) => {
+  try {
+    const { sprintId } = req.params;
+    const { statusCategory, ownerId, dueFrom, dueTo } = req.query || {};
+
+    const sprintResult = await pool.query(
+      `SELECT s.*, p.id as project_id, p.name as project_name, p.key as project_key
+       FROM sprints s
+       LEFT JOIN projects p ON s.project_id = p.id
+       WHERE s.id::text = $1::text`,
+      [String(sprintId)],
+    );
+    if (!sprintResult.rows.length) {
+      return res.status(404).json({ success: false, error: 'Sprint not found' });
+    }
+    const sprint = sprintResult.rows[0];
+    const projectId = sprint.project_id;
+
+    let members = [];
+    try {
+      const memberRows = await pool.query(
+        `SELECT 
+           u.id,
+           u.email,
+           COALESCE(
+             u.name,
+             NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '')
+           ) as name,
+           pm.role as project_role
+         FROM project_members pm
+         JOIN users u ON pm.user_id = u.id
+         WHERE pm.project_id = $1
+         ORDER BY pm.joined_at ASC`,
+        [projectId],
+      );
+      members = memberRows.rows.map((m) => ({
+        id: String(m.id),
+        name: m.name || m.email || 'Unknown',
+        email: m.email || '',
+        role: m.project_role || '',
+        work: '',
+      }));
+    } catch (_) {
+      members = [];
+    }
+
+    let deliverables = [];
+    const ownerFilter = ownerId != null && String(ownerId).trim().isNotEmpty ? String(ownerId).trim() : null;
+    const dueFromDate = dueFrom != null && String(dueFrom).trim().isNotEmpty ? new Date(String(dueFrom)) : null;
+    const dueToDate = dueTo != null && String(dueTo).trim().isNotEmpty ? new Date(String(dueTo)) : null;
+
+    try {
+      const deliverableRows = await pool.query(
+        `SELECT 
+           d.id,
+           d.title,
+           d.status,
+           d.description,
+           d.assigned_to,
+           d.created_by,
+           d.due_date,
+           d.created_at,
+           d.updated_at,
+           COALESCE(
+             u.name,
+             NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '')
+           ) as assigned_to_name,
+           u.email as assigned_to_email
+         FROM sprint_deliverables sd
+         JOIN deliverables d ON sd.deliverable_id = d.id
+         LEFT JOIN users u ON d.assigned_to::text = u.id::text
+         WHERE sd.sprint_id::text = $1::text
+         ORDER BY d.created_at ASC`,
+        [String(sprintId)],
+      );
+      deliverables = deliverableRows.rows;
+    } catch (e) {
+      try {
+        const deliverableRows = await pool.query(
+          `SELECT 
+             d.id,
+             d.title,
+             d.status,
+             d.description,
+             d.assigned_to,
+             d.created_by,
+             d.due_date,
+             d.created_at,
+             d.updated_at,
+             COALESCE(
+               u.name,
+               NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '')
+             ) as assigned_to_name,
+             u.email as assigned_to_email
+           FROM deliverables d
+           LEFT JOIN users u ON d.assigned_to::text = u.id::text
+           WHERE d.sprint_id::text = $1::text
+           ORDER BY d.created_at ASC`,
+          [String(sprintId)],
+        );
+        deliverables = deliverableRows.rows;
+      } catch (_) {
+        deliverables = [];
+      }
+    }
+
+    function normalizeStatus(v) {
+      return String(v || '').toLowerCase().replace(/[\s_-]+/g, '');
+    }
+    function progressPercent(statusRaw) {
+      const s = normalizeStatus(statusRaw);
+      if (s.includes('signedoff') || s.includes('approved') || s.includes('completed') || s === 'done') return 100;
+      if (s.includes('inreview') || s.includes('submitted')) return 80;
+      if (s.includes('changerequested')) return 70;
+      if (s.includes('rejected')) return 50;
+      if (s.includes('inprogress') || s.includes('active')) return 50;
+      if (s.includes('todo') || s.includes('draft') || s.includes('planning') || s.includes('notstarted')) return 0;
+      return 0;
+    }
+    function categoryForDeliverable(d, now) {
+      const pct = progressPercent(d.status);
+      const due = d.due_date ? new Date(d.due_date) : null;
+      const overdue = due != null && Number.isFinite(due.getTime()) && due.getTime() < now.getTime() && pct < 100;
+      const s = normalizeStatus(d.status);
+      const blocked = s.includes('block') || s.includes('changerequested') || s.includes('rejected');
+      if (overdue) return 'overdue';
+      if (pct >= 100) return 'completed';
+      if (blocked) return 'blocked';
+      if (pct <= 0) return 'not_started';
+      return 'in_progress';
+    }
+
+    const now = new Date();
+    let filtered = deliverables;
+    if (ownerFilter) {
+      filtered = filtered.filter((d) => String(d.assigned_to || '') === ownerFilter);
+    }
+    if (dueFromDate && Number.isFinite(dueFromDate.getTime())) {
+      filtered = filtered.filter((d) => d.due_date && new Date(d.due_date).getTime() >= dueFromDate.getTime());
+    }
+    if (dueToDate && Number.isFinite(dueToDate.getTime())) {
+      filtered = filtered.filter((d) => d.due_date && new Date(d.due_date).getTime() <= dueToDate.getTime());
+    }
+    const statusCat = statusCategory != null && String(statusCategory).trim().isNotEmpty ? String(statusCategory).trim().toLowerCase() : null;
+    if (statusCat) {
+      filtered = filtered.filter((d) => categoryForDeliverable(d, now) === statusCat);
+    }
+
+    const deliverablesByUser = new Map();
+    for (const d of deliverables) {
+      const assignee = d.assigned_to ? String(d.assigned_to) : null;
+      if (!assignee) continue;
+      const list = deliverablesByUser.get(assignee) || [];
+      list.push(d);
+      deliverablesByUser.set(assignee, list);
+    }
+    members = members.map((m) => {
+      const userDeliverables = deliverablesByUser.get(String(m.id)) || [];
+      const work = userDeliverables.length === 0
+        ? 'No sprint deliverables assigned'
+        : userDeliverables.map((d) => `${d.title} (${d.status || 'unknown'})`).join(', ');
+      return { ...m, work };
+    });
+
+    let completed = 0;
+    let inProgress = 0;
+    let notStarted = 0;
+    let blocked = 0;
+    let overdue = 0;
+    for (const d of deliverables) {
+      const c = categoryForDeliverable(d, now);
+      if (c === 'completed') completed += 1;
+      else if (c === 'in_progress') inProgress += 1;
+      else if (c === 'not_started') notStarted += 1;
+      else if (c === 'blocked') blocked += 1;
+      else if (c === 'overdue') overdue += 1;
+    }
+    const total = deliverables.length;
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const health = overdue > 0 ? 'critical' : (completionRate >= 80 ? 'good' : (completionRate >= 50 ? 'average' : 'poor'));
+
+    const data = {
+      project: {
+        id: projectId != null ? String(projectId) : null,
+        name: sprint.project_name || '-',
+        key: sprint.project_key || '-',
+      },
+      sprint: {
+        id: String(sprint.id),
+        name: sprint.name || `Sprint ${sprintId}`,
+        status: sprint.status || null,
+        startDate: sprint.start_date ? new Date(sprint.start_date).toISOString() : null,
+        endDate: sprint.end_date ? new Date(sprint.end_date).toISOString() : null,
+      },
+      summary: {
+        totalDeliverables: total,
+        completedDeliverables: completed,
+        inProgressDeliverables: inProgress,
+        notStartedDeliverables: notStarted,
+        blockedDeliverables: blocked,
+        overdueDeliverables: overdue,
+        sprintProgressPercent: completionRate,
+        completionRatePercent: completionRate,
+        health,
+      },
+      team: { members },
+      deliverables: filtered.map((d) => ({
+        id: String(d.id),
+        name: d.title,
+        title: d.title,
+        status: d.status,
+        ownerName: d.assigned_to_name || '-',
+        ownerEmail: d.assigned_to_email || '-',
+        dueDate: d.due_date ? new Date(d.due_date).toISOString() : null,
+      })),
+    };
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error building sprint report:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to build sprint report' });
+  }
+});
+
 // Get sprint tickets
 app.get('/api/v1/sprints/:sprintId/tickets', authenticateToken, async (req, res) => {
   try {
@@ -5345,7 +5569,7 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
                 content_hash, uploaded_by, description, tags,
                 uploaded_at, last_modified, is_active
               )
-              VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, $9::text, NOW(), NOW(), true)
+              VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7, $8::text, $9::text, NOW(), NOW(), true)
             `,
             values: [pid, file.originalname, url, fileType, fileSize, hash, uid, description || '', tags || ''],
           },
@@ -5355,7 +5579,7 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
                 project_id, file_name, file_path, file_type, file_size,
                 uploaded_by, uploaded_at, is_active
               )
-              VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, NOW(), true)
+              VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6, NOW(), true)
             `,
             values: [pid, file.originalname, url, fileType, fileSize, uid],
           },
@@ -5365,7 +5589,7 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
                 project_id, file_name, file_path, file_type,
                 uploaded_by, uploaded_at
               )
-              VALUES ($1, $2::text, $3::text, $4::text, $5::text, NOW())
+              VALUES ($1, $2::text, $3::text, $4::text, $5, NOW())
             `,
             values: [pid, file.originalname, url, fileType, uid],
           },
@@ -5376,7 +5600,7 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
                 content_hash, uploaded_by, description, tags,
                 uploaded_at, last_modified, is_active
               )
-              VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, $8::text, $9::text, $10::text, NOW(), NOW(), true)
+              VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, $8, $9::text, $10::text, NOW(), NOW(), true)
             `,
             values: [pid, file.filename, file.originalname, url, fileType, fileSize, hash, uid, description || '', tags || ''],
           },
@@ -5386,7 +5610,7 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
                 project_id, filename, original_filename, file_path, file_type, file_size,
                 uploaded_by, uploaded_at, is_active
               )
-              VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, NOW(), true)
+              VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7, NOW(), true)
             `,
             values: [pid, file.filename, file.originalname, url, fileType, fileSize, uid],
           },
@@ -5396,7 +5620,7 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
                 project_id, original_filename, file_path, file_type,
                 uploaded_by, uploaded_at
               )
-              VALUES ($1, $2::text, $3::text, $4::text, $5::text, NOW())
+              VALUES ($1, $2::text, $3::text, $4::text, $5, NOW())
             `,
             values: [pid, file.originalname, url, fileType, uid],
           },
@@ -5472,7 +5696,7 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
             content_hash, uploaded_by, description, tags,
             uploaded_at, last_modified, is_active
           )
-          VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, $9::text, NOW(), NOW(), true)
+          VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7, $8::text, $9::text, NOW(), NOW(), true)
           RETURNING *
         `,
         values: [pid, file.originalname, url, fileType, fileSize, hash, uid, description || '', tags || ''],
@@ -5483,7 +5707,7 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
             project_id, file_name, file_path, file_type, file_size,
             uploaded_by, uploaded_at, is_active
           )
-          VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, NOW(), true)
+          VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6, NOW(), true)
           RETURNING *
         `,
         values: [pid, file.originalname, url, fileType, fileSize, uid],
@@ -5494,7 +5718,7 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
             project_id, file_name, file_path, file_type,
             uploaded_by, uploaded_at
           )
-          VALUES ($1, $2::text, $3::text, $4::text, $5::text, NOW())
+          VALUES ($1, $2::text, $3::text, $4::text, $5, NOW())
           RETURNING *
         `,
         values: [pid, file.originalname, url, fileType, uid],
@@ -5506,7 +5730,7 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
             content_hash, uploaded_by, description, tags,
             uploaded_at, last_modified, is_active
           )
-          VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, $8::text, $9::text, $10::text, NOW(), NOW(), true)
+          VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, $8, $9::text, $10::text, NOW(), NOW(), true)
           RETURNING *
         `,
         values: [pid, file.filename, file.originalname, url, fileType, fileSize, hash, uid, description || '', tags || ''],
@@ -5517,7 +5741,7 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
             project_id, filename, original_filename, file_path, file_type, file_size,
             uploaded_by, uploaded_at, is_active
           )
-          VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, NOW(), true)
+          VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7, NOW(), true)
           RETURNING *
         `,
         values: [pid, file.filename, file.originalname, url, fileType, fileSize, uid],
@@ -5528,7 +5752,7 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
             project_id, original_filename, file_path, file_type,
             uploaded_by, uploaded_at
           )
-          VALUES ($1, $2::text, $3::text, $4::text, $5::text, NOW())
+          VALUES ($1, $2::text, $3::text, $4::text, $5, NOW())
           RETURNING *
         `,
         values: [pid, file.originalname, url, fileType, uid],
