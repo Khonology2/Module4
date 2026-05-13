@@ -12,8 +12,6 @@ const candidates = [
 	path.resolve(__dirname, '..', '..', '..', '.env'),              // backend/.env
 	path.resolve(__dirname, '..', '..', '..', '..', '.env')         // repo root .env (last fallback)
 ];
-	path.resolve(__dirname, '..', '..', '..', '..', '.env')         // repo root .env
-];
 // Prefer .env.<NODE_ENV>; if NODE_ENV was unset or is "development", also try common local files
 // (e.g. only .env.sit exists — typical when pointing a dev machine at a shared SIT config).
 const envSpecificCandidates = [
@@ -27,11 +25,11 @@ if (!initialNodeEnv || environment === 'development') {
 	);
 }
 
-let loadedPath = null;
+const loadedPaths = [];
 for (const p of candidates) {
 	if (fs.existsSync(p)) {
 		dotenv.config({ path: p });
-		loadedPath = p;
+		loadedPaths.push(p);
 		break;
 	}
 }
@@ -64,7 +62,7 @@ const resolvedEnv = String(process.env.NODE_ENV || 'development').toLowerCase();
 console.log('='.repeat(50));
 console.log(`🌍 Environment: ${resolvedEnv.toUpperCase()}`);
 console.log('='.repeat(50));
-console.log('Environment variables loaded from:', loadedPath || 'process.env (none found)');
+console.log('Environment variables loaded from:', loadedPaths[0] || 'process.env (none found)');
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? '*** (set)' : 'undefined');
 console.log('NODE_ENV:', process.env.NODE_ENV || 'undefined');
 console.log('PORT:', process.env.PORT || '3001 (default)');
