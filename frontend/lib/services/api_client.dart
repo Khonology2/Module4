@@ -16,6 +16,13 @@ class ApiClient {
 static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   static const Duration _timeout = Duration(seconds: 20);
 
+  static String _fallbackSignoffEndpoint(String endpoint) {
+    if (endpoint.startsWith('/sign-off-reports')) {
+      return endpoint.replaceFirst('/sign-off-reports', '/signoff');
+    }
+    return endpoint;
+  }
+
   bool _initialized = false;
   String? _accessToken;
   String? _refreshToken;
@@ -211,11 +218,16 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
     }
 
-    String url = '$_baseUrlWithVersion$endpoint';
-    if (queryParams != null && queryParams.isNotEmpty) {
-      final uri = Uri.parse(url);
-      url = uri.replace(queryParameters: queryParams).toString();
+    String buildUrl(String ep) {
+      String url = '$_baseUrlWithVersion$ep';
+      if (queryParams != null && queryParams.isNotEmpty) {
+        final uri = Uri.parse(url);
+        url = uri.replace(queryParameters: queryParams).toString();
+      }
+      return url;
     }
+
+    String url = buildUrl(endpoint);
 
     final reqHeaders = <String, String>{
       'Accept': 'application/pdf',
@@ -226,7 +238,14 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     }
 
     final effectiveTimeout = timeout ?? _timeout;
-    final resp = await http.get(Uri.parse(url), headers: reqHeaders).timeout(effectiveTimeout);
+    http.Response resp = await http.get(Uri.parse(url), headers: reqHeaders).timeout(effectiveTimeout);
+    if (requireAuth &&
+        resp.statusCode == 404 &&
+        endpoint.startsWith('/sign-off-reports') &&
+        _fallbackSignoffEndpoint(endpoint) != endpoint) {
+      url = buildUrl(_fallbackSignoffEndpoint(endpoint));
+      resp = await http.get(Uri.parse(url), headers: reqHeaders).timeout(effectiveTimeout);
+    }
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       return resp.bodyBytes;
     }
@@ -326,12 +345,16 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         }
       }
 
-      // Build URL
-      String url = '$_baseUrlWithVersion$endpoint';
-      if (queryParams != null && queryParams.isNotEmpty) {
-        final uri = Uri.parse(url);
-        url = uri.replace(queryParameters: queryParams).toString();
+      String buildUrl(String ep) {
+        String url = '$_baseUrlWithVersion$ep';
+        if (queryParams != null && queryParams.isNotEmpty) {
+          final uri = Uri.parse(url);
+          url = uri.replace(queryParameters: queryParams).toString();
+        }
+        return url;
       }
+
+      String url = buildUrl(endpoint);
 
       // Prepare headers
       final headers = {
@@ -349,34 +372,39 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
       debugPrint('Request Headers: $headersForLog');
 
-      // Make request
-      http.Response response;
-      final effectiveTimeout = timeout ?? _timeout;
-      switch (method.toUpperCase()) {
-        case 'GET':
-          response = await http.get(Uri.parse(url), headers: headers).timeout(effectiveTimeout);
-          break;
-        case 'POST':
-          debugPrint('🌐 API POST to: $url');
-          debugPrint('📤 POST body: ${body != null ? jsonEncode(body) : 'null'}');
-          response = await http.post(
-            Uri.parse(url),
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          ).timeout(effectiveTimeout);
-          break;
-        case 'PUT':
-          response = await http.put(
-            Uri.parse(url),
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          ).timeout(effectiveTimeout);
-          break;
-        case 'DELETE':
-          response = await http.delete(Uri.parse(url), headers: headers).timeout(effectiveTimeout);
-          break;
-        default:
-          throw Exception('Unsupported HTTP method: $method');
+      Future<http.Response> send(String requestUrl) async {
+        final effectiveTimeout = timeout ?? _timeout;
+        switch (method.toUpperCase()) {
+          case 'GET':
+            return await http.get(Uri.parse(requestUrl), headers: headers).timeout(effectiveTimeout);
+          case 'POST':
+            debugPrint('🌐 API POST to: $requestUrl');
+            debugPrint('📤 POST body: ${body != null ? jsonEncode(body) : 'null'}');
+            return await http.post(
+              Uri.parse(requestUrl),
+              headers: headers,
+              body: body != null ? jsonEncode(body) : null,
+            ).timeout(effectiveTimeout);
+          case 'PUT':
+            return await http.put(
+              Uri.parse(requestUrl),
+              headers: headers,
+              body: body != null ? jsonEncode(body) : null,
+            ).timeout(effectiveTimeout);
+          case 'DELETE':
+            return await http.delete(Uri.parse(requestUrl), headers: headers).timeout(effectiveTimeout);
+          default:
+            throw Exception('Unsupported HTTP method: $method');
+        }
+      }
+
+      http.Response response = await send(url);
+      if (includeAuth &&
+          response.statusCode == 404 &&
+          endpoint.startsWith('/sign-off-reports') &&
+          _fallbackSignoffEndpoint(endpoint) != endpoint) {
+        final fallbackUrl = buildUrl(_fallbackSignoffEndpoint(endpoint));
+        response = await send(fallbackUrl);
       }
 
       return _handleResponse(response);

@@ -5,21 +5,10 @@ const { authenticateToken } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
-const uploadBaseDir = path.join(__dirname, '..', 'uploads', 'profile_pictures');
-try { fs.mkdirSync(uploadBaseDir, { recursive: true }); } catch (_) {}
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadBaseDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, req.params.user_id + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+const fileUploadService = require('../services/fileUploadService');
 
 const upload = multer({ 
-  storage: storage,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
@@ -203,15 +192,27 @@ router.post('/:user_id/upload-picture', authenticateToken, upload.single('file')
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    
-    const fileUrl = `/uploads/profile_pictures/${req.file.filename}`;
+
+    const uploadResult = await fileUploadService.uploadFile(
+      req.file,
+      `profile_pictures/${user_id}`,
+      {
+        title: 'Profile picture',
+        description: '',
+        tags: [`profile:${user_id}`],
+        uploadedBy: (req.user && req.user.id) || undefined,
+        uploaderName: (req.user && (req.user.name || req.user.email)) || undefined
+      }
+    );
+
+    const fileUrl = uploadResult.url;
     await profile.update({ profile_picture: fileUrl });
     res.json({
       url: fileUrl,
-      absolute_url: `${req.protocol}://${req.get('host')}${fileUrl}`,
-      filename: req.file.filename,
-      originalname: req.file.originalname,
-      size: req.file.size
+      filename: uploadResult.filename,
+      originalname: uploadResult.originalName || req.file.originalname,
+      size: req.file.size,
+      storageProvider: uploadResult.storageProvider,
     });
     
   } catch (error) {
@@ -249,8 +250,12 @@ router.get('/:user_id/picture', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Profile picture not found' });
     }
     const picUrl = profile.profile_picture.toString();
+    if (/^https?:\/\//i.test(picUrl)) {
+      return res.redirect(picUrl);
+    }
     const filename = path.basename(picUrl);
-    const fullPath = path.join(__dirname, '..', 'uploads', 'profile_pictures', filename);
+    const relPath = picUrl.replace(/^\/+/, '').replace(/^uploads\//, '');
+    const fullPath = path.join(__dirname, '..', 'uploads', relPath);
     if (!fs.existsSync(fullPath)) {
       return res.status(404).json({ error: 'Profile picture file missing' });
     }

@@ -3,6 +3,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const cloudinaryService = require('./cloudinaryService');
 
 class FileUploadService {
     constructor() {
@@ -25,11 +26,48 @@ class FileUploadService {
         try {
             await this.ensureStorageDirectory();
             
-            // Use original filename (sanitized) instead of UUID
-            // Sanitize: remove special characters that might be unsafe, but keep spaces or replace them
-            // For now, let's keep it simple and just use the original name, maybe replacing some chars
-            const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.\-_ ]/g, '');
-            const uniqueFilename = sanitizedName;
+            const originalName = typeof file.originalname === 'string' ? file.originalname : 'upload.bin';
+            const ext = path.extname(originalName);
+            const uniqueFilename = `${uuidv4()}${ext}`;
+
+            const metadata = {
+                originalName: originalName,
+                uploadDate: new Date().toISOString(),
+                title: typeof metaOverrides.title === 'string' && metaOverrides.title.trim() !== '' ? metaOverrides.title.trim() : originalName,
+                description: typeof metaOverrides.description === 'string' ? metaOverrides.description : '',
+                tags: Array.isArray(metaOverrides.tags)
+                    ? metaOverrides.tags
+                    : (typeof metaOverrides.tags === 'string' && metaOverrides.tags.trim() !== '' ? metaOverrides.tags.split(',').map(s=>s.trim()).filter(Boolean) : []),
+                uploadedBy: typeof metaOverrides.uploadedBy === 'string' ? metaOverrides.uploadedBy : undefined,
+                uploaderName: typeof metaOverrides.uploaderName === 'string' ? metaOverrides.uploaderName : undefined
+            };
+
+            if (cloudinaryService.isConfigured()) {
+                const folder = prefix ? `flow/${prefix}` : 'flow/uploads';
+                const result = await cloudinaryService.uploadBuffer({
+                    buffer: file.buffer,
+                    folder,
+                    publicId: uniqueFilename.replace(ext, ''),
+                    originalFilename: originalName,
+                    resourceType: 'auto',
+                    tags: metadata.tags,
+                });
+                return {
+                    filename: uniqueFilename,
+                    originalName: originalName,
+                    title: metadata.title,
+                    url: result && (result.secure_url || result.url),
+                    size: file.size,
+                    uploadedBy: metadata.uploadedBy,
+                    uploaderName: metadata.uploaderName,
+                    storageProvider: 'cloudinary',
+                    cloudinary: {
+                        public_id: result && result.public_id,
+                        resource_type: result && result.resource_type,
+                        version: result && result.version,
+                    },
+                };
+            }
             
             let storagePath;
             let urlPath;
@@ -59,22 +97,13 @@ class FileUploadService {
             
             // Write file to storage
             await fs.writeFile(storagePath, file.buffer);
-            const metadata = {
-                originalName: file.originalname,
-                uploadDate: new Date().toISOString(),
-                title: typeof metaOverrides.title === 'string' && metaOverrides.title.trim() !== '' ? metaOverrides.title.trim() : file.originalname,
-                description: typeof metaOverrides.description === 'string' ? metaOverrides.description : '',
-                tags: Array.isArray(metaOverrides.tags) ? metaOverrides.tags : (typeof metaOverrides.tags === 'string' && metaOverrides.tags.trim() !== '' ? metaOverrides.tags.split(',').map(s=>s.trim()) : []),
-                uploadedBy: typeof metaOverrides.uploadedBy === 'string' ? metaOverrides.uploadedBy : undefined,
-                uploaderName: typeof metaOverrides.uploaderName === 'string' ? metaOverrides.uploaderName : undefined
-            };
             try {
                 await fs.writeFile(`${storagePath}.meta.json`, JSON.stringify(metadata));
             } catch (error) {}
             
             return {
                 filename: uniqueFilename,
-                originalName: file.originalname,
+                originalName: originalName,
                 title: metadata.title,
                 url: urlPath,
                 size: file.size,

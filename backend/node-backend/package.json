@@ -36,7 +36,8 @@
     "socket.io": "^4.7.4",
     "sqlite3": "^5.0.2",
     "uuid": "^9.0.1",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "cloudinary": "^2.7.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

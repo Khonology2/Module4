@@ -5,6 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fileUploadService = require('../services/fileUploadService');
 const { authenticateToken } = require('../middleware/auth');
+const { RepositoryDocument } = require('../models');
 
 const router = express.Router();
 
@@ -62,17 +63,49 @@ router.post('/upload', authenticateToken, handleMulterSingle, async (req, res) =
             });
         }
         
+        const rawTags = (req.body && req.body.tags) ? req.body.tags : derivedTags;
+        const tagsArr = Array.isArray(rawTags)
+            ? rawTags
+            : (typeof rawTags === 'string' && rawTags.trim() !== '' ? rawTags.split(',').map(s => s.trim()).filter(Boolean) : []);
         const uploadResult = await fileUploadService.uploadFile(
             req.file,
             prefix,
             {
                 title: req.body && req.body.title,
                 description: req.body && req.body.description,
-                tags: (req.body && req.body.tags) ? req.body.tags : derivedTags,
+                tags: tagsArr,
                 uploadedBy: (req.user && req.user.id) || undefined,
                 uploaderName: (req.user && (req.user.name || req.user.email)) || undefined
             }
         );
+
+        let record = null;
+        try {
+            if (RepositoryDocument) {
+                record = await RepositoryDocument.create({
+                    filename: uploadResult.filename,
+                    original_name: uploadResult.originalName || req.file.originalname,
+                    title: uploadResult.title || (req.body && req.body.title) || req.file.originalname,
+                    description: (req.body && req.body.description) || '',
+                    tags: tagsArr.join(','),
+                    file_type: req.file.mimetype,
+                    file_size: req.file.size,
+                    url: uploadResult.url,
+                    storage_provider: uploadResult.storageProvider || 'cloudinary',
+                    cloudinary_public_id: uploadResult.cloudinary && uploadResult.cloudinary.public_id ? uploadResult.cloudinary.public_id : null,
+                    cloudinary_resource_type: uploadResult.cloudinary && uploadResult.cloudinary.resource_type ? uploadResult.cloudinary.resource_type : null,
+                    cloudinary_version: uploadResult.cloudinary && uploadResult.cloudinary.version ? String(uploadResult.cloudinary.version) : null,
+                    project_id: project_id || null,
+                    project_key: project_key || null,
+                    sprint_id: sprint_id ? parseInt(String(sprint_id), 10) : null,
+                    deliverable_id: deliverable_id ? parseInt(String(deliverable_id), 10) : null,
+                    uploaded_by: (req.user && req.user.id) || null,
+                    uploader_name: (req.user && (req.user.name || req.user.email)) || null,
+                });
+            }
+        } catch (e) {
+            console.error('Failed to persist repository document record:', e);
+        }
         try {
             if (global && global.realtimeEvents) {
                 const ext = String(path.extname(uploadResult.filename || uploadResult.originalName || '')).replace('.', '').toLowerCase();
@@ -93,7 +126,7 @@ router.post('/upload', authenticateToken, handleMulterSingle, async (req, res) =
                 global.realtimeEvents.emit('document_uploaded', repoDoc);
             }
         } catch (_) {}
-        res.status(200).json(uploadResult);
+        res.status(200).json({ ...uploadResult, recordId: record ? record.id : undefined });
         
     } catch (error) {
         console.error('File upload error:', error);
@@ -119,9 +152,42 @@ router.post('/upload-multiple', authenticateToken, handleMulterArray, async (req
         
         for (const file of req.files) {
             try {
-                const uploadResult = await fileUploadService.uploadFile(file, prefix);
+                const uploadResult = await fileUploadService.uploadFile(file, prefix, {
+                    title: req.body && req.body.title,
+                    description: req.body && req.body.description,
+                    tags: req.body && req.body.tags,
+                    uploadedBy: (req.user && req.user.id) || undefined,
+                    uploaderName: (req.user && (req.user.name || req.user.email)) || undefined
+                });
+                let recordId = undefined;
+                try {
+                    if (RepositoryDocument) {
+                        const rawTags = (req.body && req.body.tags) ? req.body.tags : [];
+                        const tagsArr = Array.isArray(rawTags)
+                            ? rawTags
+                            : (typeof rawTags === 'string' && rawTags.trim() !== '' ? rawTags.split(',').map(s => s.trim()).filter(Boolean) : []);
+                        const rec = await RepositoryDocument.create({
+                            filename: uploadResult.filename,
+                            original_name: uploadResult.originalName || file.originalname,
+                            title: uploadResult.title || file.originalname,
+                            description: (req.body && req.body.description) || '',
+                            tags: tagsArr.join(','),
+                            file_type: file.mimetype,
+                            file_size: file.size,
+                            url: uploadResult.url,
+                            storage_provider: uploadResult.storageProvider || 'cloudinary',
+                            cloudinary_public_id: uploadResult.cloudinary && uploadResult.cloudinary.public_id ? uploadResult.cloudinary.public_id : null,
+                            cloudinary_resource_type: uploadResult.cloudinary && uploadResult.cloudinary.resource_type ? uploadResult.cloudinary.resource_type : null,
+                            cloudinary_version: uploadResult.cloudinary && uploadResult.cloudinary.version ? String(uploadResult.cloudinary.version) : null,
+                            uploaded_by: (req.user && req.user.id) || null,
+                            uploader_name: (req.user && (req.user.name || req.user.email)) || null,
+                        });
+                        recordId = rec ? rec.id : undefined;
+                    }
+                } catch (_) {}
                 results.push({
                     ...uploadResult,
+                    recordId,
                     success: true
                 });
             } catch (error) {
