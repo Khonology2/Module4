@@ -55,6 +55,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   // Initialize API client
   Future<void> initialize() async {
     if (_initialized) return;
+    await _resolveAndSetApiBaseUrlOverride();
     await _loadStoredTokens();
     DebugHelper.logEnvironmentInfo();
     debugPrint('API Client initialized with base URL: $_baseUrlWithVersion');
@@ -67,6 +68,71 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       } catch (_) {}
     });
     _initialized = true;
+  }
+
+  Future<void> _resolveAndSetApiBaseUrlOverride() async {
+    if (Environment.isLocalDevelopment) return;
+
+    const envDefined = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    final envBase = envDefined.trim();
+
+    String normalize(String url) {
+      final trimmed = url.trim();
+      if (trimmed.isEmpty) return trimmed;
+      if (trimmed.endsWith('/')) return trimmed.substring(0, trimmed.length - 1);
+      return trimmed;
+    }
+
+    final currentHost = Uri.base.host;
+    final candidates = <String>[
+      if (envBase.isNotEmpty) normalize(envBase),
+      'https://flow-space-backend.onrender.com/api/v1',
+      'https://backend-532p.onrender.com/api/v1',
+      if (currentHost.isNotEmpty) 'https://$currentHost/api/v1',
+      'https://flow-space.onrender.com/api/v1',
+    ].map(normalize).where((u) => u.isNotEmpty).toList();
+
+    final uniqueCandidates = <String>[];
+    for (final c in candidates) {
+      if (!uniqueCandidates.contains(c)) uniqueCandidates.add(c);
+    }
+
+    Future<bool> isHealthy(String baseUrl) async {
+      try {
+        final uri = Uri.parse('$baseUrl/health');
+        final resp = await http
+            .get(uri, headers: const {'Accept': 'application/json'})
+            .timeout(const Duration(seconds: 15));
+        if (resp.statusCode < 200 || resp.statusCode >= 300) return false;
+        final ct = (resp.headers['content-type'] ?? '').toLowerCase();
+        if (ct.contains('text/html') || resp.body.trim().startsWith('<!DOCTYPE')) {
+          return false;
+        }
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    for (final baseUrl in uniqueCandidates) {
+      final ok = await isHealthy(baseUrl);
+      if (ok) {
+        Environment.setOverrideApiBaseUrl(baseUrl);
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('resolved_api_base_url', baseUrl);
+        } catch (_) {}
+        return;
+      }
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = (prefs.getString('resolved_api_base_url') ?? '').trim();
+      if (cached.isNotEmpty) {
+        Environment.setOverrideApiBaseUrl(cached);
+      }
+    } catch (_) {}
   }
 
   // Token management

@@ -6,7 +6,18 @@ class Environment {
       'A social learning platform built with Flutter';
 
   // API Configuration (supports --dart-define=API_BASE_URL=...)
+  static String? _overrideApiBaseUrl;
+
+  static void setOverrideApiBaseUrl(String? url) {
+    final trimmed = url?.trim() ?? '';
+    _overrideApiBaseUrl = trimmed.isEmpty ? null : trimmed;
+  }
+
   static String get apiBaseUrl {
+    final overridden = _overrideApiBaseUrl;
+    if (overridden != null && overridden.isNotEmpty) {
+      return overridden;
+    }
     // Check for build-time API base URL first
     const baseUrlFromEnv = String.fromEnvironment(
       'API_BASE_URL',
