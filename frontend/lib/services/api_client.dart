@@ -64,7 +64,16 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     debugPrint('FINAL DEBUG: _baseUrlWithVersion = $_baseUrlWithVersion');
     Future.microtask(() async {
       try {
-        await _makeUnauthenticatedRequest('GET', '/health');
+        final url = '$_baseUrlWithVersion/health';
+        final resp = await http
+            .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
+            .timeout(const Duration(seconds: 8));
+        final ct = (resp.headers['content-type'] ?? '').toLowerCase();
+        if (resp.statusCode >= 200 &&
+            resp.statusCode < 300 &&
+            ct.contains('application/json')) {
+          return;
+        }
       } catch (_) {}
     });
     _initialized = true;
@@ -105,17 +114,9 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         final uri = Uri.parse('$baseUrl/health');
         final resp = await http
             .get(uri, headers: const {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 15));
+            .timeout(const Duration(seconds: 8));
         if (resp.statusCode < 200 || resp.statusCode >= 300) return false;
         if (_looksLikeHtml(resp)) return false;
-
-        final probe = await http
-            .get(
-              Uri.parse('$baseUrl/sign-off-reports/client-review/__probe__'),
-              headers: const {'Accept': 'application/json'},
-            )
-            .timeout(const Duration(seconds: 15));
-        if (_looksLikeHtml(probe)) return false;
         return true;
       } catch (_) {
         return false;
@@ -779,32 +780,65 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     // Retry a limited number of times for transient startup/network failures.
     ApiResponse response = ApiResponse.error('Login request not sent');
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
-    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 3 : 2;
+    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 6 : 2;
 
-    Future<void> prewarm() async {
+    Future<bool> pingHealthOnce() async {
       try {
         await _resolveAndSetApiBaseUrlOverride(force: true);
       } catch (_) {}
       try {
-        await _makeUnauthenticatedRequest('GET', '/health');
+        final url = '$_baseUrlWithVersion/health';
+        final resp = await http
+            .get(Uri.parse(url), headers: const {'Accept': 'application/json'})
+            .timeout(const Duration(seconds: 8));
+        if (resp.statusCode < 200 || resp.statusCode >= 300) return false;
+        final ct = (resp.headers['content-type'] ?? '').toLowerCase();
+        if (!ct.contains('application/json')) return false;
+        final body = resp.body.trimLeft();
+        if (body.startsWith('<!DOCTYPE') || body.startsWith('<html')) return false;
+        return true;
       } catch (_) {}
+      return false;
     }
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       debugPrint('🔐 Login attempt $attempt for: $email');
 
       if (attempt == 1) {
-        await prewarm();
+        for (int i = 0; i < 6; i++) {
+          final ok = await pingHealthOnce();
+          if (ok) break;
+          await Future.delayed(const Duration(seconds: 2));
+        }
       }
 
-      response = await post(
-        '/auth/login',
-        body: {
-          'email': email,
-          'password': password,
-        },
-        timeout: const Duration(seconds: 180),
-      );
+      try {
+        String url = '$_baseUrlWithVersion/auth/login';
+        final raw = await http
+            .post(
+              Uri.parse(url),
+              headers: const {'Accept': 'application/json'},
+              body: {
+                'email': email,
+                'password': password,
+              },
+            )
+            .timeout(const Duration(seconds: 20));
+
+        bool looksHtml(http.Response r) {
+          final ct = (r.headers['content-type'] ?? '').toLowerCase();
+          final b = r.body.trimLeft();
+          return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
+        }
+
+        if (looksHtml(raw) || raw.statusCode == 502 || raw.statusCode == 503 || raw.statusCode == 504) {
+          response = ApiResponse.error('Backend is starting up. Please try again.', 0);
+        } else {
+          response = _handleResponse(raw);
+        }
+      } on TimeoutException {
+        response = ApiResponse.error('Backend is starting up. Please try again.', 0);
+      }
 
       // Any HTTP response (2xx/4xx/5xx) should stop retrying immediately.
       if (response.statusCode != 0) {

@@ -249,6 +249,7 @@ app.use(cors({
 app.options("*", cors());
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use((req, _res, next) => {
   if (req.url.startsWith('/api/') && !req.url.startsWith('/api/v1/')) {
     req.url = `/api/v1/${req.url.substring('/api/'.length)}`;
