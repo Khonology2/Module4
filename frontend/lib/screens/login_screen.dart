@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../services/backend_settings_service.dart';
-import '../services/backend_api_service.dart';
 import '../services/error_handler.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/app_modal.dart';
@@ -24,16 +23,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _keyboardFocusNode = FocusNode();
   bool _isPasswordVisible = false;
   bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() async {
-      try {
-        await BackendApiService().initialize();
-      } catch (_) {}
-    });
-  }
 
   @override
   void dispose() {

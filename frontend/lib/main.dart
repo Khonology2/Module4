@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -64,23 +65,16 @@ void main() async {
   //   options: DefaultFirebaseOptions.currentPlatform,
   // );
 
-  try {
-    // Initialize API Services
-    await BackendApiService().initialize();
-    await AuthService().initialize();
-    // RealAuthService removed - using AuthService instead
-    
-    // Test SMTP connection on startup (optional)
-    // Uncomment to test SMTP on app startup
-    // final emailService = SmtpEmailService();
-    // final isConnected = await emailService.testSmtpConnection();
-    // debugPrint('SMTP Connection: ${isConnected ? "✅ Success" : "❌ Failed"}');
-  } catch (e) {
-    debugPrint('API Service initialization failed: $e');
-    // Continue without API service for now
-  }
-
   runApp(const ProviderScope(child: KhonoApp()));
+
+  unawaited(Future(() async {
+    try {
+      await BackendApiService().initialize();
+      await AuthService().initialize();
+    } catch (e) {
+      debugPrint('API Service initialization failed: $e');
+    }
+  }));
 }
 
 class KhonoApp extends ConsumerWidget {

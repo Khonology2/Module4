@@ -19,6 +19,13 @@ services:
         value: 10000
     healthCheckPath: /api/v1/health
 
+  - type: cron
+    name: flow-space-backend-keepalive
+    env: node
+    schedule: '*/5 * * * *'
+    buildCommand: 'true'
+    startCommand: "node -e \"fetch('https://flow-space-backend.onrender.com/api/v1/health',{headers:{accept:'application/json'}}).then(r=>r.text()).then(()=>process.exit(0)).catch(()=>process.exit(0))\""
+
   # Flutter Frontend - Flutter Buildpack
   - type: web
     name: flow-space-frontend

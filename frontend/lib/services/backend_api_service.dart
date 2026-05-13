@@ -14,14 +14,21 @@ class BackendApiService {
   factory BackendApiService() => _instance;
   BackendApiService._internal();
   final ApiClient _apiClient = ApiClient();
+  Future<void>? _initFuture;
 
   // Getters
   String? get accessToken => _apiClient.accessToken;
 
   // Initialize the service
   Future<void> initialize() async {
-    await _apiClient.initialize();
-    debugPrint('Backend API Service initialized');
+    final existing = _initFuture;
+    if (existing != null) return existing;
+    final future = () async {
+      await _apiClient.initialize();
+      debugPrint('Backend API Service initialized');
+    }();
+    _initFuture = future;
+    return future;
   }
 
   // Authentication endpoints

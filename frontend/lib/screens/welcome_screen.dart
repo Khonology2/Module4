@@ -26,11 +26,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() async {
-      try {
-        await BackendApiService().initialize();
-      } catch (_) {}
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _consumeTokenFromUrl());
   }
 
