@@ -17,7 +17,7 @@ import 'document_service_stub.dart'
 class DocumentService {
   final AuthService _authService;
 final ApiClient _apiClient = ApiClient();
-  static final String _baseUrl = Environment.apiBaseUrl;
+  String get _baseUrl => Environment.apiBaseUrl;
 
   DocumentService(this._authService);
 
@@ -70,6 +70,7 @@ final ApiClient _apiClient = ApiClient();
   // Get document audit
   Future<ApiResponse> getDocumentAudit(String documentId) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) return ApiResponse.error('No access token available');
 
@@ -97,6 +98,7 @@ final ApiClient _apiClient = ApiClient();
   // Get repository audit with filters
   Future<ApiResponse> getRepositoryAudit({ String? projectId, String? sprintId, String? deliverableId, String? from, String? to }) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) return ApiResponse.error('No access token available');
 
@@ -142,6 +144,7 @@ final ApiClient _apiClient = ApiClient();
     String? deliverableId,
   }) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) {
         return ApiResponse.error('No access token available');
@@ -154,7 +157,7 @@ final ApiClient _apiClient = ApiClient();
 
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('$_baseUrl/files/upload'),
+        Uri.parse('$_baseUrl/documents'),
       );
 
       request.headers['Authorization'] = 'Bearer $token';
@@ -167,6 +170,7 @@ final ApiClient _apiClient = ApiClient();
         request.fields['tags'] = tags;
       }
       if (projectId != null && projectId.trim().isNotEmpty) {
+        request.fields['projectId'] = projectId.trim();
         request.fields['project_id'] = projectId.trim();
       }
       if (projectKey != null && projectKey.trim().isNotEmpty) {
@@ -184,22 +188,12 @@ final ApiClient _apiClient = ApiClient();
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final raw = jsonDecode(response.body);
-        final mapped = {
-          'id': raw['filename']?.toString() ?? '',
-          'name': raw['title']?.toString() ?? raw['originalName']?.toString() ?? raw['filename']?.toString() ?? 'Uploaded File',
-          'fileType': (raw['filename']?.toString() ?? '').split('.').last,
-          'uploaded_at': DateTime.now().toIso8601String(),
-          'uploaded_by': raw['uploadedBy']?.toString() ?? _authService.currentUser?.id.toString() ?? 'system',
-          'size': raw['size']?.toString(),
-          'description': description ?? '',
-          'uploader': raw['uploadedBy']?.toString() ?? _authService.currentUser?.id.toString() ?? 'system',
-          'size_in_mb': ((raw['size'] ?? 0) as num) / (1024 * 1024),
-          'file_path': raw['url'],
-          'tags': tags,
-          'uploader_name': raw['uploaderName']?.toString() ?? _authService.currentUser?.name ?? 'System',
-        };
-        final document = RepositoryFile.fromJson(mapped);
-        return ApiResponse.success({'document': document}, response.statusCode);
+        final dynamic data = (raw is Map<String, dynamic>) ? (raw['data'] ?? raw) : raw;
+        if (data is Map) {
+          final document = RepositoryFile.fromJson(Map<String, dynamic>.from(data));
+          return ApiResponse.success({'document': document}, response.statusCode);
+        }
+        return ApiResponse.success({'document': null}, response.statusCode);
       } else {
         final errorBody = response.body;
         try {
@@ -230,6 +224,7 @@ final ApiClient _apiClient = ApiClient();
     String? deliverableId,
   }) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) {
         return ApiResponse.error('No access token available');
@@ -237,7 +232,7 @@ final ApiClient _apiClient = ApiClient();
 
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('$_baseUrl/files/upload'),
+        Uri.parse('$_baseUrl/documents'),
       );
 
       request.headers['Authorization'] = 'Bearer $token';
@@ -258,6 +253,7 @@ final ApiClient _apiClient = ApiClient();
         request.fields['tags'] = tags;
       }
       if (projectId != null && projectId.trim().isNotEmpty) {
+        request.fields['projectId'] = projectId.trim();
         request.fields['project_id'] = projectId.trim();
       }
       if (projectKey != null && projectKey.trim().isNotEmpty) {
@@ -275,22 +271,12 @@ final ApiClient _apiClient = ApiClient();
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final raw = jsonDecode(response.body);
-        final mapped = {
-          'id': raw['filename']?.toString() ?? '',
-          'name': raw['title']?.toString() ?? raw['originalName']?.toString() ?? fileName,
-          'fileType': (fileName).split('.').last,
-          'uploaded_at': DateTime.now().toIso8601String(),
-          'uploaded_by': raw['uploadedBy']?.toString() ?? _authService.currentUser?.id.toString() ?? 'system',
-          'size': raw['size']?.toString(),
-          'description': description ?? '',
-          'uploader': raw['uploadedBy']?.toString() ?? _authService.currentUser?.id.toString() ?? 'system',
-          'size_in_mb': ((raw['size'] ?? 0) as num) / (1024 * 1024),
-          'file_path': raw['url'],
-          'tags': tags,
-          'uploader_name': raw['uploaderName']?.toString() ?? _authService.currentUser?.name ?? 'System',
-        };
-        final document = RepositoryFile.fromJson(mapped);
-        return ApiResponse.success({'document': document}, response.statusCode);
+        final dynamic data = (raw is Map<String, dynamic>) ? (raw['data'] ?? raw) : raw;
+        if (data is Map) {
+          final document = RepositoryFile.fromJson(Map<String, dynamic>.from(data));
+          return ApiResponse.success({'document': document}, response.statusCode);
+        }
+        return ApiResponse.success({'document': null}, response.statusCode);
       } else {
         final errorBody = response.body;
         try {
@@ -312,6 +298,7 @@ final ApiClient _apiClient = ApiClient();
   // Download a document
   Future<ApiResponse> downloadDocument(String documentId) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) {
         return ApiResponse.error('No authentication token available');
@@ -374,6 +361,7 @@ final ApiClient _apiClient = ApiClient();
   // Web-specific download method
   Future<ApiResponse> _downloadDocumentWeb(String documentId, String token) async {
     try {
+      await _apiClient.initialize();
       // Get document details first to get the filename
       final detailsResponse = await http.get(
         Uri.parse('$_baseUrl/documents/$documentId'),
@@ -425,6 +413,7 @@ final ApiClient _apiClient = ApiClient();
   // Delete a document
   Future<ApiResponse> deleteDocument(String documentId) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) {
         return ApiResponse.error('No access token available');

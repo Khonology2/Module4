@@ -6,7 +6,7 @@ import '../config/api_config.dart';
 
 class SignOffReportService {
   final AuthService _authService;
-  final String _baseUrl = ApiConfig.getFullUrl('/sign-off-reports');
+  String get _baseUrl => ApiConfig.getFullUrl('/sign-off-reports');
 
   SignOffReportService(this._authService);
 

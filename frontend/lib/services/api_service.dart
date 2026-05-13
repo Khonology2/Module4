@@ -10,7 +10,7 @@ import '../config/environment.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-static final String baseUrl = Environment.apiBaseUrl;
+static String get baseUrl => Environment.apiBaseUrl;
   
   // Get auth headers with token
   static Future<Map<String, String>> _getHeaders() async {

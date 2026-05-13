@@ -11,7 +11,7 @@ import 'auth_service.dart';
 import 'api_service.dart';
 
 class SprintDatabaseService {
-  static final String _baseUrl = Environment.apiBaseUrl;
+  String get _baseUrl => Environment.apiBaseUrl;
   final NotificationService _notificationService = NotificationService();
   final ApiClient _apiClient = ApiClient();
   final BackendApiService _backendApiService = BackendApiService();
@@ -41,6 +41,7 @@ class SprintDatabaseService {
   /// Get all sprints for the current user
   Future<List<Map<String, dynamic>>> getSprints({String? projectId, String? projectKey}) async {
     try {
+      await _apiClient.initialize();
       final uri = Uri.parse('$_baseUrl/sprints').replace(queryParameters: {
         'limit': '1000',
         if (projectId != null && projectId.isNotEmpty) 'project_id': projectId,
@@ -645,6 +646,7 @@ if (response.isSuccess) {
 /// Get sprint details by ID (direct HTTP)
   Future<Map<String, dynamic>?> getSprintDetailsDirect(String sprintId) async {
     try {
+      await _apiClient.initialize();
       final response = await http.get(
         Uri.parse('$_baseUrl/sprints/$sprintId'),
         headers: _headers,
@@ -904,12 +906,12 @@ if (response.isSuccess) {
   }) async {
     try {
       final body = {
-        'status': status,
+        'status': status == 'draft' ? 'planning' : status,
         if (progress != null) 'progress': progress,
       };
 
       final response = await http.put(
-        Uri.parse('$_baseUrl/sprints/$sprintId'),
+        Uri.parse('$_baseUrl/sprints/$sprintId/status'),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -962,7 +964,7 @@ if (response.isSuccess) {
       final body = {'progress': progress};
 
       final response = await http.put(
-        Uri.parse('$_baseUrl/sprints/$sprintId'),
+        Uri.parse('$_baseUrl/sprints/$sprintId/status'),
         headers: _headers,
         body: jsonEncode(body),
       );

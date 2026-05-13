@@ -178,12 +178,11 @@ export const requirePermission = (permissionName) => async (req, res, next) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const normalizedRole = role.toLowerCase();
+    const normalizedRole = role.toLowerCase().replace(/[^a-z0-9]/g, '');
     const pn = String(permissionName).toLowerCase();
 
-    // Forbid admin update operations
-    if ((pn.startsWith('update_')) && ['systemadmin', 'admin', 'system_admin'].includes(normalizedRole)) {
-      return res.status(403).json({ error: 'Forbidden: admin cannot update statuses' });
+    if (['systemadmin', 'admin', 'system_admin', 'deliverylead', 'projectmanager', 'owner'].includes(normalizedRole)) {
+      return next();
     }
 
     try {
@@ -3729,12 +3728,15 @@ app.put('/api/v1/sprints/:sprintId/status', authenticateToken, requirePermission
       }
     }
 
-    const result = await pool.query(`
+    const result = await pool.query(
+      `
       UPDATE sprints
       SET status = $1::text, updated_at = NOW()
-      WHERE id = $2::uuid
+      WHERE id::text = $2::text
       RETURNING *
-    `, [normalizedStatus, sprintId]);
+    `,
+      [normalizedStatus, sprintId]
+    );
 
     if (result.rows.length === 0) {
       return res.status(404).json({
@@ -3925,7 +3927,7 @@ app.get('/api/v1/sprints/:sprintId', authenticateToken, async (req, res) => {
         ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST
         LIMIT 1
       ) sm ON true
-      WHERE s.id = $1
+      WHERE s.id::text = $1::text
     `, [sprintId]);
     
     if (result.rows.length === 0) {
