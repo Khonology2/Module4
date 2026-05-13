@@ -97,6 +97,12 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       if (!uniqueCandidates.contains(c)) uniqueCandidates.add(c);
     }
 
+    bool _looksLikeHtml(http.Response resp) {
+      final ct = (resp.headers['content-type'] ?? '').toLowerCase();
+      final b = resp.body.trimLeft();
+      return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
+    }
+
     Future<bool> isHealthy(String baseUrl) async {
       try {
         final uri = Uri.parse('$baseUrl/health');
@@ -104,10 +110,15 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
             .get(uri, headers: const {'Accept': 'application/json'})
             .timeout(const Duration(seconds: 15));
         if (resp.statusCode < 200 || resp.statusCode >= 300) return false;
-        final ct = (resp.headers['content-type'] ?? '').toLowerCase();
-        if (ct.contains('text/html') || resp.body.trim().startsWith('<!DOCTYPE')) {
-          return false;
-        }
+        if (_looksLikeHtml(resp)) return false;
+
+        final probe = await http
+            .get(
+              Uri.parse('$baseUrl/sign-off-reports/client-review/__probe__'),
+              headers: const {'Accept': 'application/json'},
+            )
+            .timeout(const Duration(seconds: 15));
+        if (_looksLikeHtml(probe)) return false;
         return true;
       } catch (_) {
         return false;

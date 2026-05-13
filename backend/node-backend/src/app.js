@@ -138,6 +138,10 @@ app.use('/api/v1/projects', projectsRoutes);
 const { optionalAuthenticateToken } = require('./middleware/auth');
 app.use('/api/v1/signoff', authenticateToken, signoffRoutes);
 app.use('/api/v1/sign-off-reports', optionalAuthenticateToken, signoffRoutes);
+app.use('/api/signoff', authenticateToken, signoffRoutes);
+app.use('/signoff', authenticateToken, signoffRoutes);
+app.use('/api/sign-off-reports', optionalAuthenticateToken, signoffRoutes);
+app.use('/sign-off-reports', optionalAuthenticateToken, signoffRoutes);
 app.use('/api/v1/release-readiness', optionalAuthenticateToken, releaseReadinessRoutes);
 const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
 app.use('/api/v1/ai', authenticateToken, aiLimiter, aiRoutes);
@@ -305,6 +309,14 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
+  const iotEnabled = String(process.env.IOT_ENABLED || '').toLowerCase() === 'true';
+  res.json({ status: 'healthy', iot: { enabled: iotEnabled } });
+});
+app.get('/api/v1/health', (req, res) => {
+  const iotEnabled = String(process.env.IOT_ENABLED || '').toLowerCase() === 'true';
+  res.json({ status: 'healthy', iot: { enabled: iotEnabled } });
+});
+app.get('/api/health', (req, res) => {
   const iotEnabled = String(process.env.IOT_ENABLED || '').toLowerCase() === 'true';
   res.json({ status: 'healthy', iot: { enabled: iotEnabled } });
 });

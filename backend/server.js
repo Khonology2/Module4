@@ -256,6 +256,12 @@ app.use((req, _res, next) => {
   if (req.url.startsWith('/api/v1/signoff')) {
     req.url = req.url.replace('/api/v1/signoff', '/api/v1/sign-off-reports');
   }
+  if (req.url.startsWith('/signoff')) {
+    req.url = req.url.replace('/signoff', '/api/v1/sign-off-reports');
+  }
+  if (req.url.startsWith('/sign-off-reports')) {
+    req.url = req.url.replace('/sign-off-reports', '/api/v1/sign-off-reports');
+  }
   next();
 });
 
@@ -5142,7 +5148,7 @@ app.get('/api/v1/documents', authenticateToken, async (req, res) => {
       result = await pool.query(query, params);
     } catch (queryError) {
       // Older schemas may not include description/tags columns
-      if (queryError && queryError.code === '42703' && (queryError.message || '').includes('d.description')) {
+      if (queryError && queryError.code === '42703' && ((queryError.message || '').includes('d.description') || (queryError.message || '').includes('d.tags'))) {
         console.log('⚠️  repository_files.description column not found, retrying documents query without description/tags');
 
         let fallbackQuery = `
@@ -5190,10 +5196,10 @@ app.get('/api/v1/documents', authenticateToken, async (req, res) => {
           fallbackParams.push(`%${uploader.trim()}%`);
         }
 
-        if (projectId && projectId.trim()) {
+        if (projectFilter && String(projectFilter).trim()) {
           fallbackParamCount++;
           fallbackQuery += ` AND d.project_id = $${fallbackParamCount}`;
-          fallbackParams.push(projectId);
+          fallbackParams.push(projectFilter);
         }
 
         fallbackQuery += ` ORDER BY d.uploaded_at DESC`;
@@ -5329,32 +5335,42 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
         const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
         const stats = fs.statSync(file.path);
         const fileSize = stats.size;
-        try {
-          await pool.query(
-            `
-            INSERT INTO repository_files (
-              project_id, file_name, file_path, file_type, file_size,
-              content_hash, uploaded_by, description, tags,
-              uploaded_at, last_modified, is_active
-            )
-            VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, $9::text, NOW(), NOW(), true)
-          `,
-            [
-              projectId || project_id || null,
-              file.originalname,
-              url,
-              fileType,
-              fileSize,
-              hash,
-              String(req.user.id),
-              description || '',
-              tags || '',
-            ],
-          );
-        } catch (dbError) {
-          if (dbError && dbError.code === '42703') {
-            await pool.query(
-              `
+        const pid = projectId || project_id || null;
+        const uid = String(req.user.id);
+        const insertAttempts = [
+          {
+            sql: `
+              INSERT INTO repository_files (
+                project_id, file_name, file_path, file_type, file_size,
+                content_hash, uploaded_by, description, tags,
+                uploaded_at, last_modified, is_active
+              )
+              VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, $9::text, NOW(), NOW(), true)
+            `,
+            values: [pid, file.originalname, url, fileType, fileSize, hash, uid, description || '', tags || ''],
+          },
+          {
+            sql: `
+              INSERT INTO repository_files (
+                project_id, file_name, file_path, file_type, file_size,
+                uploaded_by, uploaded_at, is_active
+              )
+              VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, NOW(), true)
+            `,
+            values: [pid, file.originalname, url, fileType, fileSize, uid],
+          },
+          {
+            sql: `
+              INSERT INTO repository_files (
+                project_id, file_name, file_path, file_type,
+                uploaded_by, uploaded_at
+              )
+              VALUES ($1, $2::text, $3::text, $4::text, $5::text, NOW())
+            `,
+            values: [pid, file.originalname, url, fileType, uid],
+          },
+          {
+            sql: `
               INSERT INTO repository_files (
                 project_id, filename, original_filename, file_path, file_type, file_size,
                 content_hash, uploaded_by, description, tags,
@@ -5362,22 +5378,45 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
               )
               VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, $8::text, $9::text, $10::text, NOW(), NOW(), true)
             `,
-              [
-                projectId || project_id || null,
-                file.filename,
-                file.originalname,
-                url,
-                fileType,
-                fileSize,
-                hash,
-                String(req.user.id),
-                description || '',
-                tags || '',
-              ],
-            );
-          } else {
-            throw dbError;
+            values: [pid, file.filename, file.originalname, url, fileType, fileSize, hash, uid, description || '', tags || ''],
+          },
+          {
+            sql: `
+              INSERT INTO repository_files (
+                project_id, filename, original_filename, file_path, file_type, file_size,
+                uploaded_by, uploaded_at, is_active
+              )
+              VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, NOW(), true)
+            `,
+            values: [pid, file.filename, file.originalname, url, fileType, fileSize, uid],
+          },
+          {
+            sql: `
+              INSERT INTO repository_files (
+                project_id, original_filename, file_path, file_type,
+                uploaded_by, uploaded_at
+              )
+              VALUES ($1, $2::text, $3::text, $4::text, $5::text, NOW())
+            `,
+            values: [pid, file.originalname, url, fileType, uid],
+          },
+        ];
+
+        let lastInsertError = null;
+        for (const attempt of insertAttempts) {
+          try {
+            await pool.query(attempt.sql, attempt.values);
+            lastInsertError = null;
+            break;
+          } catch (e) {
+            lastInsertError = e;
+            if (e && e.code === '42703') continue;
+            throw e;
           }
+        }
+
+        if (lastInsertError) {
+          throw lastInsertError;
         }
       }
     } catch (_) {}
@@ -5423,34 +5462,45 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
     const stats = fs.statSync(file.path);
     const fileSize = stats.size;
     
-    let result;
-    try {
-      result = await pool.query(
-        `
-        INSERT INTO repository_files (
-          project_id, file_name, file_path, file_type, file_size,
-          content_hash, uploaded_by, description, tags,
-          uploaded_at, last_modified, is_active
-        )
-        VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, $9::text, NOW(), NOW(), true)
-        RETURNING *
-      `,
-        [
-          normalizedProjectId,
-          file.originalname,
-          url,
-          fileType,
-          fileSize,
-          hash,
-          String(userId),
-          description || '',
-          tags || '',
-        ],
-      );
-    } catch (dbError) {
-      if (dbError && dbError.code === '42703') {
-        result = await pool.query(
-          `
+    const pid = normalizedProjectId;
+    const uid = String(userId);
+    const insertAttempts = [
+      {
+        sql: `
+          INSERT INTO repository_files (
+            project_id, file_name, file_path, file_type, file_size,
+            content_hash, uploaded_by, description, tags,
+            uploaded_at, last_modified, is_active
+          )
+          VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, $9::text, NOW(), NOW(), true)
+          RETURNING *
+        `,
+        values: [pid, file.originalname, url, fileType, fileSize, hash, uid, description || '', tags || ''],
+      },
+      {
+        sql: `
+          INSERT INTO repository_files (
+            project_id, file_name, file_path, file_type, file_size,
+            uploaded_by, uploaded_at, is_active
+          )
+          VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, NOW(), true)
+          RETURNING *
+        `,
+        values: [pid, file.originalname, url, fileType, fileSize, uid],
+      },
+      {
+        sql: `
+          INSERT INTO repository_files (
+            project_id, file_name, file_path, file_type,
+            uploaded_by, uploaded_at
+          )
+          VALUES ($1, $2::text, $3::text, $4::text, $5::text, NOW())
+          RETURNING *
+        `,
+        values: [pid, file.originalname, url, fileType, uid],
+      },
+      {
+        sql: `
           INSERT INTO repository_files (
             project_id, filename, original_filename, file_path, file_type, file_size,
             content_hash, uploaded_by, description, tags,
@@ -5459,22 +5509,48 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
           VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, $8::text, $9::text, $10::text, NOW(), NOW(), true)
           RETURNING *
         `,
-          [
-            normalizedProjectId,
-            file.filename,
-            file.originalname,
-            url,
-            fileType,
-            fileSize,
-            hash,
-            String(userId),
-            description || '',
-            tags || '',
-          ],
-        );
-      } else {
-        throw dbError;
+        values: [pid, file.filename, file.originalname, url, fileType, fileSize, hash, uid, description || '', tags || ''],
+      },
+      {
+        sql: `
+          INSERT INTO repository_files (
+            project_id, filename, original_filename, file_path, file_type, file_size,
+            uploaded_by, uploaded_at, is_active
+          )
+          VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::bigint, $7::text, NOW(), true)
+          RETURNING *
+        `,
+        values: [pid, file.filename, file.originalname, url, fileType, fileSize, uid],
+      },
+      {
+        sql: `
+          INSERT INTO repository_files (
+            project_id, original_filename, file_path, file_type,
+            uploaded_by, uploaded_at
+          )
+          VALUES ($1, $2::text, $3::text, $4::text, $5::text, NOW())
+          RETURNING *
+        `,
+        values: [pid, file.originalname, url, fileType, uid],
+      },
+    ];
+
+    let result = null;
+    let lastInsertError = null;
+    for (const attempt of insertAttempts) {
+      try {
+        result = await pool.query(attempt.sql, attempt.values);
+        lastInsertError = null;
+        break;
+      } catch (e) {
+        lastInsertError = e;
+        if (e && e.code === '42703') continue;
+        throw e;
       }
+    }
+
+    if (!result) {
+      throw lastInsertError || new Error('Failed to create document record');
     }
     
     const document = result.rows[0];
