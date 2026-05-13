@@ -1,14 +1,14 @@
 {
-  "version": "Ver 2026.05BB1 SIT",
+  "version": "Ver 2026.05BC1 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-12T22:14:04Z",
+  "generated_at": "2026-05-13T12:31:38Z",
   "commits": [
     {
       "author": "thabang127",
-      "message": "feat: add user email lookup, improve file handling and UI",
-      "timestamp": "2026-05-13T00:13:10+02:00"
+      "message": "fix(env-loader): fix broken env candidate array",
+      "timestamp": "2026-05-13T14:30:35+02:00"
     }
   ],
   "total_commits": 1,
-  "date_range": "2026-05-12"
+  "date_range": "2026-05-13"
 }
