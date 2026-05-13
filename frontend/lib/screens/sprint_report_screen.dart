@@ -736,6 +736,9 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
 
                             Future<bool> metricsAreReady() async {
                               final sprintMap = await loadSprint();
+                              if (sprintMap.isEmpty) {
+                                throw Exception('Failed to load sprint details. Please refresh and try again.');
+                              }
                               if (!isSprintCompleted(sprintMap)) {
                                 throw Exception('Complete the sprint before publishing a sprint sign-off report.');
                               }

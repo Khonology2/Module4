@@ -83,11 +83,9 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       return trimmed;
     }
 
-    final currentHost = Uri.base.host;
     final candidates = <String>[
       if (envBase.isNotEmpty) normalize(envBase),
       'https://flow-space-backend.onrender.com/api/v1',
-      'https://backend-532p.onrender.com/api/v1',
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
     final uniqueCandidates = <String>[];
@@ -128,11 +126,15 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         final prefs = await SharedPreferences.getInstance();
         final cached = (prefs.getString('resolved_api_base_url') ?? '').trim();
         if (cached.isNotEmpty) {
-          if (await isHealthy(cached)) {
-            Environment.setOverrideApiBaseUrl(cached);
-            return;
-          } else {
+          if (envBase.isEmpty && cached != 'https://flow-space-backend.onrender.com/api/v1') {
             await prefs.remove('resolved_api_base_url');
+          } else {
+            if (await isHealthy(cached)) {
+              Environment.setOverrideApiBaseUrl(cached);
+              return;
+            } else {
+              await prefs.remove('resolved_api_base_url');
+            }
           }
         }
       } catch (_) {}

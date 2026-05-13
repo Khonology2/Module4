@@ -488,8 +488,17 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to update sprint status' });
     }
 
-    const ns = String(nextStatus || '').toLowerCase().replace(/[\s_-]+/g, '');
-    const isCompleting = ns === 'completed' || ns === 'done' || ns === 'closed';
+    const rawStatus = String(nextStatus || '').trim().toLowerCase();
+    const ns = rawStatus.replace(/[\s_-]+/g, '');
+    const normalizedStatus = (() => {
+      if (ns === 'planned' || ns === 'draft') return 'planning';
+      if (ns === 'active') return 'in_progress';
+      if (ns === 'done' || ns === 'closed' || ns === 'complete') return 'completed';
+      if (ns === 'canceled') return 'cancelled';
+      return rawStatus;
+    })();
+    const ns2 = String(normalizedStatus || '').toLowerCase().replace(/[\s_-]+/g, '');
+    const isCompleting = ns2 === 'completed' || ns2 === 'done' || ns2 === 'closed';
     let warnings = null;
     if (isCompleting) {
       const missing = [];
@@ -506,7 +515,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       }
     }
 
-    await sprint.update({ status: nextStatus });
+    await sprint.update({ status: normalizedStatus });
     res.json({ success: true, data: sprint, warnings });
   } catch (error) {
     console.error('Error updating sprint status:', error);

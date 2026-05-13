@@ -3050,63 +3050,81 @@ app.get('/api/v1/sprints', authenticateToken, async (req, res) => {
     const userRole = req.user.role;
     const { project_id } = req.query;
 
-    let query = `SELECT s.*, 
-                      sm.planned_points,
-                      sm.committed_points,
-                      sm.completed_points,
-                      sm.carried_over_points,
-                      sm.test_pass_rate,
-                      sm.code_coverage,
-                      sm.escaped_defects,
-                      sm.defects_opened,
-                      sm.defects_closed,
-                      sm.code_review_completion,
-                      sm.documentation_status,
-                      sm.uat_notes,
-                      sm.uat_pass_rate,
-                      sm.risks,
-                      sm.blockers,
-                      sm.decisions
-               FROM sprints s 
-               LEFT JOIN LATERAL (
-                 SELECT *
-                 FROM sprint_metrics
-                 WHERE sprint_id = s.id
-                 ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST
-                 LIMIT 1
-               ) sm ON true`;
     const params = [];
-    let where = [];
+    const where = [];
+    let joinPm = '';
 
     if (project_id) {
       params.push(project_id);
-      where.push(`s.project_id = $${params.length}`);
+      where.push(`s.project_id::text = $${params.length}::text`);
     }
 
     if (userRole === 'teamMember') {
-      query += ` LEFT JOIN project_members pm ON pm.project_id = s.project_id`;
-      params.push(userId);
-      where.push(`pm.user_id = $${params.length}`);
+      joinPm = ` LEFT JOIN project_members pm ON pm.project_id = s.project_id`;
+      params.push(String(userId));
+      where.push(`pm.user_id::text = $${params.length}::text`);
     }
 
-    if (where.length > 0) {
-      query += ` WHERE ${where.join(' AND ')}`;
-    }
+    const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '';
 
-    query += ' ORDER BY s.start_date DESC NULLS LAST, s.created_at DESC';
-    const result = await pool.query(query, params);
+    const withMetricsQuery = `
+      SELECT s.*, 
+             sm.planned_points,
+             sm.committed_points,
+             sm.completed_points,
+             sm.carried_over_points,
+             sm.test_pass_rate,
+             sm.code_coverage,
+             sm.escaped_defects,
+             sm.defects_opened,
+             sm.defects_closed,
+             sm.code_review_completion,
+             sm.documentation_status,
+             sm.uat_notes,
+             sm.uat_pass_rate,
+             sm.risks,
+             sm.blockers,
+             sm.decisions
+      FROM sprints s
+      ${joinPm}
+      LEFT JOIN LATERAL (
+        SELECT *
+        FROM sprint_metrics
+        WHERE sprint_id = s.id
+        ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST
+        LIMIT 1
+      ) sm ON true
+      ${whereSql}
+      ORDER BY s.start_date DESC NULLS LAST, s.created_at DESC
+    `;
+
+    const withoutMetricsQuery = `
+      SELECT s.*
+      FROM sprints s
+      ${joinPm}
+      ${whereSql}
+      ORDER BY s.start_date DESC NULLS LAST, s.created_at DESC
+    `;
+
+    let result;
+    try {
+      result = await pool.query(withMetricsQuery, params);
+    } catch (e) {
+      if (e && (e.code === '42P01' || e.code === '42703')) {
+        result = await pool.query(withoutMetricsQuery, params);
+      } else {
+        throw e;
+      }
+    }
 
     console.log(`🔍 Sprints query for user ${userId} (role: ${userRole}):`);
-    console.log(`📊 Query: ${query}`);
+    console.log(`📊 Query: ${withMetricsQuery}`);
     console.log(`📋 Params:`, params);
     console.log(`🎯 Found ${result.rows.length} sprints:`, result.rows.map(s => ({ id: s.id, name: s.name, project_id: s.project_id })));
 
     res.json({ success: true, data: result.rows });
   } catch (error) {
     console.error('Error fetching sprints:', error);
-    if (error && error.code === '42P01') {
-      return res.json({ success: true, data: [] });
-    }
     res.status(500).json({ success: false, error: 'Failed to fetch sprints' });
   }
 });
@@ -4801,8 +4819,8 @@ app.get('/api/v1/deliverables', authenticateToken, async (req, res) => {
 
     // Role-based filtering
     if (userRole === 'teamMember') {
-      query += ' WHERE d.assigned_to = $1::uuid OR d.created_by = $1::uuid';
-      params.push(userId);
+      query += ' WHERE d.assigned_to::text = $1::text OR d.created_by::text = $1::text';
+      params.push(String(userId));
     }
     // deliveryLead, clientReviewer, systemAdmin, stakeholder and other roles can see all deliverables
 

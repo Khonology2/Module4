@@ -212,7 +212,7 @@ class PermissionManager {
     'update_sprint_status': Permission(
       name: 'Update Sprint Status',
       description: 'Change sprint progress status',
-      allowedRoles: [UserRole.teamMember, UserRole.deliveryLead, UserRole.systemAdmin],
+      allowedRoles: [UserRole.teamMember, UserRole.deliveryLead, UserRole.systemAdmin, UserRole.projectManager, UserRole.scrumMaster],
     ),
   };
 

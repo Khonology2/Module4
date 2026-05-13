@@ -73,7 +73,8 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
         await _loadDeliverablesForSprint(widget.sprintId, projectId: projectId);
       } else {
         debugPrint('⚠️ Sprint details not found for ID: ${widget.sprintId}');
-        _showSnackBar('Sprint details not found', isError: true);
+        _showSnackBar('Sprint details not found (loading deliverables anyway)', isError: true);
+        await _loadDeliverablesForSprint(widget.sprintId);
       }
     } catch (e) {
       debugPrint('❌ Error loading sprint data: $e');
@@ -105,8 +106,10 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
       
       debugPrint('🔍 Fetching deliverables for sprint: $sprintId (project: $pid)');
 
+      var usedSprintEndpoint = true;
       var response = await _deliverableService.getDeliverablesForSprint(sprintId);
       if (!response.isSuccess && pid != null && pid.isNotEmpty) {
+        usedSprintEndpoint = false;
         response = await _deliverableService.getDeliverables(projectId: pid);
       }
       
@@ -131,10 +134,13 @@ class _SprintBoardScreenState extends ConsumerState<SprintBoardScreen> {
 
         if (deliverables.isNotEmpty) {
           deliverables = deliverables.where((d) {
-            final inSprint = d.sprintIds.map((e) => e.toString()).contains(sprintId.toString());
-            if (!inSprint) return false;
-            if (pid == null || pid.isEmpty) return true;
-            return (d.projectId ?? '').toString() == pid.toString();
+            if (pid != null && pid.isNotEmpty && (d.projectId ?? '').toString() != pid.toString()) {
+              return false;
+            }
+            if (usedSprintEndpoint) {
+              return true;
+            }
+            return d.sprintIds.map((e) => e.toString()).contains(sprintId.toString());
           }).toList();
         }
         

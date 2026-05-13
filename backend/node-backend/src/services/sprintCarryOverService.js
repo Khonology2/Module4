@@ -11,7 +11,7 @@ function isDeliverableCompletedStatus(v) {
 
 function isSprintCompletedStatus(v) {
   const s = normalizeStatus(v);
-  return s === 'completed' || s === 'done' || s === 'closed';
+  return s === 'completed' || s === 'complete' || s === 'done' || s === 'closed';
 }
 
 function dateValue(d) {

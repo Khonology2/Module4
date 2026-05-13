@@ -340,7 +340,7 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     try {
       final messenger = ScaffoldMessenger.of(context);
       final auth = AuthService();
-      if (!(auth.isTeamMember || auth.isDeliveryLead || auth.isSystemAdmin)) {
+      if (!auth.hasPermission('update_sprint_status')) {
         _showSnackBar('You do not have permission to update sprint status',
             isError: true);
         return;

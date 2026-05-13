@@ -102,6 +102,15 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
       }
 
       if (kIsWeb) {
+        final publicUrl = _resolvePublicDocumentUrl();
+        if (publicUrl != null) {
+          setState(() {
+            _pdfUrl = publicUrl;
+            _isLoading = false;
+          });
+          return;
+        }
+
         final officeUrl = _buildOfficeViewerUrlIfPossible();
         if (officeUrl != null) {
           setState(() {
