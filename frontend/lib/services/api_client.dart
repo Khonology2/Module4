@@ -18,7 +18,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   static Duration get _timeout {
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
     if (isProdFlag || Environment.isRenderDeployed) {
-      return const Duration(seconds: 120);
+      return const Duration(seconds: 180);
     }
     return const Duration(seconds: 20);
   }
@@ -86,6 +86,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     final candidates = <String>[
       if (envBase.isNotEmpty) normalize(envBase),
       'https://flow-space-backend.onrender.com/api/v1',
+      'https://backend-532p.onrender.com/api/v1',
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
     final uniqueCandidates = <String>[];
@@ -126,16 +127,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         final prefs = await SharedPreferences.getInstance();
         final cached = (prefs.getString('resolved_api_base_url') ?? '').trim();
         if (cached.isNotEmpty) {
-          if (envBase.isEmpty && cached != 'https://flow-space-backend.onrender.com/api/v1') {
-            await prefs.remove('resolved_api_base_url');
-          } else {
-            if (await isHealthy(cached)) {
-              Environment.setOverrideApiBaseUrl(cached);
-              return;
-            } else {
-              await prefs.remove('resolved_api_base_url');
-            }
+          if (await isHealthy(cached)) {
+            Environment.setOverrideApiBaseUrl(cached);
+            return;
           }
+          await prefs.remove('resolved_api_base_url');
         }
       } catch (_) {}
     }
@@ -783,10 +779,23 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     // Retry a limited number of times for transient startup/network failures.
     ApiResponse response = ApiResponse.error('Login request not sent');
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
-    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 1 : 2;
+    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 3 : 2;
+
+    Future<void> prewarm() async {
+      try {
+        await _resolveAndSetApiBaseUrlOverride(force: true);
+      } catch (_) {}
+      try {
+        await _makeUnauthenticatedRequest('GET', '/health');
+      } catch (_) {}
+    }
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       debugPrint('🔐 Login attempt $attempt for: $email');
+
+      if (attempt == 1) {
+        await prewarm();
+      }
 
       response = await post(
         '/auth/login',
@@ -794,6 +803,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
           'email': email,
           'password': password,
         },
+        timeout: const Duration(seconds: 180),
       );
 
       // Any HTTP response (2xx/4xx/5xx) should stop retrying immediately.
@@ -803,7 +813,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
       // statusCode == 0 means transport-level failure (e.g. Failed to fetch).
       if (attempt < maxAttempts) {
-        await Future.delayed(const Duration(seconds: 2));
+        await Future.delayed(Duration(seconds: 2 * attempt));
       }
     }
 
