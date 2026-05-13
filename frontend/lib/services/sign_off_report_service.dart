@@ -6,6 +6,7 @@ import '../config/api_config.dart';
 
 class SignOffReportService {
   final AuthService _authService;
+  final ApiClient _apiClient = ApiClient();
   String get _baseUrl => ApiConfig.getFullUrl('/sign-off-reports');
 
   SignOffReportService(this._authService);
@@ -21,6 +22,7 @@ class SignOffReportService {
     String? to,
   }) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) {
         return ApiResponse.error('Not authenticated');
@@ -421,6 +423,7 @@ class SignOffReportService {
     String? nextSteps,
   }) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) {
         return ApiResponse.error('Not authenticated');
@@ -482,6 +485,7 @@ class SignOffReportService {
     String? nextSteps,
   }) async {
     try {
+      await _apiClient.initialize();
       final token = _authService.accessToken;
       if (token == null) {
         return ApiResponse.error('Not authenticated');

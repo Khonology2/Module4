@@ -249,6 +249,15 @@ app.use(cors({
 app.options("*", cors());
 
 app.use(express.json());
+app.use((req, _res, next) => {
+  if (req.url.startsWith('/api/') && !req.url.startsWith('/api/v1/')) {
+    req.url = `/api/v1/${req.url.substring('/api/'.length)}`;
+  }
+  if (req.url.startsWith('/api/v1/signoff')) {
+    req.url = req.url.replace('/api/v1/signoff', '/api/v1/sign-off-reports');
+  }
+  next();
+});
 
 // Serve uploaded files (deliverables, profile pictures, etc.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -4559,9 +4568,31 @@ app.get('/api/v1/deliverables', authenticateToken, async (req, res) => {
       }
     }
 
+    const deliverables = Array.isArray(result.rows) ? result.rows : [];
+    let enriched = deliverables;
+    if (deliverables.length > 0) {
+      try {
+        const deliverableIds = deliverables.map(d => String(d.id)).filter(Boolean);
+        const artifactsResult = await pool.query(
+          `SELECT * FROM deliverable_artifacts WHERE deliverable_id::text = ANY($1::text[]) ORDER BY created_at DESC`,
+          [deliverableIds],
+        );
+        const artifactsByDeliverable = {};
+        for (const a of artifactsResult.rows) {
+          const key = String(a.deliverable_id);
+          if (!artifactsByDeliverable[key]) artifactsByDeliverable[key] = [];
+          artifactsByDeliverable[key].push(a);
+        }
+        enriched = deliverables.map(d => ({
+          ...d,
+          artifacts: artifactsByDeliverable[String(d.id)] || [],
+        }));
+      } catch (_) {}
+    }
+
     res.json({
       success: true,
-      data: result.rows
+      data: enriched
     });
   } catch (error) {
     console.error('Error fetching deliverables:', error);
@@ -4727,27 +4758,43 @@ app.get('/api/v1/deliverables/:id', authenticateToken, async (req, res) => {
              TRIM(COALESCE(u2.first_name, '') || ' ' || COALESCE(u2.last_name, '')) as assigned_to_name,
              s.name as sprint_name
       FROM deliverables d
-      LEFT JOIN users u1 ON d.created_by = u1.id::uuid
-      LEFT JOIN users u2 ON d.assigned_to = u2.id::uuid
-      LEFT JOIN sprints s ON d.sprint_id = s.id::uuid
-      WHERE d.id = $1::uuid
+      LEFT JOIN users u1 ON d.created_by::text = u1.id::text
+      LEFT JOIN users u2 ON d.assigned_to::text = u2.id::text
+      LEFT JOIN sprints s ON d.sprint_id::text = s.id::text
+      WHERE d.id::text = $1::text
     `;
     const params = [id];
     if (userRole === 'teamMember') {
-      query += ' AND (d.assigned_to = $2::uuid OR d.created_by = $2::uuid)';
-      params.push(userId);
+      query += ' AND (d.assigned_to::text = $2::text OR d.created_by::text = $2::text)';
+      params.push(String(userId));
     }
     const result = await pool.query(query, params);
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Deliverable not found' });
     }
-    res.json({ success: true, data: result.rows[0] });
+    const deliverable = result.rows[0];
+    try {
+      const artifactsResult = await pool.query(
+        `SELECT * FROM deliverable_artifacts WHERE deliverable_id::text = $1::text ORDER BY created_at DESC`,
+        [String(deliverable.id)],
+      );
+      deliverable.artifacts = artifactsResult.rows;
+    } catch (_) {}
+    res.json({ success: true, data: deliverable });
   } catch (error) {
     console.error('Error fetching deliverable:', error);
     if (error && error.code === '42703') {
       const simple = await pool.query('SELECT * FROM deliverables WHERE id = $1', [req.params.id]);
       if (simple.rows.length === 0) return res.status(404).json({ success: false, error: 'Deliverable not found' });
-      return res.json({ success: true, data: simple.rows[0] });
+      const deliverable = simple.rows[0];
+      try {
+        const artifactsResult = await pool.query(
+          `SELECT * FROM deliverable_artifacts WHERE deliverable_id::text = $1::text ORDER BY created_at DESC`,
+          [String(deliverable.id)],
+        );
+        deliverable.artifacts = artifactsResult.rows;
+      } catch (_) {}
+      return res.json({ success: true, data: deliverable });
     }
     res.status(500).json({ success: false, error: 'Failed to fetch deliverable' });
   }
@@ -4819,7 +4866,7 @@ app.put('/api/v1/deliverables/:id/updateStatus', authenticateToken, async (req, 
     const query = `
       UPDATE deliverables 
       SET status = $1, updated_at = NOW() 
-      WHERE id = $2::uuid 
+      WHERE id::text = $2::text 
       RETURNING *
     `;
     
@@ -4886,10 +4933,117 @@ app.put('/api/v1/deliverables/:id/updateStatus', authenticateToken, async (req, 
   }
 });
 
+app.get('/api/v1/deliverables/:deliverableId/artifacts', authenticateToken, async (req, res) => {
+  try {
+    const { deliverableId } = req.params;
+    const result = await pool.query(
+      `SELECT * FROM deliverable_artifacts WHERE deliverable_id::text = $1::text ORDER BY created_at DESC`,
+      [String(deliverableId)],
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    if (error && error.code === '42P01') {
+      return res.json({ success: true, data: [] });
+    }
+    res.status(500).json({ success: false, error: 'Failed to fetch artifacts' });
+  }
+});
+
+app.post('/api/v1/deliverables/:deliverableId/artifacts', authenticateToken, uploadAny.single('file'), async (req, res) => {
+  try {
+    const { deliverableId } = req.params;
+    const userId = req.user?.id ?? req.user?.sub ?? null;
+    if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+
+    const file = req.file;
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    const fileType = fileExtension.startsWith('.') ? fileExtension.substring(1) : fileExtension;
+    const url = `/uploads/${file.filename}`;
+
+    let deliverableKey = deliverableId;
+    if (/^\d+$/.test(String(deliverableId))) {
+      deliverableKey = Number(deliverableId);
+    }
+
+    let inserted;
+    try {
+      inserted = await pool.query(
+        `
+        INSERT INTO deliverable_artifacts (
+          deliverable_id, filename, original_name, file_type, file_size, url, uploaded_by, uploader_name, created_at
+        ) VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text, NOW())
+        RETURNING *
+      `,
+        [
+          deliverableKey,
+          file.filename,
+          file.originalname,
+          fileType,
+          file.size,
+          url,
+          String(userId),
+          req.user?.name || null,
+        ],
+      );
+    } catch (e) {
+      if (e && e.code === '42703') {
+        inserted = await pool.query(
+          `
+          INSERT INTO deliverable_artifacts (
+            deliverable_id, filename, original_name, file_type, file_size, url, uploaded_by, uploader_name
+          ) VALUES ($1, $2::text, $3::text, $4::text, $5::bigint, $6::text, $7::text, $8::text)
+          RETURNING *
+        `,
+          [
+            deliverableKey,
+            file.filename,
+            file.originalname,
+            fileType,
+            file.size,
+            url,
+            String(userId),
+            req.user?.name || null,
+          ],
+        );
+      } else {
+        throw e;
+      }
+    }
+
+    res.status(201).json({ success: true, data: inserted.rows[0] });
+  } catch (error) {
+    if (error && error.code === '42P01') {
+      return res.status(404).json({ success: false, error: 'Artifacts table not found' });
+    }
+    res.status(500).json({ success: false, error: error?.message || 'Failed to upload artifact' });
+  }
+});
+
+app.delete('/api/v1/deliverables/:deliverableId/artifacts/:artifactId', authenticateToken, async (req, res) => {
+  try {
+    const { deliverableId, artifactId } = req.params;
+    const result = await pool.query(
+      `DELETE FROM deliverable_artifacts WHERE id::text = $1::text AND deliverable_id::text = $2::text RETURNING *`,
+      [String(artifactId), String(deliverableId)],
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, error: 'Artifact not found' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    if (error && error.code === '42P01') {
+      return res.status(404).json({ success: false, error: 'Artifacts table not found' });
+    }
+    res.status(500).json({ success: false, error: 'Failed to delete artifact' });
+  }
+});
+
 // Get all documents with search and filtering
 app.get('/api/v1/documents', authenticateToken, async (req, res) => {
   try {
-    const { search, fileType, uploader, projectId } = req.query;
+    const { search, fileType, uploader, projectId, project_id } = req.query;
+    const projectFilter = projectId || project_id;
     const userId = req.user.id;
     const userRole = req.user.role;
 
@@ -4944,10 +5098,10 @@ app.get('/api/v1/documents', authenticateToken, async (req, res) => {
     }
 
     // Project filter
-    if (projectId && projectId.trim()) {
+    if (projectFilter && String(projectFilter).trim()) {
       paramCount++;
       query += ` AND d.project_id = $${paramCount}`;
-      params.push(projectId);
+      params.push(projectFilter);
     }
 
     query += ` ORDER BY d.uploaded_at DESC`;
@@ -5022,7 +5176,7 @@ app.get('/api/v1/documents', authenticateToken, async (req, res) => {
       success: true,
       data: result.rows.map(row => ({
         id: row.id,
-        name: row.file_name,
+        name: row.file_name || row.original_filename || row.filename,
         fileType: row.file_type,
         uploadDate: row.uploaded_at,
         uploadedBy: row.uploaded_by,
@@ -5096,7 +5250,7 @@ app.get('/api/v1/documents/:id', authenticateToken, async (req, res) => {
       success: true,
       data: {
         id: document.id,
-        name: document.file_name,
+        name: document.file_name || document.original_filename || document.filename,
         fileType: document.file_type,
         uploadDate: document.uploaded_at,
         uploadedBy: document.uploaded_by,
@@ -5151,21 +5305,20 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
             content_hash, uploaded_by, description, tags,
             uploaded_at, last_modified, is_active
           )
-          VALUES ($1, $2::text, $2::text, $2::text, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::text, $7::bigint, $8::text, $9::text, $10::text, $11::text, NOW(), NOW(), true)
         `,
           [
             projectId || project_id || null,
+            file.filename,
             file.originalname,
-            file.path,
+            file.originalname,
+            url,
             fileType,
             fileSize,
             hash,
-            req.user.id,
+            String(req.user.id),
             description || '',
             tags || '',
-            new Date().toISOString(),
-            new Date().toISOString(),
-            true,
           ],
         );
       }
@@ -5183,12 +5336,13 @@ app.post('/api/v1/files/upload', authenticateToken, uploadAny.single('file'), as
 });
 
 // Upload document
-app.post('/api/v1/documents', authenticateToken, upload.single('file'), async (req, res) => {
+app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async (req, res) => {
   try {
     console.log('[UPLOAD] File:', req.file);
     console.log('[UPLOAD] Body:', req.body);
     console.log('[UPLOAD] User:', req.user);
-    const { description, tags, projectId } = req.body;
+    const { description, tags, projectId, project_id } = req.body || {};
+    const normalizedProjectId = projectId || project_id || null;
     const userId = req.user.id;
     
     if (!req.file) {
@@ -5201,6 +5355,7 @@ app.post('/api/v1/documents', authenticateToken, upload.single('file'), async (r
     const file = req.file;
     const fileExtension = path.extname(file.originalname).toLowerCase();
     const fileType = fileExtension.substring(1); // Remove the dot
+    const url = `/uploads/${file.filename}`;
     
     // Calculate file hash
     const fileBuffer = fs.readFileSync(file.path);
@@ -5219,30 +5374,29 @@ app.post('/api/v1/documents', authenticateToken, upload.single('file'), async (r
         content_hash, uploaded_by, description, tags, 
         uploaded_at, last_modified, is_active
       )
-      VALUES ($1, $2::text, $2::text, $2::text, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2::text, $3::text, $4::text, $5::text, $6::text, $7::bigint, $8::text, $9::text, $10::text, $11::text, NOW(), NOW(), true)
       RETURNING *
     `, [
-      projectId || null,
-      file.originalname, // Populates filename, original_filename, and file_name (cast to text)
-      file.path,
+      normalizedProjectId,
+      file.filename,
+      file.originalname,
+      file.originalname,
+      url,
       fileType,
       fileSize,
       hash,
-      userId,
+      String(userId),
       description || '',
-      tags || '',
-      new Date().toISOString(),
-      new Date().toISOString(),
-      true
+      tags || ''
     ]);
     
     const document = result.rows[0];
     
     // Create notification for project members
-    if (projectId) {
+    if (normalizedProjectId) {
       const membersResult = await pool.query(`
         SELECT user_id FROM project_members WHERE project_id = $1 AND user_id != $2
-      `, [projectId, userId]);
+      `, [normalizedProjectId, userId]);
       
       for (const member of membersResult.rows) {
         await pool.query(`
@@ -5261,7 +5415,7 @@ app.post('/api/v1/documents', authenticateToken, upload.single('file'), async (r
       success: true,
       data: {
         id: document.id,
-        name: document.file_name,
+        name: document.file_name || document.original_filename || document.filename,
         fileType: document.file_type,
         uploadDate: document.uploaded_at,
         uploadedBy: document.uploaded_by,
@@ -5289,6 +5443,7 @@ app.post('/api/v1/documents', authenticateToken, upload.single('file'), async (r
 app.get('/api/v1/documents/:id/download', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user?.id ?? req.user?.sub ?? null;
     
     console.log(`📥 Document download requested for ID: ${id}`);
     
@@ -5314,23 +5469,27 @@ app.get('/api/v1/documents/:id/download', authenticateToken, async (req, res) =>
     console.log(`✅ Document found for download: ${document.file_name}`);
     
     // Check if file exists
-    if (!document.file_path || !fs.existsSync(document.file_path)) {
-      console.log(`❌ File not found on server: ${document.file_path}`);
+    let filePath = document.file_path;
+    if (filePath && typeof filePath === 'string' && filePath.startsWith('/uploads/')) {
+      filePath = path.join(__dirname, 'uploads', path.basename(filePath));
+    }
+    if (!filePath || !fs.existsSync(filePath)) {
+      console.log(`❌ File not found on server: ${filePath}`);
       return res.status(404).json({ 
         success: false,
         error: 'File not found on server' 
       });
     }
     
-    console.log(`✅ Streaming file: ${document.file_path}`);
+    console.log(`✅ Streaming file: ${filePath}`);
     
     // Set appropriate headers
-    res.setHeader('Content-Disposition', `attachment; filename="${document.file_name}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${document.file_name || document.original_filename || document.filename || 'download'}"`);
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Length', document.file_size);
     
     // Stream the file
-    const fileStream = fs.createReadStream(document.file_path);
+    const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
     
     // Log download activity

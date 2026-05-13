@@ -441,12 +441,10 @@ class _EnhancedDeliverableSetupScreenState
       return;
     }
 
-    // Amber and red both require explicit internal approval before proceeding.
     if ((_currentReadinessStatus == ReadinessStatus.red ||
             _currentReadinessStatus == ReadinessStatus.amber) &&
         !_hasInternalApproval) {
       _showReadinessDialog();
-      return;
     }
 
     setState(() {
@@ -1297,13 +1295,7 @@ class _EnhancedDeliverableSetupScreenState
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: (_isSubmitting ||
-                          ((_currentReadinessStatus == ReadinessStatus.red ||
-                                  _currentReadinessStatus ==
-                                      ReadinessStatus.amber) &&
-                              !_hasInternalApproval))
-                      ? null
-                      : _submitDeliverable,
+                  onPressed: _isSubmitting ? null : _submitDeliverable,
                   style: ElevatedButton.styleFrom(
                     backgroundColor:
                         _currentReadinessStatus == ReadinessStatus.green

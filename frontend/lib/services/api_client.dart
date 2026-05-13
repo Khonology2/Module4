@@ -70,7 +70,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     _initialized = true;
   }
 
-  Future<void> _resolveAndSetApiBaseUrlOverride() async {
+  Future<void> _resolveAndSetApiBaseUrlOverride({bool force = false}) async {
     if (Environment.isLocalDevelopment) return;
 
     const envDefined = String.fromEnvironment('API_BASE_URL', defaultValue: '');
@@ -112,6 +112,17 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       } catch (_) {
         return false;
       }
+    }
+
+    if (!force) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cached = (prefs.getString('resolved_api_base_url') ?? '').trim();
+        if (cached.isNotEmpty && await isHealthy(cached)) {
+          Environment.setOverrideApiBaseUrl(cached);
+          return;
+        }
+      } catch (_) {}
     }
 
     for (final baseUrl in uniqueCandidates) {
@@ -482,16 +493,48 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         }
       }
 
-      http.Response response = await send(url);
-      if (includeAuth &&
-          response.statusCode == 404 &&
-          endpoint.startsWith('/sign-off-reports') &&
-          _fallbackSignoffEndpoint(endpoint) != endpoint) {
-        final fallbackUrl = buildUrl(_fallbackSignoffEndpoint(endpoint));
-        response = await send(fallbackUrl);
+      bool isHtmlResponse(http.Response r) {
+        final ct = (r.headers['content-type'] ?? '').toLowerCase();
+        final b = r.body.trimLeft();
+        return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
       }
 
-      return _handleResponse(response);
+      String currentEndpoint = endpoint;
+      bool didResolve = false;
+      bool didFallback = false;
+
+      while (true) {
+        url = buildUrl(currentEndpoint);
+        http.Response response;
+        try {
+          response = await send(url);
+        } on TimeoutException {
+          if (!didResolve && !Environment.isLocalDevelopment) {
+            didResolve = true;
+            await _resolveAndSetApiBaseUrlOverride(force: true);
+            continue;
+          }
+          rethrow;
+        }
+
+        if (!didResolve && !Environment.isLocalDevelopment && isHtmlResponse(response)) {
+          didResolve = true;
+          await _resolveAndSetApiBaseUrlOverride(force: true);
+          continue;
+        }
+
+        if (includeAuth &&
+            !didFallback &&
+            response.statusCode == 404 &&
+            currentEndpoint.startsWith('/sign-off-reports') &&
+            _fallbackSignoffEndpoint(currentEndpoint) != currentEndpoint) {
+          didFallback = true;
+          currentEndpoint = _fallbackSignoffEndpoint(currentEndpoint);
+          continue;
+        }
+
+        return _handleResponse(response);
+      }
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
     } on TimeoutException {
