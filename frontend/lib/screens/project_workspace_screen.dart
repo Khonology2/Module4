@@ -8,6 +8,7 @@ import '../models/user.dart';
 import '../models/user_role.dart';
 import '../theme/flownet_theme.dart';
 import '../services/api_service.dart';
+import '../services/backend_api_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_data_service.dart';
 import '../providers/service_providers.dart';
@@ -179,20 +180,39 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
           final responseData = response.data;
           List<dynamic> usersDataList = [];
 
-          if (responseData is Map && responseData['data'] is List) {
-            usersDataList = responseData['data'];
-            debugPrint('📦 Extracted ${usersDataList.length} users from data array');
+          if (responseData is Map) {
+            dynamic usersField = responseData['users'];
+            usersField ??= responseData['data'];
+            usersField ??= responseData['items'];
+            if (usersField == null && responseData['data'] is Map) {
+              final nested = Map<String, dynamic>.from(responseData['data'] as Map);
+              usersField = nested['users'] ?? nested['items'] ?? nested['data'];
+            }
+            if (usersField is List) {
+              usersDataList = usersField;
+            } else if (usersField is Map) {
+              usersDataList = [usersField];
+            }
+            debugPrint('📦 Extracted ${usersDataList.length} users from map response');
           } else if (responseData is List) {
             usersDataList = responseData;
             debugPrint('📦 Extracted ${usersDataList.length} users from direct list');
           }
 
+          if (usersDataList.isEmpty) {
+            throw Exception('Invalid API response format: missing users array');
+          }
+
           users = usersDataList.map((userData) {
             String displayName;
-            if (userData['name'] != null && userData['name'].toString().isNotEmpty) {
-              displayName = userData['name'];
+            if (userData['name'] != null && userData['name'].toString().trim().isNotEmpty) {
+              displayName = userData['name'].toString().trim();
+            } else if (userData['first_name'] != null && userData['first_name'].toString().trim().isNotEmpty) {
+              final first = userData['first_name']?.toString() ?? '';
+              final last = userData['last_name']?.toString() ?? '';
+              displayName = '$first $last'.trim();
             } else {
-              displayName = userData['email'] ?? 'Unknown User';
+              displayName = (userData['email']?.toString() ?? 'Unknown User').trim();
             }
 
             UserRole userRole = UserRole.teamMember;
@@ -240,7 +260,9 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
               role: userRole,
               isActive: userData['is_active'] ?? userData['isActive'] ?? true,
               emailVerified: userData['emailVerified'] ?? true,
-              createdAt: DateTime.tryParse(userData['createdAt'] ?? '') ?? DateTime.now(),
+              createdAt: DateTime.tryParse(userData['createdAt']?.toString() ?? '') ??
+                  DateTime.tryParse(userData['created_at']?.toString() ?? '') ??
+                  DateTime.now(),
             );
           }).toList();
 
@@ -694,6 +716,12 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
   }
 
   Widget _buildBasicInfoSection(ColorScheme colorScheme) {
+    final projectManagerCandidates = _availableUsers.where((u) => u.role == UserRole.projectManager).toList();
+    final projectManagerOptions = projectManagerCandidates.isNotEmpty ? projectManagerCandidates : _availableUsers;
+    final selectedOwnerValue = _selectedOwner != null && projectManagerOptions.any((u) => u.id == _selectedOwner!.id)
+        ? _selectedOwner
+        : null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -774,7 +802,7 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
         const SizedBox(height: 16),
         DropdownButtonFormField<User>(
           // ignore: deprecated_member_use
-          value: _selectedOwner,
+          value: selectedOwnerValue,
           onChanged: (value) {
             setState(() {
               _selectedOwner = value;
@@ -791,11 +819,11 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
             border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.person_outline),
           ),
-          items: _availableUsers.map((user) {
+          items: projectManagerOptions.map((user) {
             return DropdownMenuItem(
               value: user,
               child: Text(
-                user.name,
+                user.name.trim().isNotEmpty ? user.name : user.email,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w500,
@@ -1464,8 +1492,16 @@ class _SelectMembersDialogState extends State<_SelectMembersDialog> {
             final isSelected = _selectedIds.contains(user.id);
 
             return CheckboxListTile(
-              title: Text(user.name),
-              subtitle: Text(user.email),
+              title: Text(
+                user.name.trim().isNotEmpty ? user.name : user.email,
+                style: const TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                user.email,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.72)),
+              ),
+              activeColor: _ProjectWorkspaceScreenState._brandRed,
+              checkColor: Colors.white,
               value: isSelected,
               onChanged: (value) {
                 setState(() {
