@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BC19 SIT",
+  "version": "Ver 2026.05BC21 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-13T19:40:50Z",
+  "generated_at": "2026-05-13T19:57:37Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix: upload validation and backend query fixes",
+      "timestamp": "2026-05-13T21:56:42+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-13]",
+      "timestamp": "2026-05-13T19:40:50Z"
+    },
     {
       "author": "thabang127",
       "message": "feat(backend,frontend): add sprint report and fix API issues",
@@ -99,6 +109,6 @@
       "timestamp": "2026-05-13T14:30:35+02:00"
     }
   ],
-  "total_commits": 19,
+  "total_commits": 21,
   "date_range": "2026-05-13"
 }
