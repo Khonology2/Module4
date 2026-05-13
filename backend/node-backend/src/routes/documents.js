@@ -91,6 +91,63 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+router.get('/:id/content', authenticateToken, async (req, res) => {
+  try {
+    const record = await RepositoryDocument.findOne({ where: { filename: req.params.id } });
+    if (!record) return res.status(404).json({ success: false, error: 'Document not found' });
+
+    if (String(record.storage_provider || '').toLowerCase() === 'cloudinary' && record.url) {
+      try {
+        const r = await axios.get(String(record.url), { responseType: 'arraybuffer', timeout: 15000 });
+        const originalName = record.title || record.original_name || record.filename;
+        const ext = path.extname(String(originalName)).replace('.', '').toLowerCase();
+        let contentType = r.headers && r.headers['content-type'] ? String(r.headers['content-type']) : 'application/octet-stream';
+        if (!contentType || contentType.trim() === '') contentType = 'application/octet-stream';
+        if (ext === 'pdf') contentType = 'application/pdf';
+        res.setHeader('Content-Disposition', `inline; filename="${String(originalName).replace(/"/g, '')}"`);
+        res.setHeader('Content-Type', contentType);
+        return res.send(Buffer.from(r.data));
+      } catch (e) {
+        return res.status(404).json({ success: false, error: 'File not found' });
+      }
+    }
+
+    const rel = String(record.url || '').replace(fileUploadService.baseUrl, '').replace(/^\//, '');
+    const filePath = path.resolve(fileUploadService.storageBasePath, rel || record.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'File not found' });
+    const originalName = record.title || record.original_name || record.filename;
+    const ext = path.extname(String(originalName)).replace('.', '').toLowerCase();
+    let contentType = 'application/octet-stream';
+    if (ext === 'pdf') contentType = 'application/pdf';
+    else if (ext === 'txt' || ext === 'md' || ext === 'log') contentType = 'text/plain';
+    else if (ext === 'json') contentType = 'application/json';
+    else if (ext === 'xml') contentType = 'application/xml';
+    else if (ext === 'csv') contentType = 'text/csv';
+    else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
+    else if (ext === 'png') contentType = 'image/png';
+    else if (ext === 'gif') contentType = 'image/gif';
+    else if (ext === 'webp') contentType = 'image/webp';
+    else if (ext === 'bmp') contentType = 'image/bmp';
+    else if (ext === 'mp4') contentType = 'video/mp4';
+    else if (ext === 'webm') contentType = 'video/webm';
+    else if (ext === 'mp3') contentType = 'audio/mpeg';
+    else if (ext === 'wav') contentType = 'audio/wav';
+    else if (ext === 'doc') contentType = 'application/msword';
+    else if (ext === 'docx') contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    else if (ext === 'xls') contentType = 'application/vnd.ms-excel';
+    else if (ext === 'xlsx') contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    else if (ext === 'ppt') contentType = 'application/vnd.ms-powerpoint';
+    else if (ext === 'pptx') contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+    res.setHeader('Content-Disposition', `inline; filename="${String(originalName).replace(/"/g, '')}"`);
+    res.setHeader('Content-Type', contentType);
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to stream document' });
+  }
+});
+
 router.get('/:id/download', authenticateToken, async (req, res) => {
   try {
     const record = await RepositoryDocument.findOne({ where: { filename: req.params.id } });

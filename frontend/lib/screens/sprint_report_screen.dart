@@ -687,7 +687,7 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
                                   .toString()
                                   .toLowerCase()
                                   .replaceAll(RegExp(r'[\s_-]+'), '');
-                              return statusRaw == 'completed' || statusRaw == 'done' || statusRaw == 'closed';
+                              return statusRaw == 'completed' || statusRaw == 'complete' || statusRaw == 'done' || statusRaw == 'closed';
                             }
 
                             bool hasRequiredMetrics(Map<String, dynamic> sprintMap) {

@@ -3713,7 +3713,7 @@ const updateSprintStatusHandler = async (req, res) => {
     const normalizedStatus = (() => {
       if (cleaned === 'planned' || cleaned === 'draft') return 'planning';
       if (cleaned === 'active') return 'in_progress';
-      if (cleaned === 'done' || cleaned === 'closed') return 'completed';
+      if (cleaned === 'done' || cleaned === 'closed' || cleaned === 'complete') return 'completed';
       if (cleaned === 'canceled') return 'cancelled';
       return cleaned;
     })();
@@ -3921,34 +3921,53 @@ app.put('/api/v1/sprints/:sprintId/metrics', authenticateToken, upsertSprintMetr
 app.get('/api/v1/sprints/:sprintId', authenticateToken, async (req, res) => {
   try {
     const { sprintId } = req.params;
-    const result = await pool.query(`
-      SELECT s.*, 
-             COALESCE(sm.planned_points, s.planned_points) as planned_points,
-             COALESCE(sm.committed_points, s.committed_points) as committed_points,
-             COALESCE(sm.completed_points, s.completed_points) as completed_points,
-             COALESCE(sm.carried_over_points, s.carried_over_points) as carried_over_points,
-             COALESCE(sm.test_pass_rate, s.test_pass_rate) as test_pass_rate,
-             COALESCE(sm.code_coverage, s.code_coverage) as code_coverage,
-             COALESCE(sm.escaped_defects, s.escaped_defects) as escaped_defects,
-             COALESCE(sm.defects_opened, s.defects_opened) as defects_opened,
-             COALESCE(sm.defects_closed, s.defects_closed) as defects_closed,
-             COALESCE(sm.code_review_completion, s.code_review_completion) as code_review_completion,
-             COALESCE(sm.documentation_status, s.documentation_status) as documentation_status,
-             COALESCE(sm.uat_notes, s.uat_notes) as uat_notes,
-             COALESCE(sm.uat_pass_rate, s.uat_pass_rate) as uat_pass_rate,
-             COALESCE(sm.risks, s.risks) as risks,
-             COALESCE(sm.blockers, s.blockers) as blockers,
-             COALESCE(sm.decisions, s.decisions) as decisions
-      FROM sprints s 
-      LEFT JOIN LATERAL (
-        SELECT *
-        FROM sprint_metrics
-        WHERE sprint_id = s.id
-        ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST
-        LIMIT 1
-      ) sm ON true
-      WHERE s.id::text = $1::text
-    `, [sprintId]);
+    let result;
+    try {
+      result = await pool.query(
+        `
+        SELECT s.*, 
+               COALESCE(sm.planned_points, s.planned_points) as planned_points,
+               COALESCE(sm.committed_points, s.committed_points) as committed_points,
+               COALESCE(sm.completed_points, s.completed_points) as completed_points,
+               COALESCE(sm.carried_over_points, s.carried_over_points) as carried_over_points,
+               COALESCE(sm.test_pass_rate, s.test_pass_rate) as test_pass_rate,
+               COALESCE(sm.code_coverage, s.code_coverage) as code_coverage,
+               COALESCE(sm.escaped_defects, s.escaped_defects) as escaped_defects,
+               COALESCE(sm.defects_opened, s.defects_opened) as defects_opened,
+               COALESCE(sm.defects_closed, s.defects_closed) as defects_closed,
+               COALESCE(sm.code_review_completion, s.code_review_completion) as code_review_completion,
+               COALESCE(sm.documentation_status, s.documentation_status) as documentation_status,
+               COALESCE(sm.uat_notes, s.uat_notes) as uat_notes,
+               COALESCE(sm.uat_pass_rate, s.uat_pass_rate) as uat_pass_rate,
+               COALESCE(sm.risks, s.risks) as risks,
+               COALESCE(sm.blockers, s.blockers) as blockers,
+               COALESCE(sm.decisions, s.decisions) as decisions
+        FROM sprints s 
+        LEFT JOIN LATERAL (
+          SELECT *
+          FROM sprint_metrics
+          WHERE sprint_id = s.id
+          ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST
+          LIMIT 1
+        ) sm ON true
+        WHERE s.id::text = $1::text
+      `,
+        [sprintId],
+      );
+    } catch (e) {
+      if (e && e.code === '42P01') {
+        result = await pool.query(
+          `
+          SELECT s.*
+          FROM sprints s
+          WHERE s.id::text = $1::text
+        `,
+          [sprintId],
+        );
+      } else {
+        throw e;
+      }
+    }
     
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Sprint not found' });
@@ -4995,6 +5014,68 @@ app.post('/api/v1/deliverables', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/api/v1/deliverables/sprint/:sprintId', authenticateToken, async (req, res) => {
+  try {
+    const { sprintId } = req.params;
+    const userId = req.user?.id ?? req.user?.sub ?? null;
+    const userRole = String(req.user?.role || '');
+
+    const params = [String(sprintId)];
+    const restrictToUser = userRole === 'teamMember' && userId != null;
+    if (restrictToUser) {
+      params.push(String(userId));
+    }
+
+    const attempts = [
+      `
+        SELECT d.*
+        FROM sprint_deliverables sd
+        JOIN deliverables d ON sd.deliverable_id::text = d.id::text
+        WHERE sd.sprint_id::text = $1::text
+        ${restrictToUser ? 'AND (d.assigned_to::text = $2::text OR d.created_by::text = $2::text)' : ''}
+        ORDER BY d.created_at ASC
+      `,
+      `
+        SELECT d.*
+        FROM deliverables d
+        WHERE d.sprint_id::text = $1::text
+        ${restrictToUser ? 'AND (d.assigned_to::text = $2::text OR d.created_by::text = $2::text)' : ''}
+        ORDER BY d.created_at ASC
+      `,
+      `
+        SELECT d.*
+        FROM deliverable_sprints ds
+        JOIN deliverables d ON ds.deliverable_id::text = d.id::text
+        WHERE ds.sprint_id::text = $1::text
+        ${restrictToUser ? 'AND (d.assigned_to::text = $2::text OR d.created_by::text = $2::text)' : ''}
+        ORDER BY d.created_at ASC
+      `,
+    ];
+
+    let lastErr = null;
+    for (const finalQuery of attempts) {
+      try {
+        const result = await pool.query(finalQuery, params);
+        return res.json({ success: true, data: result.rows });
+      } catch (e) {
+        lastErr = e;
+        if (e && (e.code === '42P01' || e.code === '42703')) {
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (lastErr) {
+      throw lastErr;
+    }
+    return res.json({ success: true, data: [] });
+  } catch (error) {
+    console.error('Error fetching sprint deliverables:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch sprint deliverables' });
+  }
+});
+
 // Get single deliverable by ID
 app.get('/api/v1/deliverables/:id', authenticateToken, async (req, res) => {
   try {
@@ -5895,7 +5976,7 @@ app.get('/api/v1/documents/:id/content', authenticateToken, async (req, res) => 
     const query = `
       SELECT d.*, u.name as uploader_name
       FROM repository_files d
-      LEFT JOIN users u ON d.uploaded_by::uuid = u.id::uuid
+      LEFT JOIN users u ON d.uploaded_by::text = u.id::text
       WHERE d.id::text = $1
     `;
 
@@ -5970,7 +6051,7 @@ app.get('/api/v1/documents/:id/download', authenticateToken, async (req, res) =>
     const query = `
       SELECT d.*, u.name as uploader_name
       FROM repository_files d
-      LEFT JOIN users u ON d.uploaded_by::uuid = u.id::uuid
+      LEFT JOIN users u ON d.uploaded_by::text = u.id::text
       WHERE d.id::text = $1
     `;
     
@@ -6203,7 +6284,7 @@ app.get('/api/v1/documents/:id/preview', authenticateToken, async (req, res) => 
     const query = `
       SELECT d.*, u.name as uploader_name
       FROM repository_files d
-      LEFT JOIN users u ON d.uploaded_by::uuid = u.id::uuid
+      LEFT JOIN users u ON d.uploaded_by::text = u.id::text
       WHERE d.id::text = $1
     `;
     
@@ -7260,7 +7341,7 @@ app.post('/api/v1/sign-off-reports/from-sprint/:sprintId', authenticateToken, as
       `SELECT s.*, p.id as project_id, p.name as project_name
        FROM sprints s
        LEFT JOIN projects p ON s.project_id = p.id
-       WHERE s.id = $1`,
+       WHERE s.id::text = $1::text`,
       [sprintId]
     );
     if (sprintResult.rows.length === 0) {
@@ -7268,7 +7349,7 @@ app.post('/api/v1/sign-off-reports/from-sprint/:sprintId', authenticateToken, as
     }
     const sprint = sprintResult.rows[0];
     const sprintStatusNorm = String(sprint.status || '').toLowerCase().replace(/[\s_-]+/g, '');
-    const sprintCompleted = sprintStatusNorm == 'completed' || sprintStatusNorm == 'done' || sprintStatusNorm == 'closed';
+    const sprintCompleted = sprintStatusNorm == 'completed' || sprintStatusNorm == 'complete' || sprintStatusNorm == 'done' || sprintStatusNorm == 'closed';
     if (!sprintCompleted) {
       return res.status(400).json({ success: false, error: 'Sprint must be completed before creating a sprint sign-off report' });
     }

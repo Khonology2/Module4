@@ -93,9 +93,13 @@ class SprintDatabaseService {
       }
       
       debugPrint('❌ Failed to fetch sprint details: ${response.error ?? 'Unknown error'}');
-      return null;
+      final direct = await getSprintDetailsDirect(sprintId);
+      return direct;
     } catch (e) {
       debugPrint('❌ Error fetching sprint details: $e');
+      try {
+        return await getSprintDetailsDirect(sprintId);
+      } catch (_) {}
       return null;
     }
   }

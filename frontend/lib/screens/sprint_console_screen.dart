@@ -348,7 +348,7 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
 
       bool isCompletingStatus(String v) {
         final n = v.toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
-        return n == 'completed' || n == 'done' || n == 'closed';
+        return n == 'completed' || n == 'complete' || n == 'done' || n == 'closed';
       }
 
       bool missingRequiredMetrics(Map<String, dynamic> s) {

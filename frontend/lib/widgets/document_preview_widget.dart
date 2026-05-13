@@ -167,13 +167,19 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
         return null;
       }
 
-      final response = await http.get(
-        Uri.parse(ApiConfig.getFullUrl('/documents/${widget.document.id}/content')),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      final endpointsToTry = [
+        '/documents/${widget.document.id}/content',
+        '/documents/${widget.document.id}/download',
+      ];
 
-      if (response.statusCode == 200) {
-        return response.bodyBytes;
+      for (final endpoint in endpointsToTry) {
+        final response = await http.get(
+          Uri.parse(ApiConfig.getFullUrl(endpoint)),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (response.statusCode == 200) {
+          return response.bodyBytes;
+        }
       }
       return null;
     } catch (e) {
