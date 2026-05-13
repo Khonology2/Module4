@@ -16,6 +16,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   final TextEditingController _tokenController = TextEditingController();
   bool _isSsoLoading = false;
+  bool _autoLoginAttempted = false;
   String? _errorMessage;
   String? _pendingSsoToken;
   String? _pendingAccessToken;
@@ -42,6 +43,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         _pendingRefreshToken = (Uri.base.queryParameters['refresh_token'] ?? '').trim();
         _pendingDashboard = Uri.base.queryParameters['dashboard'] ?? '/dashboard';
       });
+      await _attemptAutoLogin();
       return;
     }
 
@@ -51,36 +53,48 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         _pendingSsoToken = token.trim();
         _tokenController.text = token.trim();
       });
+      await _attemptAutoLogin();
     }
   }
 
-  Future<void> _onGetStartedPressed() async {
-    if (_isSsoLoading) return;
+  Future<void> _attemptAutoLogin() async {
+    if (_autoLoginAttempted || _isSsoLoading) return;
+    final hasAccessToken = _pendingAccessToken != null && _pendingAccessToken!.isNotEmpty;
+    final hasSsoToken = _pendingSsoToken != null && _pendingSsoToken!.isNotEmpty;
+    if (!hasAccessToken && !hasSsoToken) return;
+    _autoLoginAttempted = true;
 
-    if (_pendingAccessToken != null && _pendingAccessToken!.isNotEmpty) {
-      setState(() {
-        _isSsoLoading = true;
-        _errorMessage = null;
-      });
-      await BackendApiService().saveTokens(
-        _pendingAccessToken!,
-        _pendingRefreshToken ?? '',
-        DateTime.now().add(const Duration(minutes: 15)),
-      );
-      await AuthService().refreshCurrentUser();
+    try {
+      if (hasAccessToken) {
+        setState(() {
+          _isSsoLoading = true;
+          _errorMessage = null;
+        });
+        await BackendApiService().saveTokens(
+          _pendingAccessToken!,
+          _pendingRefreshToken ?? '',
+          DateTime.now().add(const Duration(minutes: 15)),
+        );
+        await AuthService().refreshCurrentUser();
+        if (!mounted) return;
+        context.go(_pendingDashboard);
+        return;
+      }
+
+      if (hasSsoToken) {
+        await _handleSsoLogin(_pendingSsoToken!);
+      }
+    } catch (e) {
       if (!mounted) return;
-      context.go(_pendingDashboard);
-      return;
+      setState(() {
+        _errorMessage = 'Unable to sign in automatically. Please login.';
+        _isSsoLoading = false;
+      });
     }
+  }
 
-    final tokenFromField = _tokenController.text.trim();
-    final token = _pendingSsoToken ?? tokenFromField;
-    if (token.isNotEmpty) {
-      await _handleSsoLogin(token);
-      return;
-    }
-
-    if (!mounted) return;
+  void _onGetStartedPressed() {
+    if (_isSsoLoading) return;
     context.go('/login');
   }
 
@@ -253,14 +267,23 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                   shape: const StadiumBorder(),
                                   elevation: 0,
                                 ),
-                                child: const Text(
-                                  'GET STARTED',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
+                                child: _isSsoLoading
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : const Text(
+                                        'GET STARTED',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
                               ),
                             ),
                             SizedBox(

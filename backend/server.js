@@ -233,14 +233,16 @@ const app = express();
 // Middleware - Configure CORS for Flutter Web
 // Allow all origins for local development
 app.use(cors({
-origin: [
-    "https://flow-space-1.onrender.com",
-    "https://flow-space.onrender.com",
-    /^http:\/\/localhost:\d+$/,
-    /^http:\/\/127\.0\.0\.1:\d+$/
-  ],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (/^https?:\/\/.*\.onrender\.com$/i.test(origin)) return callback(null, true);
+    if (/^https?:\/\/.*\.flownet\.works$/i.test(origin)) return callback(null, true);
+    if (/^http:\/\/localhost:\d+$/i.test(origin)) return callback(null, true);
+    if (/^http:\/\/127\.0\.0\.1:\d+$/i.test(origin)) return callback(null, true);
+    return callback(null, true);
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-review-token"],
   credentials: true
 }));
 

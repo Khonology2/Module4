@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 // ignore: depend_on_referenced_packages
 import 'package:http/http.dart' as http;
@@ -14,7 +15,13 @@ class ApiClient {
   ApiClient._internal();
 
 static String get _baseUrlWithVersion => Environment.apiBaseUrl;
-  static const Duration _timeout = Duration(seconds: 20);
+  static Duration get _timeout {
+    const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
+    if (isProdFlag || Environment.isRenderDeployed) {
+      return const Duration(seconds: 120);
+    }
+    return const Duration(seconds: 20);
+  }
 
   static String _fallbackSignoffEndpoint(String endpoint) {
     if (endpoint.startsWith('/sign-off-reports')) {
@@ -54,6 +61,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     debugPrint('DEBUG: Environment.apiBaseUrl = ${Environment.apiBaseUrl}');
     debugPrint('DEBUG: Environment.isRenderDeployed = ${Environment.isRenderDeployed}');
     debugPrint('FINAL DEBUG: _baseUrlWithVersion = $_baseUrlWithVersion');
+    Future.microtask(() async {
+      try {
+        await _makeUnauthenticatedRequest('GET', '/health');
+      } catch (_) {}
+    });
     _initialized = true;
   }
 
@@ -238,19 +250,23 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     }
 
     final effectiveTimeout = timeout ?? _timeout;
-    http.Response resp = await http.get(Uri.parse(url), headers: reqHeaders).timeout(effectiveTimeout);
-    if (requireAuth &&
-        resp.statusCode == 404 &&
-        endpoint.startsWith('/sign-off-reports') &&
-        _fallbackSignoffEndpoint(endpoint) != endpoint) {
-      url = buildUrl(_fallbackSignoffEndpoint(endpoint));
-      resp = await http.get(Uri.parse(url), headers: reqHeaders).timeout(effectiveTimeout);
+    try {
+      http.Response resp = await http.get(Uri.parse(url), headers: reqHeaders).timeout(effectiveTimeout);
+      if (requireAuth &&
+          resp.statusCode == 404 &&
+          endpoint.startsWith('/sign-off-reports') &&
+          _fallbackSignoffEndpoint(endpoint) != endpoint) {
+        url = buildUrl(_fallbackSignoffEndpoint(endpoint));
+        resp = await http.get(Uri.parse(url), headers: reqHeaders).timeout(effectiveTimeout);
+      }
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return resp.bodyBytes;
+      }
+      final msg = resp.body.isNotEmpty ? resp.body : 'Request failed (${resp.statusCode})';
+      throw Exception(msg);
+    } on TimeoutException {
+      throw Exception('Request timed out. If this is the first request on Render, the backend may be waking up. Please try again.');
     }
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return resp.bodyBytes;
-    }
-    final msg = resp.body.isNotEmpty ? resp.body : 'Request failed (${resp.statusCode})';
-    throw Exception(msg);
   }
 
   // Multipart file upload method
@@ -311,7 +327,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       request.fields['fileType'] = fileType;
 
       // Send request
-      final response = await request.send();
+      final response = await request.send().timeout(_timeout);
       final responseBody = await response.stream.bytesToString();
 
       // Convert to regular response
@@ -319,6 +335,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       return _handleResponse(httpResponse);
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
+    } on TimeoutException {
+      return ApiResponse.error('Request timed out. If this is the first request on Render, the backend may be waking up. Please try again.');
     } on HttpException catch (e) {
       return ApiResponse.error('HTTP error: ${e.message}');
     } catch (e) {
@@ -410,6 +428,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
+    } on TimeoutException {
+      return ApiResponse.error('Request timed out. If this is the first request on Render, the backend may be waking up. Please try again.');
     } on HttpException catch (e) {
       return ApiResponse.error('HTTP error: ${e.message}');
     } catch (e) {
@@ -450,6 +470,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
+    } on TimeoutException {
+      return ApiResponse.error('Request timed out. If this is the first request on Render, the backend may be waking up. Please try again.');
     } on HttpException catch (e) {
       return ApiResponse.error('HTTP error: ${e.message}');
     } catch (e) {
@@ -500,6 +522,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       return _handleResponse(response);
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
+    } on TimeoutException {
+      return ApiResponse.error('Request timed out. If this is the first request on Render, the backend may be waking up. Please try again.');
     } on HttpException catch (e) {
       return ApiResponse.error('HTTP error: ${e.message}');
     } catch (e) {
@@ -548,6 +572,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       final response = await http.Response.fromStream(streamedResponse);
       
       return _handleResponse(response);
+    } on TimeoutException {
+      return ApiResponse.error('Request timed out. If this is the first request on Render, the backend may be waking up. Please try again.');
     } catch (e) {
       debugPrint('Upload error: $e');
       return ApiResponse.error('Upload failed: $e');
@@ -637,7 +663,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
     // Retry a limited number of times for transient startup/network failures.
     ApiResponse response = ApiResponse.error('Login request not sent');
-    const maxAttempts = 2;
+    const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
+    final maxAttempts = (isProdFlag || Environment.isRenderDeployed) ? 1 : 2;
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       debugPrint('🔐 Login attempt $attempt for: $email');
