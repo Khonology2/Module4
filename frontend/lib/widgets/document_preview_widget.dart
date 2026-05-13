@@ -72,8 +72,6 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
   }
 
   Future<void> _loadPreview() async {
-    if (!_canInlinePreview()) return;
-
     // Track document view
     await widget.documentService.trackDocumentView(widget.document.id);
 
@@ -81,24 +79,62 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
       _isLoading = true;
       _error = null;
       _pdfUrl = null; // Reset PDF URL when loading new preview
+      _previewContent = null;
     });
 
     try {
-      final response = await widget.documentService.getDocumentPreview(widget.document.id);
-      if (response.isSuccess) {
-        if (widget.document.fileType.toLowerCase() == 'pdf') {
-          await _buildPdfUrl(response.data);
+      final type = widget.document.fileType.toLowerCase();
+
+      if (_isTextType(type)) {
+        final response = await widget.documentService.getDocumentPreview(widget.document.id);
+        if (response.isSuccess) {
+          setState(() {
+            _previewContent = response.data?['previewContent'];
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _error = response.error;
+            _isLoading = false;
+          });
         }
-        setState(() {
-          _previewContent = response.data?['previewContent'];
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _error = response.error;
-          _isLoading = false;
-        });
+        return;
       }
+
+      if (kIsWeb) {
+        final officeUrl = _buildOfficeViewerUrlIfPossible();
+        if (officeUrl != null) {
+          setState(() {
+            _pdfUrl = officeUrl;
+            _isLoading = false;
+          });
+          return;
+        }
+
+        final bytes = await _getAuthenticatedDocumentBytes();
+        if (bytes == null || bytes.isEmpty) {
+          setState(() {
+            _error = 'Failed to load document preview';
+            _isLoading = false;
+          });
+          return;
+        }
+
+        web_impl.createBlobUrl(bytes, widget.document.id, _mimeTypeForFileType(type));
+        setState(() {
+          _pdfUrl = 'blob:${widget.document.id}';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      if (type == 'pdf') {
+        await _buildPdfUrl();
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() {
         _error = 'Failed to load preview: $e';
@@ -107,11 +143,9 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
     }
   }
 
-  Future<void> _buildPdfUrl(Map<String, dynamic>? data) async {
+  Future<void> _buildPdfUrl() async {
     try {
-      if (kIsWeb) {
-        await _fetchPdfForPreview();
-      } else {
+      if (!kIsWeb) {
         final response = await widget.documentService.downloadDocument(widget.document.id);
         if (response.isSuccess) {
           _pdfUrl = response.data?['filePath']?.toString();
@@ -126,27 +160,7 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
     }
   }
 
-  Future<void> _fetchPdfForPreview() async {
-    try {
-      // Fetch PDF bytes with authentication
-      final response = await widget.documentService.downloadDocument(widget.document.id);
-      if (response.isSuccess && response.data != null) {
-        // For web, create blob URL from the downloaded bytes
-        final bytes = await _getPdfBytes();
-        if (bytes != null && kIsWeb) {
-          web_impl.createPdfBlobUrl(bytes, widget.document.id);
-          // Store a reference URL for the iframe
-          _pdfUrl = 'pdf-blob:${widget.document.id}';
-        }
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Failed to fetch PDF: $e';
-      });
-    }
-  }
-
-  Future<List<int>?> _getPdfBytes() async {
+  Future<List<int>?> _getAuthenticatedDocumentBytes() async {
     try {
       final token = AuthService().accessToken;
       if (token == null) {
@@ -154,7 +168,7 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
       }
 
       final response = await http.get(
-        Uri.parse(ApiConfig.getFullUrl('/documents/${widget.document.id}/download')),
+        Uri.parse(ApiConfig.getFullUrl('/documents/${widget.document.id}/content')),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -167,22 +181,77 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
     }
   }
 
+  bool _isTextType(String type) {
+    const textTypes = ['txt', 'md', 'json', 'xml', 'csv', 'log', 'yaml', 'yml'];
+    return textTypes.contains(type);
+  }
+
+  bool _isOfficeType(String type) {
+    const officeTypes = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+    return officeTypes.contains(type);
+  }
+
+  String? _buildOfficeViewerUrlIfPossible() {
+    final type = widget.document.fileType.toLowerCase();
+    if (!_isOfficeType(type)) return null;
+    final publicUrl = _resolvePublicDocumentUrl();
+    if (publicUrl == null) return null;
+    final src = Uri.encodeComponent(publicUrl);
+    return 'https://view.officeapps.live.com/op/embed.aspx?src=$src';
+  }
+
+  String _mimeTypeForFileType(String type) {
+    switch (type) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+      case 'md':
+      case 'log':
+        return 'text/plain';
+      case 'json':
+        return 'application/json';
+      case 'xml':
+        return 'application/xml';
+      case 'csv':
+        return 'text/csv';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'bmp':
+        return 'image/bmp';
+      case 'mp4':
+        return 'video/mp4';
+      case 'webm':
+        return 'video/webm';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'wav':
+        return 'audio/wav';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'ppt':
+        return 'application/vnd.ms-powerpoint';
+      case 'pptx':
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
   bool _canPreview() {
-    final supportedTypes = [
-      'pdf',
-      'txt',
-      'md',
-      'json',
-      'xml',
-      'csv',
-      'jpg',
-      'jpeg',
-      'png',
-      'gif',
-      'webp',
-      'bmp',
-    ];
-    return supportedTypes.contains(widget.document.fileType.toLowerCase());
+    return true;
   }
 
   bool _canInlinePreview() => _canPreview();
@@ -284,6 +353,13 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
       case 'xml':
       case 'csv':
         return _buildTextPreview();
+      case 'doc':
+      case 'docx':
+      case 'xls':
+      case 'xlsx':
+      case 'ppt':
+      case 'pptx':
+        return _buildOfficePreview();
       case 'jpg':
       case 'jpeg':
       case 'png':
@@ -292,6 +368,9 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
       case 'bmp':
         return _buildImagePreview();
       default:
+        if (kIsWeb && _pdfUrl != null) {
+          return _buildWebIFramePreview(_pdfUrl!);
+        }
         return _buildUnsupportedPreview();
     }
   }
@@ -371,7 +450,36 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
     }
   }
 
+  Widget _buildOfficePreview() {
+    if (!kIsWeb) {
+      return _buildUnsupportedPreview();
+    }
+    if (_pdfUrl != null) {
+      return _buildWebIFramePreview(_pdfUrl!);
+    }
+    return const Center(
+      child: Text('Loading document...'),
+    );
+  }
+
+  Widget _buildWebIFramePreview(String url) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: FlownetColors.coolGray),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: web_impl.buildWebPdfViewer(url, widget.document.id),
+      ),
+    );
+  }
+
   Widget _buildImagePreview() {
+    if (kIsWeb && _pdfUrl != null) {
+      return _buildWebIFramePreview(_pdfUrl!);
+    }
+
     final imageUrl = _resolveDocumentUrl();
     if (imageUrl == null) {
       return _buildUnsupportedPreview();
@@ -409,6 +517,13 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
     return Uri.parse(Environment.apiBaseUrl)
         .resolve('/documents/${widget.document.id}/download')
         .toString();
+  }
+
+  String? _resolvePublicDocumentUrl() {
+    final filePath = widget.document.filePath;
+    if (filePath == null) return null;
+    if (!filePath.startsWith('/uploads/')) return null;
+    return Uri.parse(Environment.apiBaseUrl).resolve(filePath).toString();
   }
 
   Widget _buildTextPreview() {
@@ -656,18 +771,42 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
   Future<void> _openDocument() async {
     try {
       if (kIsWeb) {
-        final target = _resolveDocumentUrl();
-        if (target == null) {
-          throw Exception('Document URL is unavailable');
+        final publicUrl = _resolvePublicDocumentUrl();
+        if (publicUrl != null) {
+          await launchUrl(
+            Uri.parse(publicUrl),
+            mode: LaunchMode.platformDefault,
+            webOnlyWindowName: '_blank',
+          );
+          return;
         }
-        final launched = await launchUrl(
-          Uri.parse(target),
+
+        final existingBlob = web_impl.getBlobUrl(widget.document.id);
+        if (existingBlob != null) {
+          await launchUrl(
+            Uri.parse(existingBlob),
+            mode: LaunchMode.platformDefault,
+            webOnlyWindowName: '_blank',
+          );
+          return;
+        }
+
+        final bytes = await _getAuthenticatedDocumentBytes();
+        if (bytes == null || bytes.isEmpty) {
+          throw Exception('Document content is unavailable');
+        }
+
+        web_impl.createBlobUrl(bytes, widget.document.id, _mimeTypeForFileType(widget.document.fileType.toLowerCase()));
+        final blobUrl = web_impl.getBlobUrl(widget.document.id);
+        if (blobUrl == null) {
+          throw Exception('Failed to prepare document preview');
+        }
+
+        await launchUrl(
+          Uri.parse(blobUrl),
           mode: LaunchMode.platformDefault,
           webOnlyWindowName: '_blank',
         );
-        if (!launched) {
-          await _downloadDocument();
-        }
       } else {
         final response = await widget.documentService.downloadDocument(widget.document.id);
         if (!response.isSuccess) {

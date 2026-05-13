@@ -5,6 +5,14 @@ void createPdfBlobUrl(List<int> bytes, String fileName) {
   throw UnsupportedError('Web PDF blob URL not available on this platform');
 }
 
+String? getBlobUrl(String documentId) {
+  return null;
+}
+
+void createBlobUrl(List<int> bytes, String documentId, String mimeType) {
+  throw UnsupportedError('Web blob URL not available on this platform');
+}
+
 Widget buildWebPdfViewer(String pdfUrl, String documentId) {
   throw UnsupportedError('Web PDF viewer not available on this platform');
 }

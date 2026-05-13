@@ -9,19 +9,25 @@ import 'package:flutter/foundation.dart';
 // Map to store blob URLs by document ID
 final Map<String, String> _pdfBlobUrls = {};
 
-/// Creates a blob URL from PDF bytes and stores it by documentId
-void createPdfBlobUrl(List<int> bytes, String documentId) {
-  // Clean up any existing blob URL for this document
+String? getBlobUrl(String documentId) {
+  return _pdfBlobUrls[documentId];
+}
+
+void createBlobUrl(List<int> bytes, String documentId, String mimeType) {
   final existingUrl = _pdfBlobUrls.remove(documentId);
   if (existingUrl != null) {
     html.Url.revokeObjectUrl(existingUrl);
   }
-  
+
   final uint8List = Uint8List.fromList(bytes);
-  final blob = html.Blob([uint8List], 'application/pdf');
+  final blob = html.Blob([uint8List], mimeType);
   final url = html.Url.createObjectUrlFromBlob(blob);
-  // Store blob URL with document ID as key
   _pdfBlobUrls[documentId] = url;
+}
+
+/// Creates a blob URL from PDF bytes and stores it by documentId
+void createPdfBlobUrl(List<int> bytes, String documentId) {
+  createBlobUrl(bytes, documentId, 'application/pdf');
 }
 
 // Global map to store iframe elements by document ID
@@ -31,7 +37,7 @@ final Map<String, html.IFrameElement> _iframeElements = {};
 Widget buildWebPdfViewer(String pdfUrl, String documentId) {
   // Extract blob URL from stored map
   String? blobUrl;
-  if (pdfUrl.startsWith('pdf-blob:')) {
+  if (pdfUrl.startsWith('pdf-blob:') || pdfUrl.startsWith('blob:')) {
     // Find blob URL by document ID
     blobUrl = _pdfBlobUrls[documentId];
   } else {

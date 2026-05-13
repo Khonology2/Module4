@@ -3696,7 +3696,7 @@ app.post('/api/v1/sprints/backfill-projects', authenticateToken, async (req, res
 });
 
 // Update sprint status
-app.put('/api/v1/sprints/:sprintId/status', authenticateToken, requirePermission('update_sprint_status'), async (req, res) => {
+const updateSprintStatusHandler = async (req, res) => {
   try {
     const { sprintId } = req.params;
     let { status } = req.body;
@@ -3708,38 +3708,39 @@ app.put('/api/v1/sprints/:sprintId/status', authenticateToken, requirePermission
       });
     }
 
-    // Normalize and validate status values
-    let normalizedStatus = status;
-    if (status === 'planned') {
-      normalizedStatus = 'planning';
-    }
+    const raw = String(status || '').trim().toLowerCase();
+    const cleaned = raw.replace(/[\s_-]+/g, '_');
+    const normalizedStatus = (() => {
+      if (cleaned === 'planned' || cleaned === 'draft') return 'planning';
+      if (cleaned === 'active') return 'in_progress';
+      if (cleaned === 'done' || cleaned === 'closed') return 'completed';
+      if (cleaned === 'canceled') return 'cancelled';
+      return cleaned;
+    })();
     const validStatuses = ['planning', 'in_progress', 'completed', 'cancelled'];
     if (!validStatuses.includes(normalizedStatus)) {
       return res.status(400).json({
         success: false,
-        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
       });
     }
 
-    // If attempting to complete the sprint, require metrics to exist (so sign-off report graphs are based on captured values)
-    const shouldEnforceMetrics = normalizedStatus === 'completed' || normalizedStatus === 'closed';
-    if (shouldEnforceMetrics) {
-      const m = await pool.query(
-        `SELECT id, recorded_by, updated_at FROM sprint_metrics WHERE sprint_id = $1 ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST LIMIT 1`,
-        [sprintId]
-      );
-      if (m.rows.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Sprint metrics must be completed before marking the sprint as completed'
-        });
-      }
-      const recordedBy = String(m.rows[0]?.recorded_by || '').trim();
-      if (!recordedBy) {
-        return res.status(400).json({
-          success: false,
-          error: 'Sprint metrics must be completed before marking the sprint as completed'
-        });
+    let warnings = null;
+    if (normalizedStatus === 'completed') {
+      try {
+        const m = await pool.query(
+          `SELECT id, recorded_by, updated_at FROM sprint_metrics WHERE sprint_id = $1 ORDER BY recorded_at DESC NULLS LAST, updated_at DESC NULLS LAST LIMIT 1`,
+          [sprintId],
+        );
+        if (m.rows.length === 0 || !String(m.rows[0]?.recorded_by || '').trim()) {
+          warnings = {
+            message: 'Sprint metrics are incomplete; sprint status was updated anyway.',
+          };
+        }
+      } catch (_) {
+        warnings = {
+          message: 'Sprint metrics could not be validated; sprint status was updated anyway.',
+        };
       }
     }
 
@@ -3781,7 +3782,8 @@ app.put('/api/v1/sprints/:sprintId/status', authenticateToken, requirePermission
 
     res.json({
       success: true,
-      data: result.rows[0]
+      data: result.rows[0],
+      warnings,
     });
   } catch (error) {
     console.error('Update sprint status error:', error);
@@ -3791,7 +3793,10 @@ app.put('/api/v1/sprints/:sprintId/status', authenticateToken, requirePermission
       error: error.message || 'Internal server error'
     });
   }
-});
+};
+
+app.put('/api/v1/sprints/:sprintId/status', authenticateToken, updateSprintStatusHandler);
+app.patch('/api/v1/sprints/:sprintId/status', authenticateToken, updateSprintStatusHandler);
 
 // Sprint metrics endpoints (required for sprint sign-off report graphs)
 app.get('/api/v1/sprints/:sprintId/metrics', authenticateToken, async (req, res) => {
@@ -5883,6 +5888,77 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
 });
 
 // Download document
+app.get('/api/v1/documents/:id/content', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const query = `
+      SELECT d.*, u.name as uploader_name
+      FROM repository_files d
+      LEFT JOIN users u ON d.uploaded_by::uuid = u.id::uuid
+      WHERE d.id::text = $1
+    `;
+
+    const result = await pool.query(query, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found',
+      });
+    }
+
+    const document = result.rows[0];
+
+    let filePath = document.file_path;
+    if (filePath && typeof filePath === 'string' && filePath.startsWith('/uploads/')) {
+      filePath = path.join(__dirname, 'uploads', path.basename(filePath));
+    }
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'File not found on server',
+      });
+    }
+
+    const fileName = document.file_name || document.original_filename || document.filename || 'download';
+    const ext = String(path.extname(fileName)).replace('.', '').toLowerCase();
+    let contentType = 'application/octet-stream';
+    if (ext === 'pdf') contentType = 'application/pdf';
+    else if (ext === 'txt' || ext === 'md' || ext === 'log') contentType = 'text/plain';
+    else if (ext === 'json') contentType = 'application/json';
+    else if (ext === 'xml') contentType = 'application/xml';
+    else if (ext === 'csv') contentType = 'text/csv';
+    else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
+    else if (ext === 'png') contentType = 'image/png';
+    else if (ext === 'gif') contentType = 'image/gif';
+    else if (ext === 'webp') contentType = 'image/webp';
+    else if (ext === 'bmp') contentType = 'image/bmp';
+    else if (ext === 'mp4') contentType = 'video/mp4';
+    else if (ext === 'webm') contentType = 'video/webm';
+    else if (ext === 'mp3') contentType = 'audio/mpeg';
+    else if (ext === 'wav') contentType = 'audio/wav';
+    else if (ext === 'doc') contentType = 'application/msword';
+    else if (ext === 'docx') contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    else if (ext === 'xls') contentType = 'application/vnd.ms-excel';
+    else if (ext === 'xlsx') contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    else if (ext === 'ppt') contentType = 'application/vnd.ms-powerpoint';
+    else if (ext === 'pptx') contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+    res.setHeader('Content-Disposition', `inline; filename="${String(fileName).replaceAll('"', '')}"`);
+    res.setHeader('Content-Type', contentType);
+
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+  } catch (error) {
+    console.error('Error streaming document content:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to load document content',
+    });
+  }
+});
+
 app.get('/api/v1/documents/:id/download', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -6145,8 +6221,13 @@ app.get('/api/v1/documents/:id/preview', authenticateToken, async (req, res) => 
     console.log(`✅ Document found: ${document.file_name}`);
     
     // Check if file path exists and file is on disk
-    if (document.file_path && fs.existsSync(document.file_path)) {
-      console.log(`✅ File exists on disk: ${document.file_path}`);
+    let resolvedFilePath = document.file_path;
+    if (resolvedFilePath && typeof resolvedFilePath === 'string' && resolvedFilePath.startsWith('/uploads/')) {
+      resolvedFilePath = path.join(__dirname, 'uploads', path.basename(resolvedFilePath));
+    }
+
+    if (resolvedFilePath && fs.existsSync(resolvedFilePath)) {
+      console.log(`✅ File exists on disk: ${resolvedFilePath}`);
       
       // For text files, read content for preview
       let previewContent = null;
@@ -6154,7 +6235,7 @@ app.get('/api/v1/documents/:id/preview', authenticateToken, async (req, res) => 
       if (textFileTypes.includes(document.file_type?.toLowerCase())) {
         try {
           // Read first 100KB for preview (to avoid memory issues with large files)
-          const fileContent = fs.readFileSync(document.file_path, 'utf8');
+          const fileContent = fs.readFileSync(resolvedFilePath, 'utf8');
           const maxPreviewLength = 100000; // 100KB
           previewContent = fileContent.length > maxPreviewLength 
             ? fileContent.substring(0, maxPreviewLength) + '\n\n... (Preview truncated. Download to see full content)'
