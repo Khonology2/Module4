@@ -5824,15 +5824,33 @@ app.post('/api/v1/documents', authenticateToken, uploadAny.single('file'), async
       `, [normalizedProjectId, userId]);
       
       for (const member of membersResult.rows) {
-        await pool.query(`
-          INSERT INTO notifications (title, message, type, user_id, is_read, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, false, NOW(), NOW())
-        `, [
-          'New Document Uploaded',
-          `A new document "${file.originalname}" has been uploaded to the project`,
-          'document',
-          member.user_id
-        ]);
+        try {
+          await pool.query(
+            `INSERT INTO notifications (title, message, type, user_id, is_read, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, false, NOW(), NOW())`,
+            [
+              'New Document Uploaded',
+              `A new document "${file.originalname}" has been uploaded to the project`,
+              'document',
+              member.user_id,
+            ],
+          );
+        } catch (e) {
+          if (e && e.code === '42703') {
+            await pool.query(
+              `INSERT INTO notifications (title, message, type, user_id, is_read, created_at)
+               VALUES ($1, $2, $3, $4, false, NOW())`,
+              [
+                'New Document Uploaded',
+                `A new document "${file.originalname}" has been uploaded to the project`,
+                'document',
+                member.user_id,
+              ],
+            );
+          } else {
+            throw e;
+          }
+        }
       }
     }
     

@@ -473,7 +473,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
 
     const normalizeRole = (r) => String(r || '').toLowerCase().replace(/[\s_-]+/g, '');
     const role = normalizeRole(req.user && req.user.role);
-    const isPrivileged = ['admin', 'systemadmin', 'deliverylead'].includes(role);
+    const isPrivileged = ['admin', 'systemadmin', 'deliverylead', 'projectmanager', 'owner'].includes(role);
     let isProjectOwner = false;
     try {
       const pid = sprint.project_id;
@@ -490,6 +490,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
 
     const ns = String(nextStatus || '').toLowerCase().replace(/[\s_-]+/g, '');
     const isCompleting = ns === 'completed' || ns === 'done' || ns === 'closed';
+    let warnings = null;
     if (isCompleting) {
       const missing = [];
       if (sprint.test_pass_rate == null) missing.push('test_pass_rate');
@@ -498,15 +499,15 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       if (sprint.code_review_completion == null) missing.push('code_review_completion');
       if (sprint.documentation_status == null) missing.push('documentation_status');
       if (missing.length > 0) {
-        return res.status(400).json({
-          error: 'Sprint metrics must be completed before marking the sprint as completed',
+        warnings = {
+          message: 'Sprint metrics are incomplete; sprint status was updated anyway.',
           missingFields: missing,
-        });
+        };
       }
     }
 
     await sprint.update({ status: nextStatus });
-    res.json({ success: true, data: sprint });
+    res.json({ success: true, data: sprint, warnings });
   } catch (error) {
     console.error('Error updating sprint status:', error);
     res.status(500).json({ error: 'Internal server error' });
