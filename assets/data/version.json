@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD47 SIT",
+  "version": "Ver 2026.05BD49 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T10:08:24Z",
+  "generated_at": "2026-05-14T10:41:41Z",
   "commits": [
+    {
+      "author": "Nathi2266",
+      "message": "refactor(report): streamline branding asset handling in PDF generation",
+      "timestamp": "2026-05-14T12:41:13+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T10:08:24Z"
+    },
     {
       "author": "Nathi2266",
       "message": "Update pubspec.lock with dependency version upgrades",
@@ -239,6 +249,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 47,
+  "total_commits": 49,
   "date_range": "2026-05-14"
 }
