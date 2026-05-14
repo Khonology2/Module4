@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD42 SIT",
+  "version": "Ver 2026.05BD44 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T09:40:18Z",
+  "generated_at": "2026-05-14T09:52:08Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "feat: add forceRefresh parameter to getSprints",
+      "timestamp": "2026-05-14T11:51:11+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:40:19Z"
+    },
     {
       "author": "thabang127",
       "message": "fix(frontend): refine document preview and sprint report logic",
@@ -214,6 +224,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 42,
+  "total_commits": 44,
   "date_range": "2026-05-14"
 }
