@@ -356,7 +356,14 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       // The token will be in query params, so we'll make a special request
       return await _makeTokenBasedRequest('POST', endpoint, body: body, queryParams: queryParams);
     }
-    return await _makeRequest('POST', endpoint, body: body, queryParams: queryParams, timeout: timeout);
+    return await _makeRequest(
+      'POST',
+      endpoint,
+      body: body,
+      queryParams: queryParams,
+      timeout: timeout,
+      includeAuth: requireAuth,
+    );
   }
 
   Future<ApiResponse> put(
