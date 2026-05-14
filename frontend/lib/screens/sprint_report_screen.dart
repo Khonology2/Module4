@@ -664,10 +664,16 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
                             Future<Map<String, dynamic>> loadSprint() async {
                               final sprintResp = await _backend.getSprint(widget.sprintId);
                               final raw = sprintResp.isSuccess ? sprintResp.data : null;
-                              if (raw is Map && raw['data'] is Map) {
-                                return Map<String, dynamic>.from(raw['data'] as Map);
+                              if (raw is Map) {
+                                // Try different paths: data.data, data
+                                if (raw['data'] is Map) {
+                                  return Map<String, dynamic>.from(raw['data'] as Map);
+                                }
+                                // If it has success: true and data, or just the sprint itself
+                                if (raw.containsKey('id') || raw.containsKey('name')) {
+                                  return Map<String, dynamic>.from(raw);
+                                }
                               }
-                              if (raw is Map) return Map<String, dynamic>.from(raw);
                               return <String, dynamic>{};
                             }
 
