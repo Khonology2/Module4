@@ -10411,6 +10411,24 @@ app.post('/api/v1/sign-off-reports/process-overdue', authenticateToken, async (r
   }
 });
 
+// Root + health endpoints
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Flow-Space API is running',
+    timestamp: new Date().toISOString(),
+    version: '2026-01-12-v2'
+  });
+});
+
+app.get('/api/v1', (req, res) => {
+  res.redirect(302, '/api/v1/health');
+});
+
+app.get('/api/v1/', (req, res) => {
+  res.redirect(302, '/api/v1/health');
+});
+
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
   res.json({ 
