@@ -81,6 +81,11 @@ const { loggingService } = require('./services/loggingService');
 const socketService = require('./services/socketService');
 const { databaseNotificationService } = require('./services/DatabaseNotificationService');
 
+let dbReady = false;
+let dbLastError = null;
+let dbInitStartedAt = null;
+let dbNotificationInitStarted = false;
+
 // Middleware
 app.use(helmet());
 app.use(compression());
@@ -122,6 +127,18 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(loggingMiddleware);
 app.use(performanceMiddleware);
 app.use(morgan('combined'));
+
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return next();
+  const p = req.path || req.url || '';
+  if (p === '/' || p === '/health' || p === '/api/v1/health' || p === '/api/health') return next();
+  if (dbReady) return next();
+  return res.status(503).json({
+    error: 'Backend warming up',
+    message: 'Backend is still warming up. Please try again.',
+    code: 'BACKEND_WARMING_UP',
+  });
+});
 
 try {
   const baseUploadDir = path.join(__dirname, '..', 'uploads');
@@ -310,15 +327,39 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   const iotEnabled = String(process.env.IOT_ENABLED || '').toLowerCase() === 'true';
-  res.json({ status: 'healthy', iot: { enabled: iotEnabled } });
+  res.json({
+    status: 'ok',
+    db: {
+      ready: dbReady,
+      since: dbInitStartedAt ? dbInitStartedAt.toISOString() : null,
+      error: dbLastError,
+    },
+    iot: { enabled: iotEnabled }
+  });
 });
 app.get('/api/v1/health', (req, res) => {
   const iotEnabled = String(process.env.IOT_ENABLED || '').toLowerCase() === 'true';
-  res.json({ status: 'healthy', iot: { enabled: iotEnabled } });
+  res.json({
+    status: 'ok',
+    db: {
+      ready: dbReady,
+      since: dbInitStartedAt ? dbInitStartedAt.toISOString() : null,
+      error: dbLastError,
+    },
+    iot: { enabled: iotEnabled }
+  });
 });
 app.get('/api/health', (req, res) => {
   const iotEnabled = String(process.env.IOT_ENABLED || '').toLowerCase() === 'true';
-  res.json({ status: 'healthy', iot: { enabled: iotEnabled } });
+  res.json({
+    status: 'ok',
+    db: {
+      ready: dbReady,
+      since: dbInitStartedAt ? dbInitStartedAt.toISOString() : null,
+      error: dbLastError,
+    },
+    iot: { enabled: iotEnabled }
+  });
 });
 
 // Error handling middleware
@@ -345,56 +386,6 @@ function isTruthy(value, defaultValue = false) {
 
 async function startServer() {
   try {
-    // Test database connection
-    await sequelize.authenticate();
-    const shouldSync =
-      process.env.NODE_ENV === 'development' || isTruthy(process.env.DB_AUTO_SYNC, false);
-    const shouldAlter = isTruthy(process.env.DB_AUTO_ALTER, false);
-    const syncOk = shouldSync ? await syncDatabase({ alter: shouldAlter }) : true;
-    console.log('✅ Database connection established successfully');
-    if (!syncOk) {
-      console.warn('⚠️ Database sync failed; continuing without alter sync');
-    } else if (!shouldSync) {
-      console.log('ℹ️ Database auto-sync disabled by environment settings');
-    }
-
-    try {
-      if (sequelize.getDialect() === 'postgres') {
-        await sequelize.query("ALTER TABLE sprints ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)");
-        await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id UUID");
-        await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by UUID");
-        // Ensure legacy audit_logs schema is compatible with current model.
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_email VARCHAR(255)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_role VARCHAR(100)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS session_id VARCHAR(500)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(50)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_agent VARCHAR(500)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action_category VARCHAR(100)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_name VARCHAR(255)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS old_values JSONB");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS new_values JSONB");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS changed_fields JSONB");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS request_id VARCHAR(500)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS endpoint VARCHAR(500)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10)");
-        await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS status_code INTEGER");
-      }
-    } catch (e) {
-      console.warn('⚠️ Unable to ensure compatibility columns; continuing', e?.message || e);
-    }
-    
-    // Development-only safe sync (never run when DB_AUTO_SYNC is explicitly false)
-    if (process.env.NODE_ENV === 'development' && shouldSync) {
-      // Use safe sync instead of alter to prevent infinite loops
-      try {
-        await sequelize.sync({ force: false });
-        console.log('✅ Database synchronized safely');
-      } catch (error) {
-        console.warn('⚠️ Database safe sync failed; continuing', error?.message || error);
-      }
-    }
-    
-    // Start server first to ensure it's listening
     const server = app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
@@ -406,26 +397,6 @@ async function startServer() {
         enabled: String(process.env.IOT_ENABLED || '').toLowerCase() === 'true',
         url: process.env.IOT_MQTT_URL || ''
       });
-      
-      // Initialize Database Notification Service
-      const dbConnectionString = process.env.DATABASE_URL;
-      if (dbConnectionString) {
-        databaseNotificationService.initialize(dbConnectionString)
-          .then((ok) => {
-            if (ok) {
-              console.log('✅ Database notification service initialized');
-              databaseNotificationService.setSocketService(socketService);
-              console.log('✅ Real-time services integrated successfully');
-            } else {
-              console.warn('⚠️ Database notification service unavailable; continuing without LISTEN/NOTIFY');
-            }
-          })
-          .catch(error => {
-            console.error('❌ Failed to initialize database notification service:', error);
-          });
-      } else {
-        console.warn('⚠️ DATABASE_URL not set, database notification service disabled');
-      }
       
       // Start background services after server is listening
       // Analytics service is now started on-demand via API endpoints to prevent server overload
@@ -467,7 +438,89 @@ async function startServer() {
       }
       console.error('Server error:', err);
     });
-    
+
+    const initDb = async () => {
+      if (!dbInitStartedAt) dbInitStartedAt = new Date();
+      try {
+        await sequelize.authenticate();
+        const shouldSync =
+          process.env.NODE_ENV === 'development' || isTruthy(process.env.DB_AUTO_SYNC, false);
+        const shouldAlter = isTruthy(process.env.DB_AUTO_ALTER, false);
+        const syncOk = shouldSync ? await syncDatabase({ alter: shouldAlter }) : true;
+        console.log('✅ Database connection established successfully');
+        if (!syncOk) {
+          console.warn('⚠️ Database sync failed; continuing without alter sync');
+        } else if (!shouldSync) {
+          console.log('ℹ️ Database auto-sync disabled by environment settings');
+        }
+
+        try {
+          if (sequelize.getDialect() === 'postgres') {
+            await sequelize.query("ALTER TABLE sprints ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)");
+            await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id UUID");
+            await sequelize.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS created_by UUID");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_email VARCHAR(255)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_role VARCHAR(100)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS session_id VARCHAR(500)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(50)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_agent VARCHAR(500)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action_category VARCHAR(100)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_name VARCHAR(255)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS old_values JSONB");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS new_values JSONB");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS changed_fields JSONB");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS request_id VARCHAR(500)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS endpoint VARCHAR(500)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10)");
+            await sequelize.query("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS status_code INTEGER");
+          }
+        } catch (e) {
+          console.warn('⚠️ Unable to ensure compatibility columns; continuing', e?.message || e);
+        }
+
+        if (process.env.NODE_ENV === 'development' && shouldSync) {
+          try {
+            await sequelize.sync({ force: false });
+            console.log('✅ Database synchronized safely');
+          } catch (error) {
+            console.warn('⚠️ Database safe sync failed; continuing', error?.message || error);
+          }
+        }
+
+        dbReady = true;
+        dbLastError = null;
+
+        if (!dbNotificationInitStarted) {
+          dbNotificationInitStarted = true;
+          const dbConnectionString = process.env.DATABASE_URL;
+          if (dbConnectionString) {
+            databaseNotificationService.initialize(dbConnectionString)
+              .then((ok) => {
+                if (ok) {
+                  console.log('✅ Database notification service initialized');
+                  databaseNotificationService.setSocketService(socketService);
+                  console.log('✅ Real-time services integrated successfully');
+                } else {
+                  console.warn('⚠️ Database notification service unavailable; continuing without LISTEN/NOTIFY');
+                }
+              })
+              .catch(error => {
+                console.error('❌ Failed to initialize database notification service:', error);
+              });
+          } else {
+            console.warn('⚠️ DATABASE_URL not set, database notification service disabled');
+          }
+        }
+      } catch (e) {
+        dbReady = false;
+        dbLastError = (e && e.message) ? String(e.message) : 'db init failed';
+        setTimeout(() => {
+          try { initDb(); } catch (_) {}
+        }, 5000);
+      }
+    };
+
+    initDb().catch(() => {});
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     setTimeout(() => {

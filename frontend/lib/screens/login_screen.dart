@@ -53,7 +53,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     final ready = await ApiClient().warmUpBackend(
-      maxWait: const Duration(seconds: 20),
+      maxWait: const Duration(seconds: 5),
     );
 
     if (!mounted) return;

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 // ignore: depend_on_referenced_packages
 import 'package:http/http.dart' as http;
+import 'package:universal_html/html.dart' as html;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/environment.dart';
 import 'package:flutter/foundation.dart';
@@ -79,7 +80,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
                 .timeout(const Duration(seconds: 6));
           } catch (_) {}
         });
-        unawaited(warmUpBackend(maxWait: const Duration(seconds: 20)));
+        unawaited(warmUpBackend(maxWait: const Duration(seconds: 5)));
       }
 
       _initialized = true;
@@ -181,6 +182,16 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       'https://backend-532p.onrender.com/api/v1',
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
+    void pokeOnce() {
+      if (!kIsWeb) return;
+      for (final baseUrl in candidates) {
+        try {
+          final img = html.ImageElement();
+          img.src = '$baseUrl/health?warmup=${DateTime.now().millisecondsSinceEpoch}';
+        } catch (_) {}
+      }
+    }
+
     bool looksHtml(http.Response r) {
       final ct = (r.headers['content-type'] ?? '').toLowerCase();
       final b = r.body.trimLeft();
@@ -188,6 +199,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     }
 
     final startedAt = DateTime.now();
+    pokeOnce();
     while (DateTime.now().difference(startedAt) < maxWait) {
       for (final baseUrl in candidates) {
         try {
@@ -212,6 +224,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
 
       await Future.delayed(const Duration(seconds: 2));
+      pokeOnce();
       try {
         await _resolveAndSetApiBaseUrlOverride(force: true);
       } catch (_) {}
@@ -856,12 +869,12 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     ApiResponse response = ApiResponse.error('Login request not sent');
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
     final isProdLike = isProdFlag || Environment.isRenderDeployed;
-    final maxAttempts = isProdLike ? 12 : 2;
-    final maxTotalWait = isProdLike ? const Duration(seconds: 25) : const Duration(seconds: 10);
+    final maxAttempts = isProdLike ? 3 : 2;
+    final maxTotalWait = isProdLike ? const Duration(seconds: 5) : const Duration(seconds: 10);
     final startedAt = DateTime.now();
 
     if (isProdLike) {
-      final ready = await warmUpBackend(maxWait: const Duration(seconds: 20));
+      final ready = await warmUpBackend(maxWait: const Duration(seconds: 5));
       if (!ready) {
         return ApiResponse.error('Backend still warming up. Please try again.', 0);
       }
@@ -916,7 +929,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       // statusCode == 0 means transport-level failure (e.g. Failed to fetch).
       if (attempt < maxAttempts) {
         if (isProdLike) {
-          await warmUpBackend(maxWait: const Duration(seconds: 6));
+          await warmUpBackend(maxWait: const Duration(seconds: 2));
         }
         final backoffSeconds = (attempt <= 6) ? 2 : 4;
         await Future.delayed(Duration(seconds: backoffSeconds));
