@@ -1,8 +1,43 @@
 {
-  "version": "Ver 2026.05BD42 SIT",
+  "version": "Ver 2026.05BD49 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T09:40:18Z",
+  "generated_at": "2026-05-14T10:41:41Z",
   "commits": [
+    {
+      "author": "Nathi2266",
+      "message": "refactor(report): streamline branding asset handling in PDF generation",
+      "timestamp": "2026-05-14T12:41:13+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T10:08:24Z"
+    },
+    {
+      "author": "Nathi2266",
+      "message": "Update pubspec.lock with dependency version upgrades",
+      "timestamp": "2026-05-14T12:07:44+02:00"
+    },
+    {
+      "author": "Nathi2266",
+      "message": "refactor(report): enhance PDF generation and branding assets",
+      "timestamp": "2026-05-14T12:05:40+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:52:08Z"
+    },
+    {
+      "author": "thabang127",
+      "message": "feat: add forceRefresh parameter to getSprints",
+      "timestamp": "2026-05-14T11:51:11+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:40:19Z"
+    },
     {
       "author": "thabang127",
       "message": "fix(frontend): refine document preview and sprint report logic",
@@ -214,6 +249,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 42,
+  "total_commits": 49,
   "date_range": "2026-05-14"
 }

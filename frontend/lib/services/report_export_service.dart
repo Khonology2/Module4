@@ -16,21 +16,22 @@ import 'package:path_provider/path_provider.dart' if (dart.library.html) '../ser
 
 class _BrandingAssets {
   final pw.ImageProvider? logo;
-  final pw.ImageProvider? wordmark;
   final pw.ImageProvider? headerBackground;
   final pw.ImageProvider? sprintIcon;
   final pw.ImageProvider? footerIcon1;
   final pw.ImageProvider? footerIcon2;
   final pw.ImageProvider? footerIcon3;
+  /// Bottom-center mark on every PDF page (`khono_red_disc.png`).
+  final pw.ImageProvider? footerCenterDisc;
 
   const _BrandingAssets({
     this.logo,
-    this.wordmark,
     this.headerBackground,
     this.sprintIcon,
     this.footerIcon1,
     this.footerIcon2,
     this.footerIcon3,
+    this.footerCenterDisc,
   });
 }
 
@@ -147,21 +148,20 @@ class ReportExportService {
 
   Future<_BrandingAssets> _loadBrandingAssetsUncached() async {
     pw.ImageProvider? logo;
-    pw.ImageProvider? wordmark;
     pw.ImageProvider? headerBackground;
     pw.ImageProvider? sprintIcon;
     pw.ImageProvider? footerIcon1;
     pw.ImageProvider? footerIcon2;
     pw.ImageProvider? footerIcon3;
+    pw.ImageProvider? footerCenterDisc;
 
     try {
-      final bytes = (await rootBundle.load('assets/Icons/khonology_name_icon.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) wordmark = pw.MemoryImage(bytes);
+      final bytes = (await rootBundle.load('assets/Icons/khono.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
-      wordmark ??= logo;
+      if (bytes.isNotEmpty) logo ??= pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/Icons/khono_bg.png')).buffer.asUint8List();
@@ -188,33 +188,36 @@ class ReportExportService {
           (await rootBundle.load('assets/Icons/Khonology_(Short Logo)_Circlulars_RED.png')).buffer.asUint8List();
       if (bytes.isNotEmpty) footerIcon1 = pw.MemoryImage(bytes);
     } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/Icons/khono_red_disc.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) footerCenterDisc = pw.MemoryImage(bytes);
+    } catch (_) {}
 
     return _BrandingAssets(
       logo: logo,
-      wordmark: wordmark,
       headerBackground: headerBackground,
       sprintIcon: sprintIcon,
       footerIcon1: footerIcon1,
       footerIcon2: footerIcon2 ?? footerIcon1,
       footerIcon3: footerIcon3 ?? footerIcon1,
+      footerCenterDisc: footerCenterDisc,
     );
   }
 
   Future<_BrandingAssets> _loadBrandingAssetsFastUncached() async {
     pw.ImageProvider? logo;
-    pw.ImageProvider? wordmark;
     pw.ImageProvider? headerBackground;
     pw.ImageProvider? sprintIcon;
     pw.ImageProvider? footerIcon1;
+    pw.ImageProvider? footerCenterDisc;
 
     try {
-      final bytes = (await rootBundle.load('assets/Icons/khonology_name_icon.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) wordmark = pw.MemoryImage(bytes);
+      final bytes = (await rootBundle.load('assets/Icons/khono.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
-      wordmark ??= logo;
+      if (bytes.isNotEmpty) logo ??= pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/Icons/khono_bg.png')).buffer.asUint8List();
@@ -241,15 +244,19 @@ class ReportExportService {
           (await rootBundle.load('assets/Icons/Khonology_(Short Logo)_Circlulars_RED.png')).buffer.asUint8List();
       if (bytes.isNotEmpty) footerIcon1 = pw.MemoryImage(bytes);
     } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/Icons/khono_red_disc.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) footerCenterDisc = pw.MemoryImage(bytes);
+    } catch (_) {}
 
     return _BrandingAssets(
       logo: logo,
-      wordmark: wordmark,
       headerBackground: headerBackground,
       sprintIcon: sprintIcon,
       footerIcon1: footerIcon1,
       footerIcon2: footerIcon1,
       footerIcon3: footerIcon1,
+      footerCenterDisc: footerCenterDisc,
     );
   }
 
@@ -434,7 +441,7 @@ class ReportExportService {
   Future<PdfBytesResult> buildPdfBytes(SignOffReport report, {bool fast = false, bool includeSignatures = true}) async {
     final hydrateFuture = fast ? _hydrateReportForPdfFast(report) : _hydrateReportForPdf(report);
     final brandingFuture = fast ? _loadBrandingAssetsFast() : _loadBrandingAssets();
-    final themeFuture = fast ? Future<pw.ThemeData?>.value(null) : _loadPdfTheme();
+    final themeFuture = _loadPdfTheme();
     final profileFuture = _loadUserProfileForPdf();
     final signaturesFuture = (!includeSignatures || fast)
         ? Future<List<Map<String, dynamic>>>.value(const <Map<String, dynamic>>[])
@@ -467,7 +474,7 @@ class ReportExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 88),
+          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 112),
           theme: theme,
           footer: (pw.Context context) => _buildDocumentFooter(
             context,
@@ -494,7 +501,7 @@ class ReportExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 88),
+          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 112),
           theme: theme,
           footer: (pw.Context context) => _buildDocumentFooter(
             context,
@@ -703,14 +710,14 @@ class ReportExportService {
                       ),
                     ),
                   ),
-                if (branding.wordmark != null)
+                if (branding.logo != null)
                   pw.Positioned(
                     left: 20,
-                    top: 26,
+                    top: 22,
                     child: pw.Image(
-                      branding.wordmark!,
-                      width: 420,
-                      height: 28,
+                      branding.logo!,
+                      width: 168,
+                      height: 52,
                       fit: pw.BoxFit.contain,
                     ),
                   )
@@ -730,11 +737,11 @@ class ReportExportService {
                   ),
                 pw.Positioned(
                   left: 22,
-                  top: 67,
+                  top: 62,
                   child: pw.Text(
                     reportLabel,
                     style: pw.TextStyle(
-                      fontSize: 18,
+                      fontSize: 22,
                       fontWeight: pw.FontWeight.bold,
                       color: PdfColors.white,
                     ),
@@ -842,13 +849,24 @@ class ReportExportService {
   }) {
     final isLastPage = context.pageNumber == context.pagesCount;
     final hasFooterSignature = isLastPage && signature != null;
+    final centerDisc = branding.footerCenterDisc;
 
     return pw.Container(
-      alignment: hasFooterSignature ? pw.Alignment.centerLeft : pw.Alignment.center,
-      padding: const pw.EdgeInsets.only(top: 4, bottom: 10),
-      child: hasFooterSignature
-          ? pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 40),
+      height: hasFooterSignature ? 108 : 52,
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          top: pw.BorderSide(color: _brandRed, width: 0.8),
+        ),
+      ),
+      padding: const pw.EdgeInsets.only(top: 6, bottom: 6),
+      child: pw.Stack(
+        alignment: pw.Alignment.bottomCenter,
+        children: [
+          if (hasFooterSignature)
+            pw.Positioned(
+              left: 40,
+              right: 40,
+              bottom: 36,
               child: pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
@@ -872,52 +890,57 @@ class ReportExportService {
                       compact: true,
                     ),
                   ),
-                  pw.SizedBox(width: 18),
+                  pw.SizedBox(width: 14),
                   pw.SizedBox(
-                    width: 110,
+                    width: 120,
                     child: pw.Align(
-                      alignment: pw.Alignment.centerRight,
+                      alignment: pw.Alignment.bottomRight,
                       child: branding.logo != null
-                          ? pw.SizedBox(
-                              height: 22,
-                              child: pw.Image(
-                                branding.logo!,
-                                fit: pw.BoxFit.contain,
-                              ),
+                          ? pw.Image(
+                              branding.logo!,
+                              width: 100,
+                              height: 36,
+                              fit: pw.BoxFit.contain,
                             )
                           : pw.Text(
                               'K H O N O L O G Y',
                               style: pw.TextStyle(
-                                fontSize: 12,
+                                fontSize: 11,
                                 fontWeight: pw.FontWeight.bold,
                                 color: _brandRed,
-                                letterSpacing: 1.6,
+                                letterSpacing: 1.4,
                               ),
                             ),
                     ),
                   ),
                 ],
               ),
-            )
-          : ((branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3) != null
-              ? pw.Center(
-                  child: pw.SizedBox(
-                    height: 24,
-                    child: pw.Image(
-                      (branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3)!,
-                      fit: pw.BoxFit.contain,
+            ),
+          pw.Align(
+            alignment: pw.Alignment.bottomCenter,
+            child: pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 2),
+              child: centerDisc != null
+                  ? pw.ConstrainedBox(
+                      constraints: const pw.BoxConstraints(maxHeight: 40, maxWidth: 56),
+                      child: pw.Image(
+                        centerDisc,
+                        fit: pw.BoxFit.contain,
+                      ),
+                    )
+                  : pw.Text(
+                      '~~~',
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                        color: _brandRed,
+                        letterSpacing: 2,
+                      ),
                     ),
-                  ),
-                )
-              : pw.Text(
-                  '~~~',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                    color: _brandRed,
-                    letterSpacing: 2,
-                  ),
-                )),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1099,8 +1122,14 @@ class ReportExportService {
     final teamLines = team.map((m) {
       final mm = _asMap(m);
       final work = (mm['work'] ?? mm['workSummary'] ?? mm['work_summary'])?.toString();
-      final workPart = (work != null && work.trim().isNotEmpty) ? ' | Work: ${work.trim()}' : '';
-      return '- ${_stringOrDash(mm['name'])} | ${_stringOrDash(mm['email'])} | ${_stringOrDash(mm['role'])}$workPart';
+      final workStatus =
+          (mm['workStatus'] ?? mm['work_status'] ?? mm['deliverableStatus'] ?? mm['deliverable_status'])
+              ?.toString()
+              .trim();
+      final workSuffix = (work != null && work.trim().isNotEmpty)
+          ? ' | Work: ${work.trim()}${(workStatus != null && workStatus.isNotEmpty) ? ' ($workStatus)' : ''}'
+          : '';
+      return '- ${_stringOrDash(mm['name'])} | ${_stringOrDash(mm['email'])} | ${_stringOrDash(mm['role'])}$workSuffix';
     }).toList();
     final teamFirst = teamLines.length <= 2 ? teamLines : teamLines.sublist(0, 2);
     final teamRest = teamLines.length <= 2 ? const <String>[] : teamLines.sublist(2);
@@ -1138,7 +1167,8 @@ class ReportExportService {
       final status = _stringOrDash(dd['status']);
       final progress = '${_num(dd['progressPercent'])}%';
       final due = _formatIsoDate(dd['dueDate']?.toString());
-      final completedOn = _formatIsoDate(dd['completionDate']?.toString());
+      final completedRaw = dd['completionDate']?.toString().trim();
+      final completedOn = (completedRaw == null || completedRaw.isEmpty) ? '-' : _formatIsoDate(completedRaw);
       final category = _stringOrDash(dd['category']);
       final isOverdue = (dd['isOverdue'] == true) ? 'yes' : 'no';
       return '- $name | Owner: $ownerName | Status: $status | Progress: $progress | Due: $due | Completed: $completedOn | Category: $category | Overdue: $isOverdue';
@@ -1789,8 +1819,12 @@ class ReportExportService {
                     ),
                   ),
                   pw.SizedBox(width: 16),
-                  if (branding.wordmark != null)
-                    pw.Image(branding.wordmark!, width: compact ? 96 : 120, height: compact ? 16 : 18, fit: pw.BoxFit.contain)
+                  if (branding.logo != null)
+                    pw.Image(
+                      branding.logo!,
+                      width: compact ? 88 : 108,
+                      fit: pw.BoxFit.contain,
+                    )
                   else
                     pw.Text(
                       'KHONOLOGY',

@@ -28,21 +28,36 @@ let openaiInitialized = false;
 
 async function initializeOpenAI() {
   if (openaiInitialized) return;
-  
-  if (process.env.OPENAI_API_KEY) {
+
+  const openRouterKey = String(process.env.OPENROUTER_API_KEY || process.env.OpenRouter_API_KEY || '').trim();
+  const openAiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  const apiKey = openRouterKey || openAiKey;
+  const explicitBase = String(process.env.OPENAI_BASE_URL || '').trim().replace(/\/+$/, '');
+  const baseURL =
+    explicitBase ||
+    (openRouterKey ? 'https://openrouter.ai/api/v1' : '');
+
+  if (apiKey) {
     try {
       const { default: OpenAI } = await import('openai');
       openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
+        apiKey,
+        ...(baseURL ? { baseURL } : {}),
       });
-      console.log('✅ OpenAI initialized');
+      const viaOpenRouter =
+        !!openRouterKey || (!!baseURL && baseURL.toLowerCase().includes('openrouter'));
+      console.log(
+        viaOpenRouter
+          ? '✅ AI client initialized (OpenRouter-compatible endpoint)'
+          : '✅ OpenAI initialized',
+      );
     } catch (error) {
-      console.warn('⚠️ OpenAI not available:', error.message);
+      console.warn('⚠️ AI client not available:', error.message);
     }
   } else {
-    console.log('ℹ️ OpenAI API key not provided - using local analysis only');
+    console.log('ℹ️ No OPENROUTER_API_KEY or OPENAI_API_KEY — using local analysis only');
   }
-  
+
   openaiInitialized = true;
 }
 
@@ -8517,7 +8532,7 @@ app.get('/api/v1/sign-off-reports/:id/pdf', authenticateOrReviewToken, async (re
 
     const now = new Date();
     const docDate = row.created_at ? new Date(row.created_at) : now;
-    const dateLabel = docDate.toISOString().slice(0, 10);
+    const dateLabel = `${docDate.getDate()}/${docDate.getMonth() + 1}/${docDate.getFullYear()}`;
 
     const signatureResult = await pool.query(
       `SELECT 
@@ -8555,7 +8570,7 @@ app.get('/api/v1/sign-off-reports/:id/pdf', authenticateOrReviewToken, async (re
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${title.replaceAll('"', '')}.pdf"`);
 
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
     doc.pipe(res);
 
     const pageWidth = doc.page.width;
@@ -8563,14 +8578,21 @@ app.get('/api/v1/sign-off-reports/:id/pdf', authenticateOrReviewToken, async (re
     const barHeight = 18;
 
     const bgCandidates = [
-      path.join(__dirname, '..', 'frontend', 'assets', 'Icons', 'Chatbot_BG.png'),
+      path.join(__dirname, '..', 'frontend', 'assets', 'Icons', 'khono_bg.png'),
+      path.join(__dirname, '..', 'lib', 'assets', 'Icons', 'khono_bg.png'),
       path.join(__dirname, '..', 'frontend', 'assets', 'images', 'khono_bg.png'),
+      path.join(__dirname, '..', 'frontend', 'assets', 'Icons', 'Chatbot_BG.png'),
+    ];
+    const discCandidates = [
+      path.join(__dirname, '..', 'frontend', 'assets', 'Icons', 'khono_red_disc.png'),
+      path.join(__dirname, '..', 'lib', 'assets', 'Icons', 'khono_red_disc.png'),
     ];
     const iconCandidates = [
       path.join(__dirname, '..', 'frontend', 'assets', 'Icons', 'Sprints console active.png.png'),
       path.join(__dirname, '..', 'frontend', 'assets', 'Sprints.png'),
     ];
     const bgPath = bgCandidates.find((p) => fs.existsSync(p)) || null;
+    const discPath = discCandidates.find((p) => fs.existsSync(p)) || null;
     const sprintIconPath = iconCandidates.find((p) => fs.existsSync(p)) || null;
 
     if (bgPath) {
@@ -8592,8 +8614,8 @@ app.get('/api/v1/sign-off-reports/:id/pdf', authenticateOrReviewToken, async (re
       x += 18;
     }
 
-    doc.fillColor(brandWhite).fontSize(18).font('Helvetica-Bold');
-    doc.text('SPRINT SIGN-OFF REPORT', 40, 45, { lineBreak: false });
+    doc.fillColor(brandWhite).fontSize(22).font('Helvetica-Bold');
+    doc.text('SPRINT SIGN-OFF REPORT', 40, 42, { lineBreak: false });
 
     const circleSize = 56;
     const circleX = pageWidth - 40 - circleSize;
@@ -8617,10 +8639,10 @@ app.get('/api/v1/sign-off-reports/:id/pdf', authenticateOrReviewToken, async (re
     doc.text(`Title: ${safeTitle}`, 40, headerImageHeight + 4, { width: pageWidth - 160, lineBreak: false });
     doc.text(`Date: ${dateLabel}`, pageWidth - 140, headerImageHeight + 4, { width: 100, align: 'right', lineBreak: false });
 
-    doc.moveDown(6);
-    doc.y = headerImageHeight + barHeight + 24;
+    doc.moveDown(0);
+    doc.y = headerImageHeight + barHeight + 28;
 
-    const section = (label) => {
+    const sectionFullWidth = (label) => {
       const left = doc.page.margins.left;
       const right = doc.page.margins.right;
       const width = pageWidth - left - right;
@@ -8633,106 +8655,244 @@ app.get('/api/v1/sign-off-reports/:id/pdf', authenticateOrReviewToken, async (re
       doc.fillColor('#111111').fontSize(10).font('Helvetica');
     };
 
-    const writeKvs = (kvs) => {
-      for (const [k, v] of kvs) {
-        doc.fillColor('#333333').font('Helvetica-Bold').text(`${k} `, { continued: true });
-        doc.fillColor('#111111').font('Helvetica').text(String(v ?? '-'));
+    const drawColumnSection = (label, pairs, x, width, yStart) => {
+      let y = yStart;
+      doc.rect(x, y, width, 18).fill('#F2CCCC');
+      doc.fillColor('#111111').fontSize(11).font('Helvetica-Bold');
+      doc.text(label, x + 8, y + 5, { width: width - 16, lineBreak: false });
+      y += 24;
+      doc.fontSize(10);
+      for (const [k, v] of pairs) {
+        doc.fillColor('#333333').font('Helvetica-Bold');
+        doc.text(`${k} `, x + 8, y, { width: width - 16, continued: true });
+        doc.fillColor('#111111').font('Helvetica');
+        doc.text(String(v ?? '-'), { width: width - 16 });
+        y += 14;
       }
-      doc.moveDown(0.6);
+      return y + 8;
     };
 
     const data = sprintReportData || {};
     const project = (data.project && typeof data.project === 'object') ? data.project : {};
     const sprint = (data.sprint && typeof data.sprint === 'object') ? data.sprint : {};
     const summary = (data.summary && typeof data.summary === 'object') ? data.summary : {};
-    const teamMembers = (((data.team && typeof data.team === 'object') ? data.team : {}).members) || [];
+    let teamMembers = [];
+    if (Array.isArray(data.team)) {
+      teamMembers = data.team;
+    } else if (data.team && typeof data.team === 'object' && Array.isArray(data.team.members)) {
+      teamMembers = data.team.members;
+    }
+    const deliverables = Array.isArray(data.deliverables) ? data.deliverables : [];
+    const sprintIdsLen = Array.isArray(data.sprintIds) ? data.sprintIds.length : 0;
 
-    section('PROJECT DETAIL');
-    writeKvs([
+    let totalDel = 0;
+    let completedAll = 0;
+    let inProgAll = 0;
+    let notStartAll = 0;
+    let overdueAll = 0;
+    let blockedAll = 0;
+    for (const d of deliverables) {
+      totalDel += 1;
+      const statusRaw = String(d.status || '').toLowerCase();
+      if (d.isOverdue === true) overdueAll += 1;
+      if (statusRaw.includes('block')) blockedAll += 1;
+      if (statusRaw.includes('not') && statusRaw.includes('start')) notStartAll += 1;
+      if (statusRaw.includes('progress')) inProgAll += 1;
+      if (statusRaw.includes('done') || statusRaw.includes('complete') || statusRaw.includes('signed_off') || statusRaw.includes('signedoff')) {
+        completedAll += 1;
+      }
+    }
+
+    const innerW = pageWidth - doc.page.margins.left - doc.page.margins.right;
+    const colGap = 16;
+    const colW = (innerW - colGap) / 2;
+    const colL = doc.page.margins.left;
+    const colR = colL + colW + colGap;
+
+    const yTop = doc.y;
+    const leftEnd = drawColumnSection('PROJECT DETAIL:', [
       ['Name:', project.name || row.project_name || '-'],
       ['Key:', project.key || '-'],
       ['ID:', project.id || row.project_id || '-'],
-    ]);
+    ], colL, colW, yTop);
 
-    section('SPRINT DETAIL');
-    writeKvs([
+    const rightEnd = drawColumnSection('PROJECT SPRINT TOTALS:', [
+      ['Total Sprints:', String(sprintIdsLen > 0 ? sprintIdsLen : 1)],
+      ['Total Deliverables:', String(totalDel)],
+      ['Completed:', String(completedAll)],
+      ['In Progress:', String(inProgAll)],
+      ['Not Started:', String(notStartAll)],
+      ['Overdue:', String(overdueAll)],
+      ['Blocked:', String(blockedAll)],
+    ], colR, colW, yTop);
+
+    doc.y = Math.max(leftEnd, rightEnd);
+
+    const yRow2 = doc.y;
+    const left2 = drawColumnSection('SPRINT DETAIL:', [
       ['Name:', sprint.name || '-'],
-      ['ID:', sprint.id || '-'],
+      ['ID:', sprint.id != null ? String(sprint.id) : '-'],
       ['Status:', sprint.status || '-'],
       ['Start:', sprint.startDate ? String(sprint.startDate).slice(0, 10) : '-'],
       ['End:', sprint.endDate ? String(sprint.endDate).slice(0, 10) : '-'],
-    ]);
+    ], colL, colW, yRow2);
 
-    section('SPRINT SUMMARY');
-    writeKvs([
-      ['Total Deliverables:', summary.totalDeliverables ?? '-'],
-      ['Completed:', summary.completedDeliverables ?? '-'],
-      ['In Progress:', summary.inProgressDeliverables ?? '-'],
-      ['Not Started:', summary.notStartedDeliverables ?? '-'],
-      ['Blocked:', summary.blockedDeliverables ?? '-'],
-      ['Completion Rate:', `${summary.completionRatePercent ?? summary.sprintProgressPercent ?? '-'}%`],
+    const spProg = summary.sprintProgressPercent != null ? `${summary.sprintProgressPercent}%` : '-';
+    const compRate = summary.completionRatePercent != null ? `${summary.completionRatePercent}%` : '-';
+
+    const right2 = drawColumnSection('SPRINT SUMMARY:', [
+      ['Total Deliverables:', summary.totalDeliverables != null ? String(summary.totalDeliverables) : String(totalDel)],
+      ['Completed:', summary.completedDeliverables != null ? String(summary.completedDeliverables) : '-'],
+      ['In Progress:', summary.inProgressDeliverables != null ? String(summary.inProgressDeliverables) : '-'],
+      ['Not Started:', summary.notStartedDeliverables != null ? String(summary.notStartedDeliverables) : '-'],
+      ['Overdue:', summary.overdueDeliverables != null ? String(summary.overdueDeliverables) : '-'],
+      ['Blocked:', summary.blockedDeliverables != null ? String(summary.blockedDeliverables) : '-'],
+      ['Sprint Progress:', spProg],
+      ['Completion Rate:', compRate],
       ['Health:', summary.health ? String(summary.health).toUpperCase() : '-'],
-    ]);
+    ], colR, colW, yRow2);
 
-    section('TEAM MEMBERS');
-    if (Array.isArray(teamMembers) && teamMembers.length > 0) {
+    doc.y = Math.max(left2, right2) + 6;
+
+    const perf = Array.isArray(data.performanceMetrics) && data.performanceMetrics.length > 0
+      ? data.performanceMetrics
+      : [];
+    if (perf.length > 0) {
+      doc.addPage();
+      doc.y = doc.page.margins.top + 10;
+      sectionFullWidth('SPRINT METRICS GRAPHS');
+      doc.fillColor('#666666').fontSize(8.5).font('Helvetica-Oblique');
+      doc.text('Compact sprint graphs summarise delivery, quality, and scope without breaking the report layout.', doc.page.margins.left, doc.y, {
+        width: innerW,
+      });
+      doc.moveDown(1.2);
+      doc.fillColor('#111111').fontSize(9).font('Helvetica');
+      for (const m of perf) {
+        const committed = Number(m.committed_points) || 0;
+        const completedPts = Number(m.completed_points) || 0;
+        const pct = committed > 0 ? Math.round((completedPts / committed) * 100) : 0;
+        const nm = m.name || '-';
+        doc.text(`${nm}: completion ${pct}% (committed ${committed}, completed ${completedPts}, velocity ${m.velocity ?? 0})`);
+        doc.moveDown(0.4);
+      }
+      doc.moveDown(0.8);
+    }
+
+    sectionFullWidth('TEAM MEMBERS');
+    if (teamMembers.length > 0) {
       for (const m of teamMembers) {
         const name = m.name || 'Unknown';
-        const role = m.role || '';
-        const email = m.email || '';
-        const work = m.work || '';
-        doc.fillColor('#111111').font('Helvetica').text(`• ${name}${role ? ' (' + role + ')' : ''}${email ? ' — ' + email : ''}`);
-        if (work) {
-          doc.fillColor('#555555').fontSize(9).text(`  Work: ${work}`);
-          doc.fontSize(10);
-        }
+        const email = m.email || '-';
+        const role = m.role || '-';
+        const work = (m.work || m.workSummary || m.work_summary || '').toString().trim();
+        const ws = (m.workStatus || m.work_status || m.status || '').toString().trim();
+        const workPart = work
+          ? ` | Work: ${work}${ws ? ` (${ws})` : ''}`
+          : '';
+        doc.fillColor('#111111').fontSize(10).font('Helvetica').text(`- ${name} | ${email} | ${role}${workPart}`);
       }
-      doc.moveDown(0.6);
     } else {
-      doc.fillColor('#111111').font('Helvetica').text('None');
-      doc.moveDown(0.6);
+      doc.text('None');
     }
+    doc.moveDown(1);
 
-    const notes = String(content.changeRequestDetails || content.change_request_details || content.clientComment || content.client_comment || '').trim();
-    if (notes) {
-      section('COMMENTS');
-      doc.fillColor('#111111').font('Helvetica').text(notes);
-      doc.moveDown(0.6);
-    }
-
-    section('DIGITAL SIGNATURES');
-    if (signatures.length === 0) {
-      doc.fillColor('#111111').font('Helvetica').text('None');
-      doc.moveDown(0.6);
+    sectionFullWidth('DELIVERABLES');
+    if (deliverables.length > 0) {
+      for (const d of deliverables) {
+        const name = d.name || d.title || '-';
+        const owner = d.ownerName || '-';
+        const st = d.status || '-';
+        const prog = d.progressPercent != null ? `${d.progressPercent}%` : '-';
+        const due = d.dueDate ? String(d.dueDate).slice(0, 10) : '-';
+        const compRaw = d.completionDate != null ? String(d.completionDate).slice(0, 10) : '';
+        const comp = compRaw && compRaw.length > 0 ? compRaw : '-';
+        const cat = d.category || '-';
+        const ov = d.isOverdue === true ? 'yes' : 'no';
+        doc.fontSize(9.5).text(`- ${name} | Owner: ${owner} | Status: ${st} | Progress: ${prog} | Due: ${due} | Completed: ${comp} | Category: ${cat} | Overdue: ${ov}`);
+      }
     } else {
-      for (const s of signatures) {
-        const signer = (s.signer_name || s.signer_email || 'Unknown').toString();
-        const role = (s.signer_role || '').toString();
-        const when = s.signed_at ? new Date(s.signed_at).toISOString().replace('T', ' ').slice(0, 19) : '';
-        doc.fillColor('#111111').font('Helvetica').text(`• ${signer}${role ? ' (' + role + ')' : ''}${when ? ' — ' + when : ''}`);
+      doc.text('None');
+    }
+    doc.moveDown(1);
+
+    sectionFullWidth('SIGN-OFF NOTES');
+    const noteText = String(
+      content.signOffNote ||
+        content.sign_off_note ||
+        row.sign_off_note ||
+        content.clientComment ||
+        content.client_comment ||
+        content.changeRequestDetails ||
+        content.change_request_details ||
+        ''
+    ).trim() || '-';
+    doc.fontSize(10).font('Helvetica').text(noteText, { width: innerW });
+
+    const sigFooter = signatures.length > 0 ? signatures[signatures.length - 1] : null;
+
+    const range = doc.bufferedPageRange();
+    for (let pi = 0; pi < range.count; pi += 1) {
+      doc.switchToPage(range.start + pi);
+      const pwPage = doc.page.width;
+      const ph = doc.page.height;
+      const ml = doc.page.margins.left;
+      const mr = doc.page.margins.right;
+      const mb = doc.page.margins.bottom;
+      const footerTop = ph - mb - 68;
+      const isLast = pi === range.count - 1;
+
+      doc.save();
+      doc.moveTo(ml, footerTop).lineTo(pwPage - mr, footerTop).lineWidth(0.8).strokeColor(brandRed).stroke();
+      doc.restore();
+
+      if (discPath) {
+        try {
+          const dsz = 36;
+          doc.image(discPath, (pwPage - dsz) / 2, ph - mb - dsz - 2, { width: dsz, height: dsz });
+        } catch (_) {}
+      }
+
+      if (isLast && bgPath) {
+        try {
+          const cw = 72;
+          const ch = 48;
+          doc.image(bgPath, pwPage - mr - cw - 4, ph - mb - ch - 2, { width: cw, height: ch });
+        } catch (_) {}
+      }
+
+      if (isLast && sigFooter) {
+        const s = sigFooter;
+        const signerName = (s.signer_name || s.signer_email || 'Unknown').toString();
+        const role = (s.signer_role || '').toString().replace(/_/g, ' ');
+        const email = (s.signer_email || '').toString();
+        const when = s.signed_at ? new Date(s.signed_at) : null;
+        const dateStr = when ? `${when.getDate()}/${when.getMonth() + 1}/${when.getFullYear()}` : '';
+        let fy = footerTop + 6;
+        doc.fillColor(brandRed).font('Helvetica-Bold').fontSize(9.5).text(signerName, ml, fy);
+        fy += 12;
+        doc.font('Helvetica').fontSize(7.5).text(role, ml, fy);
+        fy += 10;
+        if (email) {
+          doc.text(email, ml, fy);
+          fy += 10;
+        }
+        doc.text(dateStr, ml, fy);
+        fy += 8;
         const rawSig = (s.signature_data || '').toString().trim();
         if (rawSig) {
-          const base64 = rawSig.includes('base64,') ? rawSig.split('base64,').pop() : rawSig;
+          const b64 = rawSig.includes('base64,') ? rawSig.split('base64,').pop() : rawSig;
           try {
-            const buf = Buffer.from(base64, 'base64');
+            const buf = Buffer.from(b64, 'base64');
             if (buf.length > 0) {
-              const sigW = 240;
-              const sigH = 80;
-              const xSig = doc.page.margins.left + 22;
-              const ySig = doc.y + 8;
-              doc.save();
-              doc.rect(xSig - 6, ySig - 6, sigW + 12, sigH + 12).strokeColor('#D0D0D0').lineWidth(1).stroke();
-              doc.restore();
-              doc.image(buf, xSig, ySig, { width: sigW, height: sigH, fit: [sigW, sigH] });
-              doc.y = ySig + sigH + 14;
-            } else {
-              doc.moveDown(0.2);
+              doc.image(buf, ml, fy, { width: 130, height: 40, fit: [130, 40] });
             }
-          } catch (_) {
-            doc.moveDown(0.2);
-          }
-        } else {
-          doc.moveDown(0.2);
+          } catch (_) {}
+        }
+        doc.fillColor(brandRed).font('Helvetica-Bold').fontSize(10);
+        let xw = pwPage - mr - 108;
+        for (const ch2 of 'KHONOLOGY'.split('')) {
+          doc.text(ch2, xw, footerTop + 22, { lineBreak: false });
+          xw += 11;
         }
       }
     }
@@ -9694,12 +9854,17 @@ app.post('/api/v1/release-readiness/analyze', authenticateToken, async (req, res
       });
     }
 
-    // Initialize OpenAI if available
+    // Initialize AI client (OpenRouter when OPENROUTER_API_KEY is set, else OpenAI)
     await initializeOpenAI();
 
-    // Try OpenAI AI analysis first (if available)
+    // Try remote AI analysis first (if available)
     if (openai) {
       try {
+        const useOpenRouter = !!String(process.env.OPENROUTER_API_KEY || process.env.OpenRouter_API_KEY || '').trim();
+        const chatModel =
+          String(process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || '').trim() ||
+          (useOpenRouter ? 'google/gemini-2.0-flash-001' : 'gpt-3.5-turbo');
+
         const prompt = `You are an expert software delivery analyst. Analyze the release readiness of this deliverable and provide structured feedback.
 
 DELIVERABLE INFORMATION:
@@ -9741,7 +9906,7 @@ Return ONLY valid JSON in this exact format:
 }`;
 
         const completion = await openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
+          model: chatModel,
           messages: [
             {
               role: "system",
@@ -9761,7 +9926,7 @@ Return ONLY valid JSON in this exact format:
         
         // Validate and return AI response
         if (aiResponse.status && ['green', 'amber', 'red'].includes(aiResponse.status)) {
-          console.log('✅ AI analysis completed using GPT-3.5-turbo');
+          console.log(`✅ AI analysis completed using model: ${chatModel}`);
           return res.json({
             success: true,
             data: {
@@ -9777,19 +9942,19 @@ Return ONLY valid JSON in this exact format:
           });
         }
       } catch (aiError) {
-        console.error('⚠️  OpenAI API error, falling back to rule-based analysis:', aiError.message);
-        
+        console.error('⚠️  AI API error, falling back to rule-based analysis:', aiError.message);
+
         // Check if it's a rate limit/quota error
         if (aiError.message.includes('429') || aiError.message.includes('quota') || aiError.message.includes('rate limit')) {
-          console.log('💰 OpenAI quota exceeded - using rule-based analysis');
-          console.log('💡 To enable AI analysis, please check your OpenAI billing at: https://platform.openai.com/account/billing/usage');
+          console.log('💰 AI provider quota or rate limit — using rule-based analysis');
+          console.log('💡 Check your provider dashboard (e.g. OpenRouter usage / OpenAI billing).');
         }
         
         // Fall through to rule-based analysis
       }
     }
 
-    // Fallback: Rule-based analysis (if OpenAI not available or fails)
+    // Fallback: Rule-based analysis (if AI client not available or request fails)
     console.log('📊 Using rule-based analysis (fallback)');
     const issues = [];
     const recommendations = [];
