@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD49 SIT",
+  "version": "Ver 2026.05BD51 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T10:41:41Z",
+  "generated_at": "2026-05-14T16:40:48Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix: add debug logs and fix sprint filtering",
+      "timestamp": "2026-05-14T18:39:50+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T10:41:41Z"
+    },
     {
       "author": "Nathi2266",
       "message": "refactor(report): streamline branding asset handling in PDF generation",
@@ -249,6 +259,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 49,
+  "total_commits": 51,
   "date_range": "2026-05-14"
 }
