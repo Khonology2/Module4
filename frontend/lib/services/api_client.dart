@@ -104,6 +104,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
     final candidates = <String>[
       if (envBase.isNotEmpty) normalize(envBase),
+      'https://flow-space.onrender.com/api/v1',
       'https://flow-space-backend.onrender.com/api/v1',
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
@@ -177,6 +178,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
     final candidates = <String>[
       if (envBase.isNotEmpty) normalize(envBase),
+      'https://flow-space.onrender.com/api/v1',
       'https://flow-space-backend.onrender.com/api/v1',
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
@@ -852,8 +854,8 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     ApiResponse response = ApiResponse.error('Login failed. Please try again.');
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
     final isProdLike = isProdFlag || Environment.isRenderDeployed;
-    final maxAttempts = isProdLike ? 1 : 2;
-    final maxTotalWait = isProdLike ? const Duration(seconds: 5) : const Duration(seconds: 10);
+    final maxAttempts = isProdLike ? 3 : 2;
+    final maxTotalWait = isProdLike ? const Duration(seconds: 35) : const Duration(seconds: 10);
     final startedAt = DateTime.now();
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -862,6 +864,9 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       }
       debugPrint('🔐 Login attempt $attempt for: $email');
       try {
+        if (isProdLike && attempt == 1) {
+          await warmUpBackend(maxWait: const Duration(seconds: 20));
+        }
         await _resolveAndSetApiBaseUrlOverride(force: true);
       } catch (_) {}
 
@@ -876,7 +881,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
                 'password': password,
               },
             )
-            .timeout(isProdLike ? const Duration(seconds: 5) : const Duration(seconds: 12));
+            .timeout(isProdLike ? const Duration(seconds: 20) : const Duration(seconds: 12));
 
         bool looksHtml(http.Response r) {
           final ct = (r.headers['content-type'] ?? '').toLowerCase();
@@ -884,8 +889,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
           return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
         }
 
-        if (looksHtml(raw) || raw.statusCode == 502 || raw.statusCode == 503 || raw.statusCode == 504) {
-          response = ApiResponse.error('Login failed. Please try again.', raw.statusCode);
+        if (looksHtml(raw)) {
+          response = ApiResponse.error(
+            'Server returned HTML instead of JSON. Check the API base URL configuration.',
+            raw.statusCode,
+          );
         } else {
           response = _handleResponse(raw);
         }
@@ -895,13 +903,14 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         response = ApiResponse.error('Login failed. Please try again.', 0);
       }
 
-      // Any HTTP response (2xx/4xx/5xx) should stop retrying immediately.
-      if (response.statusCode != 0) {
+      final status = response.statusCode;
+      final shouldRetry = status == 0 || status == 502 || status == 503 || status == 504;
+      if (!shouldRetry) {
         break;
       }
 
       if (attempt < maxAttempts) {
-        await Future.delayed(const Duration(seconds: 2));
+        await Future.delayed(Duration(seconds: 2 * attempt));
       }
     }
 

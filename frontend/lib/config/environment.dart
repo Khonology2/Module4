@@ -40,7 +40,7 @@ class Environment {
 
     // Fallback to the deployed backend for production-like hosts.
     if (isProduction || isRenderDeployed) {
-      return 'https://flow-space-backend.onrender.com/api/v1';
+      return 'https://flow-space.onrender.com/api/v1';
     }
     return 'http://localhost:8000/api/v1';
   }
@@ -74,12 +74,14 @@ class Environment {
 
   // Check if running on Render.com or other production environments
   static bool get isRenderDeployed {
-    // Check if we're in a browser environment and not localhost
     try {
       final uri = Uri.base;
-      return uri.host.contains('onrender.com') ||
-          uri.host.contains('flownet.works');
-    } catch (e) {
+      final host = uri.host.toLowerCase();
+      if (host.isEmpty) return false;
+      if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+      if (host.contains('localhost') || host.contains('127.0.0.1')) return false;
+      return true;
+    } catch (_) {
       return false;
     }
   }
