@@ -47,10 +47,20 @@ class SprintDatabaseService {
         if (projectId != null && projectId.isNotEmpty) 'project_id': projectId,
         if (projectKey != null && projectKey.isNotEmpty) 'project_key': projectKey,
       },);
+      
+      debugPrint('🚀 Fetching sprints from: $uri');
+      debugPrint('🔒 Headers: ${_headers.keys}');
+      debugPrint('🔑 Has token: ${_token != null}');
+      
       final response = await http.get(uri, headers: _headers);
+      
+      debugPrint('📡 Response status code: ${response.statusCode}');
+      debugPrint('📡 Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final dynamic data = jsonDecode(response.body);
+        debugPrint('📦 Parsed data type: ${data.runtimeType}');
+        
         List<Map<String, dynamic>> list;
         if (data is List) {
           list = List<Map<String, dynamic>>.from(data);
@@ -59,6 +69,11 @@ class SprintDatabaseService {
               ? (data['data'] ?? data['sprints'] ?? data['items'] ?? [])
               : [];
           list = items.cast<Map<String, dynamic>>();
+        }
+        
+        debugPrint('📦 Number of sprints found: ${list.length}');
+        for (var i = 0; i < list.length && i < 3; i++) {
+          debugPrint('📦 Sprint $i: ${list[i]}');
         }
 
         // Client-side filter if backend doesn't honor query

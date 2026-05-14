@@ -91,9 +91,13 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
       // Load projects from same API as Project Workspace so new projects appear everywhere
       final projectList = await ProjectService.getAllProjects(limit: 1000);
       final projects = projectList.map((p) => p.toJson()).toList();
+      debugPrint('📥 SprintConsole: projects loaded: ${projects.length}');
+      
       List<Map<String, dynamic>> sprints;
       if (_selectedProjectKey != null && _selectedProjectKey!.isNotEmpty) {
         final selectedKey = _selectedProjectKey!.trim();
+        debugPrint('📥 SprintConsole: selectedProjectKey = $selectedKey');
+        
         final selected = projects.firstWhere(
           (p) {
             final key = p['key']?.toString();
@@ -102,6 +106,8 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
           },
           orElse: () => <String, dynamic>{},
         );
+        debugPrint('📥 SprintConsole: selected project found: $selected');
+        
         final pid = (selected['id']?.toString() ?? '').trim();
         final pkey = (selected['key']?.toString() ?? '').trim();
         final fallbackPid = isUuidLike(selectedKey) ? selectedKey : '';
@@ -113,6 +119,12 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
       } else {
         sprints = await _sprintService.getSprints();
       }
+      
+      debugPrint('📥 SprintConsole: total sprints fetched: ${sprints.length}');
+      for (var i = 0; i < sprints.length; i++) {
+        debugPrint('📥 Sprint $i: ${sprints[i]}');
+      }
+      
       setState(() {
         _projects.clear();
         _projects.addAll(projects);
@@ -149,6 +161,7 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
         });
       }
     } catch (e) {
+      debugPrint('❌ SprintConsole: Error loading data: $e');
       _showSnackBar('Error loading data: $e', isError: true);
     } finally {
       setState(() {
@@ -854,16 +867,27 @@ class _SprintConsoleScreenState extends State<SprintConsoleScreen> {
     final projectId = project['id']?.toString();
     final projectKey = project['key']?.toString();
 
+    debugPrint('📦 SprintConsole: _buildProjectNestedSprints');
+    debugPrint('📦 projectId = $projectId, projectKey = $projectKey');
+    debugPrint('📦 _sprints.length = ${_sprints.length}');
+
     // Check if there are any active (non-completed) sprints for this project
     final projectSprints = _sprints.where((s) {
       try {
         final pid = (s['project_id'] ?? s['projectId'] ?? (s['project'] is Map ? s['project']['id'] : null))?.toString();
         final pkey = (s['project_key'] ?? s['projectKey'] ?? (s['project'] is Map ? s['project']['key'] : null))?.toString();
+        
+        debugPrint('    📦 Checking sprint: s.id = ${s['id']}, s.project_id = $pid, s.project_key = $pkey');
+        
         if (projectId != null && projectId.isNotEmpty && pid == projectId) return true;
         if (projectKey != null && projectKey.isNotEmpty && pkey == projectKey) return true;
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('    ❌ Error checking sprint: $e');
+      }
       return false;
     }).toList();
+    
+    debugPrint('📦 projectSprints.length = ${projectSprints.length}');
 
     final hasActiveSprint = projectSprints.any((s) {
       final status = (s['status'] ?? '').toString().toLowerCase();

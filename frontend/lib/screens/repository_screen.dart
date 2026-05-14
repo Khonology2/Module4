@@ -132,9 +132,16 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
 
   Future<void> _loadFilters() async {
     try {
+      debugPrint('📥 _loadFilters() started');
+      
       final projects = await _sprintService.getProjects();
+      debugPrint('📥 Projects loaded: ${projects.length}');
+      
       final sprints = await _sprintService.getSprints();
+      debugPrint('📥 Sprints loaded: ${sprints.length}');
+      
       final deliverablesResponse = await _deliverableService.getDeliverables();
+      debugPrint('📥 Deliverables response success: ${deliverablesResponse.isSuccess}');
 
       setState(() {
         _projects = projects;
@@ -143,6 +150,7 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
             deliverablesResponse.data != null) {
           _deliverables =
               deliverablesResponse.data!['deliverables'] as List? ?? [];
+          debugPrint('📥 Deliverables loaded: ${_deliverables.length}');
         }
       });
 
@@ -157,6 +165,7 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
         }
       }
     } catch (e) {
+      debugPrint('❌ Error in _loadFilters: $e');
       // Silently fail - filters will just be empty
     }
   }
@@ -722,10 +731,14 @@ class _RepositoryScreenState extends State<RepositoryScreen> {
                           const DropdownMenuItem<String?>(
                               value: null, child: Text('All Sprints')),
                           ..._sprints
-                              .where((s) =>
-                                  _selectedProjectId == null ||
-                                  (s['project_id']?.toString() ==
-                                      _selectedProjectId))
+                              .where((s) {
+                                  if (_selectedProjectId == null) return true;
+                                  // Check both s['project_id'] and s['project']['id']
+                                  final pidFromSprint = s['project_id']?.toString();
+                                  final project = s['project'];
+                                  final pidFromProject = project is Map ? project['id']?.toString() : null;
+                                  return pidFromSprint == _selectedProjectId || pidFromProject == _selectedProjectId;
+                                })
                               .map(
                                 (s) => DropdownMenuItem<String?>(
                                   value: s['id']?.toString(),
