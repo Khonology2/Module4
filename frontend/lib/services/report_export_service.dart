@@ -16,18 +16,16 @@ import 'package:path_provider/path_provider.dart' if (dart.library.html) '../ser
 
 class _BrandingAssets {
   final pw.ImageProvider? logo;
-  final pw.ImageProvider? wordmark;
   final pw.ImageProvider? headerBackground;
   final pw.ImageProvider? sprintIcon;
   final pw.ImageProvider? footerIcon1;
   final pw.ImageProvider? footerIcon2;
   final pw.ImageProvider? footerIcon3;
-  /// Bottom-center logo on every PDF page (`khono_red_disc.png`).
+  /// Bottom-center mark on every PDF page (`khono_red_disc.png`).
   final pw.ImageProvider? footerCenterDisc;
 
   const _BrandingAssets({
     this.logo,
-    this.wordmark,
     this.headerBackground,
     this.sprintIcon,
     this.footerIcon1,
@@ -150,7 +148,6 @@ class ReportExportService {
 
   Future<_BrandingAssets> _loadBrandingAssetsUncached() async {
     pw.ImageProvider? logo;
-    pw.ImageProvider? wordmark;
     pw.ImageProvider? headerBackground;
     pw.ImageProvider? sprintIcon;
     pw.ImageProvider? footerIcon1;
@@ -159,13 +156,12 @@ class ReportExportService {
     pw.ImageProvider? footerCenterDisc;
 
     try {
-      final bytes = (await rootBundle.load('assets/Icons/khonology_name_icon.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) wordmark = pw.MemoryImage(bytes);
+      final bytes = (await rootBundle.load('assets/Icons/khono.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
-      wordmark ??= logo;
+      if (bytes.isNotEmpty) logo ??= pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/Icons/khono_bg.png')).buffer.asUint8List();
@@ -199,7 +195,6 @@ class ReportExportService {
 
     return _BrandingAssets(
       logo: logo,
-      wordmark: wordmark,
       headerBackground: headerBackground,
       sprintIcon: sprintIcon,
       footerIcon1: footerIcon1,
@@ -211,20 +206,18 @@ class ReportExportService {
 
   Future<_BrandingAssets> _loadBrandingAssetsFastUncached() async {
     pw.ImageProvider? logo;
-    pw.ImageProvider? wordmark;
     pw.ImageProvider? headerBackground;
     pw.ImageProvider? sprintIcon;
     pw.ImageProvider? footerIcon1;
     pw.ImageProvider? footerCenterDisc;
 
     try {
-      final bytes = (await rootBundle.load('assets/Icons/khonology_name_icon.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) wordmark = pw.MemoryImage(bytes);
+      final bytes = (await rootBundle.load('assets/Icons/khono.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/images/khono.png')).buffer.asUint8List();
-      if (bytes.isNotEmpty) logo = pw.MemoryImage(bytes);
-      wordmark ??= logo;
+      if (bytes.isNotEmpty) logo ??= pw.MemoryImage(bytes);
     } catch (_) {}
     try {
       final bytes = (await rootBundle.load('assets/Icons/khono_bg.png')).buffer.asUint8List();
@@ -258,7 +251,6 @@ class ReportExportService {
 
     return _BrandingAssets(
       logo: logo,
-      wordmark: wordmark,
       headerBackground: headerBackground,
       sprintIcon: sprintIcon,
       footerIcon1: footerIcon1,
@@ -449,7 +441,7 @@ class ReportExportService {
   Future<PdfBytesResult> buildPdfBytes(SignOffReport report, {bool fast = false, bool includeSignatures = true}) async {
     final hydrateFuture = fast ? _hydrateReportForPdfFast(report) : _hydrateReportForPdf(report);
     final brandingFuture = fast ? _loadBrandingAssetsFast() : _loadBrandingAssets();
-    final themeFuture = fast ? Future<pw.ThemeData?>.value(null) : _loadPdfTheme();
+    final themeFuture = _loadPdfTheme();
     final profileFuture = _loadUserProfileForPdf();
     final signaturesFuture = (!includeSignatures || fast)
         ? Future<List<Map<String, dynamic>>>.value(const <Map<String, dynamic>>[])
@@ -718,14 +710,14 @@ class ReportExportService {
                       ),
                     ),
                   ),
-                if (branding.wordmark != null)
+                if (branding.logo != null)
                   pw.Positioned(
                     left: 20,
-                    top: 26,
+                    top: 22,
                     child: pw.Image(
-                      branding.wordmark!,
-                      width: 420,
-                      height: 28,
+                      branding.logo!,
+                      width: 168,
+                      height: 52,
                       fit: pw.BoxFit.contain,
                     ),
                   )
@@ -857,8 +849,7 @@ class ReportExportService {
   }) {
     final isLastPage = context.pageNumber == context.pagesCount;
     final hasFooterSignature = isLastPage && signature != null;
-    final centerDisc =
-        branding.footerCenterDisc ?? branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3;
+    final centerDisc = branding.footerCenterDisc;
 
     return pw.Container(
       height: hasFooterSignature ? 108 : 52,
@@ -904,13 +895,12 @@ class ReportExportService {
                     width: 120,
                     child: pw.Align(
                       alignment: pw.Alignment.bottomRight,
-                      child: branding.wordmark != null
-                          ? pw.SizedBox(
-                              height: 22,
-                              child: pw.Image(
-                                branding.wordmark!,
-                                fit: pw.BoxFit.contain,
-                              ),
+                      child: branding.logo != null
+                          ? pw.Image(
+                              branding.logo!,
+                              width: 100,
+                              height: 36,
+                              fit: pw.BoxFit.contain,
                             )
                           : pw.Text(
                               'K H O N O L O G Y',
@@ -926,29 +916,13 @@ class ReportExportService {
                 ],
               ),
             ),
-          if (isLastPage && branding.headerBackground != null)
-            pw.Align(
-              alignment: pw.Alignment.bottomRight,
-              child: pw.Padding(
-                padding: const pw.EdgeInsets.only(right: 8, bottom: 2),
-                child: pw.SizedBox(
-                  width: 68,
-                  height: 42,
-                  child: pw.Image(
-                    branding.headerBackground!,
-                    fit: pw.BoxFit.cover,
-                  ),
-                ),
-              ),
-            ),
           pw.Align(
             alignment: pw.Alignment.bottomCenter,
             child: pw.Padding(
               padding: const pw.EdgeInsets.only(bottom: 2),
               child: centerDisc != null
-                  ? pw.SizedBox(
-                      width: 36,
-                      height: 36,
+                  ? pw.ConstrainedBox(
+                      constraints: const pw.BoxConstraints(maxHeight: 40, maxWidth: 56),
                       child: pw.Image(
                         centerDisc,
                         fit: pw.BoxFit.contain,
@@ -1845,8 +1819,12 @@ class ReportExportService {
                     ),
                   ),
                   pw.SizedBox(width: 16),
-                  if (branding.wordmark != null)
-                    pw.Image(branding.wordmark!, width: compact ? 96 : 120, height: compact ? 16 : 18, fit: pw.BoxFit.contain)
+                  if (branding.logo != null)
+                    pw.Image(
+                      branding.logo!,
+                      width: compact ? 88 : 108,
+                      fit: pw.BoxFit.contain,
+                    )
                   else
                     pw.Text(
                       'KHONOLOGY',
