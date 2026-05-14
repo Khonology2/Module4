@@ -541,144 +541,20 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             : null);
   }
 
+  /// Top banner title for the active role (e.g. "System Admin Dashboard").
+  String get _roleDashboardTitle =>
+      '${_currentUser?.roleDisplayName ?? 'Member'} Dashboard';
+
   @override
   Widget build(BuildContext context) {
     if (_currentUser == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final headerTextColor = isDarkMode ? Colors.white : Colors.black;
-    final isTeamMember = _currentUser!.role == UserRole.teamMember;
-    final isSystemAdmin = _currentUser!.role == UserRole.systemAdmin;
 
     return Stack(
       children: [
-        Column(
-          children: [
-            if (!isSystemAdmin)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                child: Row(
-                  children: [
-                    if (isTeamMember) ...[
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Text(
-                              '${_currentUser!.role.displayName} Dashboard',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: headerTextColor,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Text(
-                              'Hello, ${_currentUser!.name}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: headerTextColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      _buildTeamHeaderIconButton(
-                        icon: Icons.mail_outline,
-                        onTap: () => context.go('/notifications'),
-                      ),
-                      const SizedBox(width: 8),
-                      _buildTeamHeaderIconButton(
-                        icon: Icons.notifications_none,
-                        onTap: () => context.go('/notifications'),
-                      ),
-                    ] else ...[
-                      const SizedBox(width: 48),
-                      Expanded(
-                        child: Text(
-                          '${_currentUser!.role.displayName} Dashboard',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: headerTextColor,
-                          ),
-                        ),
-                      ),
-                      Builder(
-                        builder: (context) => PopupMenuButton<String>(
-                          icon: Icon(Icons.menu, color: headerTextColor),
-                          onSelected: (value) {
-                            switch (value) {
-                              case 'profile':
-                                context.go('/profile');
-                                break;
-                              case 'notifications':
-                                context.go('/notifications');
-                                break;
-                              case 'settings':
-                                context.go('/settings');
-                                break;
-                              case 'logout':
-                                _handleLogout();
-                                break;
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'profile',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.person),
-                                  SizedBox(width: 8),
-                                  Text('Profile'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'notifications',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.notifications),
-                                  SizedBox(width: 8),
-                                  Text('Notifications'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'settings',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.settings),
-                                  SizedBox(width: 8),
-                                  Text('Settings'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            Expanded(
-              child: _buildRoleSpecificContent(),
-            ),
-          ],
+        Positioned.fill(
+          child: _buildRoleSpecificContent(),
         ),
         Positioned(
           right: 16,
@@ -730,6 +606,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildAdminTopHeader(),
+                  const SizedBox(height: 10),
                   _buildTeamQuickActionsPanel(compact: compact),
                   const SizedBox(height: 10),
                   Text(
@@ -1551,7 +1429,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           child: Row(
             children: [
               Text(
-                'Delivery Manager Dashboard',
+                _roleDashboardTitle,
                 style: _dashboardTextStyle(size: 28, weight: FontWeight.w700),
               ),
               const SizedBox(width: 14),
@@ -2001,20 +1879,154 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }
 
   Widget _buildClientReviewerDashboard() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color textColor = isDarkMode ? Colors.white : Colors.black;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool compact = constraints.maxWidth < 980;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(10, 2, 10, 14),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1380),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildAdminTopHeader(),
+                  const SizedBox(height: 12),
+                  _buildAdminReminderHeroPanel(),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Review Metrics Overview',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: compact ? 22 : 26,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildTeamReviewMetricsCards(compact: compact),
+                  const SizedBox(height: 12),
+                  if (compact)
+                    Column(
+                      children: [
+                        _buildAdminDeliverablesPanel(),
+                        const SizedBox(height: 12),
+                        _buildAdminProjectsPanel(),
+                      ],
+                    )
+                  else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _buildAdminDeliverablesPanel(),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: _buildAdminProjectsPanel(),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 12),
+                  if (compact)
+                    Column(
+                      children: [
+                        _buildTeamRecentActivitiesPanel(),
+                        const SizedBox(height: 12),
+                        _buildReviewHistoryPanel(),
+                      ],
+                    )
+                  else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _buildTeamRecentActivitiesPanel(),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildReviewHistoryPanel(),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildReviewHistoryPanel() {
+    return Container(
+      decoration: _adminContentPanelDecoration(),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildWelcomeCard(),
-          const SizedBox(height: 24),
-          _buildReviewMetrics(),
-          const SizedBox(height: 24),
-          _buildPendingApprovals(),
-          const SizedBox(height: 24),
-          _buildRecentSubmissions(),
-          const SizedBox(height: 24),
-          _buildReviewHistory(),
+          Row(
+            children: [
+              _buildTeamRoundIcon(
+                Icons.rate_review_outlined,
+                assetPath: 'assets/Quick_Actions.png',
+                containerSize: 44,
+                assetVisualScale: 1.45,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Review History',
+                        style: _dashboardTextStyle(size: 20, weight: FontWeight.w700)),
+                    Text('Additional description can be included.',
+                        style: _dashboardTextStyle(size: 11)
+                            .copyWith(color: _subtitleTextColor())),
+                  ],
+                ),
+              ),
+              _buildTeamRoundIcon(
+                Icons.notifications_none,
+                size: 16,
+                assetPath: 'assets/notification.png',
+              ),
+              const SizedBox(width: 6),
+              Text('${_filteredAuditLogs.length}',
+                  style: _dashboardTextStyle(size: 16, weight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Divider(color: _adminDividerColor, height: 1),
+          const SizedBox(height: 8),
+          if (_isLoadingAuditLogs)
+            const Center(child: CircularProgressIndicator())
+          else if (_auditLogsError != null)
+            Text(_auditLogsError!, style: _dashboardTextStyle())
+          else if (_filteredAuditLogs.isEmpty)
+            Text('No review history found', style: _dashboardTextStyle())
+          else
+            ..._filteredAuditLogs.take(5).map((a) {
+              final action = a['action'] ?? a['event'] ?? a['type'] ?? 'Review';
+              final actor = a['actor'] ?? a['user'] ?? '';
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.rate_review_outlined, size: 16, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(
+                            actor.toString().isNotEmpty ? '$action • $actor' : action.toString(),
+                            style: _dashboardTextStyle(size: 12))),
+                  ],
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -2063,7 +2075,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           child: Row(
             children: [
               Text(
-                'Admin Dashboard',
+                _roleDashboardTitle,
                 style: _dashboardTextStyle(size: 20, weight: FontWeight.w700),
               ),
               const SizedBox(width: 14),
@@ -2306,7 +2318,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           Row(
             children: [
               _buildTeamRoundIcon(
-                Icons.track_changes,
+                Icons.error_outline,
                 assetPath: 'assets/Deliverables_overview.png',
                 containerSize: 44,
                 assetVisualScale: 1.45,
@@ -2316,7 +2328,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Deliverables Overview',
+                    Text('Pending Approvals',
                         style: _dashboardTextStyle(size: 20, weight: FontWeight.w700)),
                     Text('Additional description can be included if required.',
                         style: _dashboardTextStyle(size: 11)
@@ -2497,8 +2509,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: const Color(0xFFB01313)),
-            color: isActive ? FlownetColors.primary : Colors.transparent,
+            border: Border.all(color: const Color(0xFFC10D00)),
+            color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
           ),
           child: Text(
             label,
@@ -2708,6 +2720,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildWelcomeCard() {
     return Card(
       child: ListTile(
@@ -2725,8 +2738,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           },
         ),
         title: Text('Welcome, ${_currentUser?.name ?? 'User'}'),
-        subtitle:
-            Text('${_currentUser?.roleDisplayName ?? 'Member'} Dashboard'),
+        subtitle: Text(_roleDashboardTitle),
       ),
     );
   }
@@ -3094,6 +3106,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildReviewMetrics() {
     return Card(
       child: Padding(
@@ -3138,6 +3151,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildPendingApprovals() {
     return Card(
       child: Padding(
@@ -3221,6 +3235,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildRecentSubmissions() {
     return Card(
       child: Padding(
@@ -3272,6 +3287,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildReviewHistory() {
     return Card(
       child: Padding(
@@ -4108,17 +4124,4 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     _loadCurrentUser();
   }
 
-  void _handleLogout() async {
-    try {
-      await _authService.signOut();
-      if (mounted) {
-        context.go('/');
-      }
-    } catch (e) {
-      debugPrint('Logout error: $e');
-      if (mounted) {
-        context.go('/');
-      }
-    }
-  }
 }
