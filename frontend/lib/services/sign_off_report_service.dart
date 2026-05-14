@@ -155,25 +155,27 @@ class SignOffReportService {
 
   // Create sign-off report
   Future<ApiResponse> createSignOffReport({
-    required String deliverableId,
+    String? deliverableId,
     required String reportTitle,
     required String reportContent,
     List<String>? sprintIds,
     String? sprintPerformanceData,
     String? knownLimitations,
     String? nextSteps,
+    String? status,
   }) async {
     try {
       await _apiClient.initialize();
       if (_authService.accessToken == null) return ApiResponse.error('Not authenticated');
       return await _apiClient.post('/sign-off-reports', body: {
-        'deliverableId': deliverableId,
+        if (deliverableId != null) 'deliverableId': deliverableId,
         'reportTitle': reportTitle,
         'reportContent': reportContent,
         if (sprintIds != null) 'sprintIds': sprintIds,
         if (sprintPerformanceData != null) 'sprintPerformanceData': sprintPerformanceData,
         if (knownLimitations != null) 'knownLimitations': knownLimitations,
         if (nextSteps != null) 'nextSteps': nextSteps,
+        if (status != null) 'status': status,
       });
     } catch (e) {
       return ApiResponse.error('Error creating sign-off report: $e');

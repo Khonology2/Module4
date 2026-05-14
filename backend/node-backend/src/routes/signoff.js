@@ -1303,11 +1303,12 @@ router.post('/', async (req, res) => {
         }
       }
       const sprintReportData = await buildSprintReportDataBySprintIds(sprintIds);
+      const hasValidSprintIds = Array.isArray(sprintIds) && sprintIds.length > 0;
       let content = {
         reportTitle: reportTitle.trim(),
         reportContent: reportContent.trim(),
         sprintIds: sprintIds || [],
-        sprintPerformanceData: sprintPerformanceData || (Array.isArray(sprintIds) && sprintIds.length > 0
+        sprintPerformanceData: sprintPerformanceData || (hasValidSprintIds
           ? JSON.stringify(await generatePerformanceMetrics(sprintIds))
           : null),
         sprintReportData,
@@ -3146,7 +3147,11 @@ async function generatePerformanceMetrics(sprintIds) {
     const { Sprint, sequelize } = require('../models');
     const metrics = [];
     
-    for (const sprintId of sprintIds) {
+    // Handle case where sprintIds is null or not an array
+    const safeSprintIds = Array.isArray(sprintIds) ? sprintIds : [];
+    if (safeSprintIds.length === 0) return metrics;
+    
+    for (const sprintId of safeSprintIds) {
       try {
         // Fetch sprint
         const sprint = await Sprint.findByPk(parseInt(sprintId));
