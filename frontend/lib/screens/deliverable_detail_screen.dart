@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:io';
+import 'dart:async' show unawaited;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,6 +20,7 @@ import '../services/deliverable_service.dart';
 import '../services/backend_api_service.dart';
 import '../services/auth_service.dart';
 import '../config/environment.dart';
+import '../utils/export_feedback.dart';
 import 'audit_log_detail_screen.dart';
 
 class DeliverableDetailScreen extends StatefulWidget {
@@ -487,11 +489,20 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
     }
   }
 
-  Future<void> _exportAuditLogPdf() async {
+  void _exportAuditLogPdf() {
+    final messenger = ScaffoldMessenger.of(context);
+    showDismissibleExportSnackBar(
+      messenger,
+      'Preparing audit log PDF in the background. You can use other screens while it completes.',
+      backgroundColor: Colors.blue,
+      duration: const Duration(seconds: 12),
+    );
+    unawaited(_runAuditLogPdfExport(messenger));
+  }
+
+  Future<void> _runAuditLogPdfExport(ScaffoldMessengerState messenger) async {
     try {
       final doc = pw.Document();
-      
-      final font = await PdfGoogleFonts.nunitoExtraLight();
 
       doc.addPage(pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -499,7 +510,10 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
           return [
             pw.Header(
               level: 0,
-              child: pw.Text('Audit Log - ${_deliverable.title}', style: pw.TextStyle(font: font, fontSize: 24)),
+              child: pw.Text(
+                'Audit Log - ${_deliverable.title}',
+                style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+              ),
             ),
             pw.SizedBox(height: 20),
             pw.Table.fromTextArray(
@@ -519,12 +533,19 @@ class _DeliverableDetailScreenState extends State<DeliverableDetailScreen> {
       ));
 
       await Printing.sharePdf(bytes: await doc.save(), filename: 'audit_log_${_deliverable.id}.pdf');
+      if (!mounted) return;
+      showDismissibleExportSnackBar(
+        messenger,
+        'Audit log PDF is ready to share.',
+        backgroundColor: Colors.green,
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error exporting PDF: $e'), backgroundColor: Colors.red),
-        );
-      }
+      if (!mounted) return;
+      showDismissibleExportSnackBar(
+        messenger,
+        'Error exporting PDF: $e',
+        backgroundColor: Colors.red,
+      );
     }
   }
 
