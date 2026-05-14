@@ -398,11 +398,9 @@ class ReportExportService {
 
   Future<void> exportReportAsPDFFromServer(SignOffReport report, {String? filePath}) async {
     try {
-      await exportReportAsPDF(report, filePath: filePath, includeSignatures: true);
-    } catch (_) {
       final bytes = await _apiClient.getBytes(
         '/sign-off-reports/${report.id}/pdf',
-        timeout: const Duration(seconds: 60),
+        timeout: const Duration(seconds: 180),
         headers: const <String, String>{'Accept': 'application/pdf'},
       );
       final fileSize = bytes.length;
@@ -417,7 +415,11 @@ class ReportExportService {
         reportStatus: report.status.toString(),
       );
       await exportPdfBytes(result, filePath: filePath);
+      return;
+    } catch (e) {
+      debugPrint('Server PDF export failed, using client PDF (fast): $e');
     }
+    await exportReportAsPDF(report, filePath: filePath, fast: true, includeSignatures: true);
   }
 
   Future<Map<String, dynamic>?> _loadUserProfileForPdf() async {

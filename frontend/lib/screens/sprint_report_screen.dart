@@ -664,11 +664,24 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
                             Future<Map<String, dynamic>> loadSprint() async {
                               final sprintResp = await _backend.getSprint(widget.sprintId);
                               final raw = sprintResp.isSuccess ? sprintResp.data : null;
-                              if (raw is Map && raw['data'] is Map) {
-                                return Map<String, dynamic>.from(raw['data'] as Map);
+                              if (raw is Map) {
+                                if (raw['data'] is Map) {
+                                  final inner = Map<String, dynamic>.from(raw['data'] as Map);
+                                  if (inner.isNotEmpty) return inner;
+                                }
+                                final direct = Map<String, dynamic>.from(raw);
+                                if (direct.isNotEmpty) return direct;
                               }
-                              if (raw is Map) return Map<String, dynamic>.from(raw);
-                              return <String, dynamic>{};
+                              final fromReport = _report?['sprint'];
+                              if (fromReport is Map && fromReport.isNotEmpty) {
+                                return Map<String, dynamic>.from(fromReport);
+                              }
+                              final err = sprintResp.error?.toString().trim();
+                              throw Exception(
+                                (err != null && err.isNotEmpty)
+                                    ? err
+                                    : 'Failed to load sprint details. Please refresh and try again.',
+                              );
                             }
 
                             Future<List<Map<String, dynamic>>> loadSprintMetrics() async {

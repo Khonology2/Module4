@@ -4081,18 +4081,11 @@ app.get('/api/v1/sprints/:sprintId', authenticateToken, async (req, res) => {
         [sprintId],
       );
     } catch (e) {
-      if (e && e.code === '42P01') {
-        result = await pool.query(
-          `
-          SELECT s.*
-          FROM sprints s
-          WHERE s.id::text = $1::text
-        `,
-          [sprintId],
-        );
-      } else {
-        throw e;
-      }
+      console.warn('[GET /sprints/:id] detail query failed; falling back to SELECT s.*:', e?.code, e?.message);
+      result = await pool.query(
+        `SELECT s.* FROM sprints s WHERE s.id::text = $1::text`,
+        [sprintId],
+      );
     }
     
     if (result.rows.length === 0) {
