@@ -113,7 +113,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       if (!uniqueCandidates.contains(c)) uniqueCandidates.add(c);
     }
 
-    bool _looksLikeHtml(http.Response resp) {
+    bool looksLikeHtml(http.Response resp) {
       final ct = (resp.headers['content-type'] ?? '').toLowerCase();
       final b = resp.body.trimLeft();
       return ct.contains('text/html') || b.startsWith('<!DOCTYPE') || b.startsWith('<html');
@@ -126,7 +126,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
             .get(uri, headers: const {'Accept': 'application/json'})
             .timeout(const Duration(seconds: 8));
         if (resp.statusCode < 200 || resp.statusCode >= 300) return false;
-        if (_looksLikeHtml(resp)) return false;
+        if (looksLikeHtml(resp)) return false;
         return true;
       } catch (_) {
         return false;

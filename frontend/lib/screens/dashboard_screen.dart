@@ -6,8 +6,6 @@ import '../widgets/deliverable_card.dart';
 import '../widgets/metrics_card.dart';
 import '../widgets/sprint_performance_chart.dart';
 import '../providers/dashboard_provider.dart';
-import '../widgets/notification_center_widget.dart';
-import '../services/backend_api_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_modal.dart';
 import '../models/user.dart';
@@ -76,53 +74,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         '🏗️ Building dashboard - _currentUser: ${_currentUser?.name}, title: ${_currentUser != null ? '${_currentUser!.role.displayName} Dashboard' : 'Flow-Space Dashboard'}');
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_currentUser != null
-            ? '${_currentUser!.role.displayName} Dashboard'
-            : 'Flow-Space Dashboard'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-        actions: [
-          if (canCreate)
-            IconButton(
-              icon: const Icon(Icons.add_task),
-              onPressed: () => context.go('/deliverable-setup'),
-              tooltip: 'Create Deliverable',
-            ),
-          IconButton(
-            icon: const Icon(Icons.folder),
-            onPressed: () => context.go('/projects'),
-            tooltip: 'Projects',
-          ),
-          const NotificationCenterWidget(),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              _showSettingsDialog();
-            },
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'logout') {
-                _handleLogout();
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout),
-                    SizedBox(width: 8),
-                    Text('Logout'),
-                  ],
-                ),
-              ),
-            ],
-            child: const Icon(Icons.account_circle_outlined),
-          ),
-        ],
-      ),
       body: dashboardState.isLoading
           ? const Center(child: CircularProgressIndicator())
           : dashboardState.error != null
@@ -437,23 +388,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  void _showSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Settings'),
-        content:
-            const Text('Settings panel will be implemented in the next phase.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showAllDeliverablesDialog() {
     showDialog(
       context: context,
@@ -487,43 +421,4 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  void _handleLogout() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-
-              // Call backend logout API and clear local tokens
-              try {
-                await BackendApiService().signOut();
-              } catch (e) {
-                // Even if backend logout fails, clear local tokens
-                debugPrint('Logout error: $e');
-              }
-
-              // Navigate to login screen using a different approach
-              if (mounted) {
-                // Use WidgetsBinding to safely navigate after async operation
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    GoRouter.of(context).go('/');
-                  }
-                });
-              }
-            },
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
-  }
 }
