@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD15 SIT",
+  "version": "Ver 2026.05BD17 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T07:38:05Z",
+  "generated_at": "2026-05-14T07:43:04Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix: update prod api urls, improve login retries",
+      "timestamp": "2026-05-14T09:42:10+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T07:38:06Z"
+    },
     {
       "author": "Nathi2266",
       "message": "chore: update dependencies and improve authentication flow",
@@ -79,6 +89,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 15,
+  "total_commits": 17,
   "date_range": "2026-05-14"
 }
