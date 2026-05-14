@@ -22,6 +22,8 @@ class _BrandingAssets {
   final pw.ImageProvider? footerIcon1;
   final pw.ImageProvider? footerIcon2;
   final pw.ImageProvider? footerIcon3;
+  /// Bottom-center logo on every PDF page (`khono_red_disc.png`).
+  final pw.ImageProvider? footerCenterDisc;
 
   const _BrandingAssets({
     this.logo,
@@ -31,6 +33,7 @@ class _BrandingAssets {
     this.footerIcon1,
     this.footerIcon2,
     this.footerIcon3,
+    this.footerCenterDisc,
   });
 }
 
@@ -153,6 +156,7 @@ class ReportExportService {
     pw.ImageProvider? footerIcon1;
     pw.ImageProvider? footerIcon2;
     pw.ImageProvider? footerIcon3;
+    pw.ImageProvider? footerCenterDisc;
 
     try {
       final bytes = (await rootBundle.load('assets/Icons/khonology_name_icon.png')).buffer.asUint8List();
@@ -187,6 +191,10 @@ class ReportExportService {
       final bytes =
           (await rootBundle.load('assets/Icons/Khonology_(Short Logo)_Circlulars_RED.png')).buffer.asUint8List();
       if (bytes.isNotEmpty) footerIcon1 = pw.MemoryImage(bytes);
+    } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/Icons/khono_red_disc.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) footerCenterDisc = pw.MemoryImage(bytes);
     } catch (_) {}
 
     return _BrandingAssets(
@@ -197,6 +205,7 @@ class ReportExportService {
       footerIcon1: footerIcon1,
       footerIcon2: footerIcon2 ?? footerIcon1,
       footerIcon3: footerIcon3 ?? footerIcon1,
+      footerCenterDisc: footerCenterDisc,
     );
   }
 
@@ -206,6 +215,7 @@ class ReportExportService {
     pw.ImageProvider? headerBackground;
     pw.ImageProvider? sprintIcon;
     pw.ImageProvider? footerIcon1;
+    pw.ImageProvider? footerCenterDisc;
 
     try {
       final bytes = (await rootBundle.load('assets/Icons/khonology_name_icon.png')).buffer.asUint8List();
@@ -241,6 +251,10 @@ class ReportExportService {
           (await rootBundle.load('assets/Icons/Khonology_(Short Logo)_Circlulars_RED.png')).buffer.asUint8List();
       if (bytes.isNotEmpty) footerIcon1 = pw.MemoryImage(bytes);
     } catch (_) {}
+    try {
+      final bytes = (await rootBundle.load('assets/Icons/khono_red_disc.png')).buffer.asUint8List();
+      if (bytes.isNotEmpty) footerCenterDisc = pw.MemoryImage(bytes);
+    } catch (_) {}
 
     return _BrandingAssets(
       logo: logo,
@@ -250,6 +264,7 @@ class ReportExportService {
       footerIcon1: footerIcon1,
       footerIcon2: footerIcon1,
       footerIcon3: footerIcon1,
+      footerCenterDisc: footerCenterDisc,
     );
   }
 
@@ -465,7 +480,7 @@ class ReportExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 88),
+          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 112),
           theme: theme,
           footer: (pw.Context context) => _buildDocumentFooter(
             context,
@@ -492,7 +507,7 @@ class ReportExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 88),
+          margin: const pw.EdgeInsets.fromLTRB(0, 20, 0, 112),
           theme: theme,
           footer: (pw.Context context) => _buildDocumentFooter(
             context,
@@ -728,11 +743,11 @@ class ReportExportService {
                   ),
                 pw.Positioned(
                   left: 22,
-                  top: 67,
+                  top: 62,
                   child: pw.Text(
                     reportLabel,
                     style: pw.TextStyle(
-                      fontSize: 18,
+                      fontSize: 22,
                       fontWeight: pw.FontWeight.bold,
                       color: PdfColors.white,
                     ),
@@ -840,13 +855,25 @@ class ReportExportService {
   }) {
     final isLastPage = context.pageNumber == context.pagesCount;
     final hasFooterSignature = isLastPage && signature != null;
+    final centerDisc =
+        branding.footerCenterDisc ?? branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3;
 
     return pw.Container(
-      alignment: hasFooterSignature ? pw.Alignment.centerLeft : pw.Alignment.center,
-      padding: const pw.EdgeInsets.only(top: 4, bottom: 10),
-      child: hasFooterSignature
-          ? pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 40),
+      height: hasFooterSignature ? 108 : 52,
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          top: pw.BorderSide(color: _brandRed, width: 0.8),
+        ),
+      ),
+      padding: const pw.EdgeInsets.only(top: 6, bottom: 6),
+      child: pw.Stack(
+        alignment: pw.Alignment.bottomCenter,
+        children: [
+          if (hasFooterSignature)
+            pw.Positioned(
+              left: 40,
+              right: 40,
+              bottom: 36,
               child: pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
@@ -870,52 +897,74 @@ class ReportExportService {
                       compact: true,
                     ),
                   ),
-                  pw.SizedBox(width: 18),
+                  pw.SizedBox(width: 14),
                   pw.SizedBox(
-                    width: 110,
+                    width: 120,
                     child: pw.Align(
-                      alignment: pw.Alignment.centerRight,
-                      child: branding.logo != null
+                      alignment: pw.Alignment.bottomRight,
+                      child: branding.wordmark != null
                           ? pw.SizedBox(
                               height: 22,
                               child: pw.Image(
-                                branding.logo!,
+                                branding.wordmark!,
                                 fit: pw.BoxFit.contain,
                               ),
                             )
                           : pw.Text(
                               'K H O N O L O G Y',
                               style: pw.TextStyle(
-                                fontSize: 12,
+                                fontSize: 11,
                                 fontWeight: pw.FontWeight.bold,
                                 color: _brandRed,
-                                letterSpacing: 1.6,
+                                letterSpacing: 1.4,
                               ),
                             ),
                     ),
                   ),
                 ],
               ),
-            )
-          : ((branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3) != null
-              ? pw.Center(
-                  child: pw.SizedBox(
-                    height: 24,
-                    child: pw.Image(
-                      (branding.footerIcon1 ?? branding.footerIcon2 ?? branding.footerIcon3)!,
-                      fit: pw.BoxFit.contain,
+            ),
+          if (isLastPage && branding.headerBackground != null)
+            pw.Align(
+              alignment: pw.Alignment.bottomRight,
+              child: pw.Padding(
+                padding: const pw.EdgeInsets.only(right: 8, bottom: 2),
+                child: pw.SizedBox(
+                  width: 68,
+                  height: 42,
+                  child: pw.Image(
+                    branding.headerBackground!,
+                    fit: pw.BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+          pw.Align(
+            alignment: pw.Alignment.bottomCenter,
+            child: pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 2),
+              child: centerDisc != null
+                  ? pw.SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: pw.Image(
+                        centerDisc,
+                        fit: pw.BoxFit.contain,
+                      ),
+                    )
+                  : pw.Text(
+                      '~~~',
+                      style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                        color: _brandRed,
+                        letterSpacing: 2,
+                      ),
                     ),
-                  ),
-                )
-              : pw.Text(
-                  '~~~',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    fontWeight: pw.FontWeight.bold,
-                    color: _brandRed,
-                    letterSpacing: 2,
-                  ),
-                )),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1097,8 +1146,14 @@ class ReportExportService {
     final teamLines = team.map((m) {
       final mm = _asMap(m);
       final work = (mm['work'] ?? mm['workSummary'] ?? mm['work_summary'])?.toString();
-      final workPart = (work != null && work.trim().isNotEmpty) ? ' | Work: ${work.trim()}' : '';
-      return '- ${_stringOrDash(mm['name'])} | ${_stringOrDash(mm['email'])} | ${_stringOrDash(mm['role'])}$workPart';
+      final workStatus =
+          (mm['workStatus'] ?? mm['work_status'] ?? mm['deliverableStatus'] ?? mm['deliverable_status'])
+              ?.toString()
+              .trim();
+      final workSuffix = (work != null && work.trim().isNotEmpty)
+          ? ' | Work: ${work.trim()}${(workStatus != null && workStatus.isNotEmpty) ? ' ($workStatus)' : ''}'
+          : '';
+      return '- ${_stringOrDash(mm['name'])} | ${_stringOrDash(mm['email'])} | ${_stringOrDash(mm['role'])}$workSuffix';
     }).toList();
     final teamFirst = teamLines.length <= 2 ? teamLines : teamLines.sublist(0, 2);
     final teamRest = teamLines.length <= 2 ? const <String>[] : teamLines.sublist(2);
@@ -1136,7 +1191,8 @@ class ReportExportService {
       final status = _stringOrDash(dd['status']);
       final progress = '${_num(dd['progressPercent'])}%';
       final due = _formatIsoDate(dd['dueDate']?.toString());
-      final completedOn = _formatIsoDate(dd['completionDate']?.toString());
+      final completedRaw = dd['completionDate']?.toString().trim();
+      final completedOn = (completedRaw == null || completedRaw.isEmpty) ? '-' : _formatIsoDate(completedRaw);
       final category = _stringOrDash(dd['category']);
       final isOverdue = (dd['isOverdue'] == true) ? 'yes' : 'no';
       return '- $name | Owner: $ownerName | Status: $status | Progress: $progress | Due: $due | Completed: $completedOn | Category: $category | Overdue: $isOverdue';
