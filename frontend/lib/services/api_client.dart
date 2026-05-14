@@ -105,7 +105,6 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     final candidates = <String>[
       if (envBase.isNotEmpty) normalize(envBase),
       'https://flow-space-backend.onrender.com/api/v1',
-      'https://backend-532p.onrender.com/api/v1',
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
     final uniqueCandidates = <String>[];
@@ -179,7 +178,6 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     final candidates = <String>[
       if (envBase.isNotEmpty) normalize(envBase),
       'https://flow-space-backend.onrender.com/api/v1',
-      'https://backend-532p.onrender.com/api/v1',
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
     void pokeOnce() {
@@ -328,9 +326,6 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     bool requireAuth = true,
     Duration? timeout,
   }) async {
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
-
     if (!requireAuth) {
       // Make unauthenticated request
       return await _makeUnauthenticatedRequest('GET', endpoint, queryParams: queryParams);
@@ -354,9 +349,6 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     bool requireAuth = true,
     Duration? timeout,
   }) async {
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
-
     if (!requireAuth && queryParams != null && queryParams.containsKey('token')) {
       // For token-based requests, we can skip auth but still need to pass token
       // The token will be in query params, so we'll make a special request
@@ -371,8 +363,6 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     Map<String, String>? queryParams,
     Duration? timeout,
   }) async {
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
     return await _makeRequest('PUT', endpoint, body: body, queryParams: queryParams, timeout: timeout);
   }
 
@@ -381,8 +371,6 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     Map<String, String>? queryParams,
     Duration? timeout,
   }) async {
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
     return await _makeRequest('DELETE', endpoint, queryParams: queryParams, timeout: timeout);
   }
 
@@ -861,35 +849,21 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
 
   // Authentication methods
   Future<ApiResponse> login(String email, String password) async {
-
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
-
-    // Retry a limited number of times for transient startup/network failures.
-    ApiResponse response = ApiResponse.error('Login request not sent');
+    ApiResponse response = ApiResponse.error('Login failed. Please try again.');
     const isProdFlag = bool.fromEnvironment('IS_PRODUCTION', defaultValue: false);
     final isProdLike = isProdFlag || Environment.isRenderDeployed;
-    final maxAttempts = isProdLike ? 3 : 2;
+    final maxAttempts = isProdLike ? 1 : 2;
     final maxTotalWait = isProdLike ? const Duration(seconds: 5) : const Duration(seconds: 10);
     final startedAt = DateTime.now();
-
-    if (isProdLike) {
-      final ready = await warmUpBackend(maxWait: const Duration(seconds: 5));
-      if (!ready) {
-        return ApiResponse.error('Backend still warming up. Please try again.', 0);
-      }
-    }
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       if (DateTime.now().difference(startedAt) > maxTotalWait) {
         break;
       }
       debugPrint('🔐 Login attempt $attempt for: $email');
-      if (attempt == 1) {
-        try {
-          await _resolveAndSetApiBaseUrlOverride(force: true);
-        } catch (_) {}
-      }
+      try {
+        await _resolveAndSetApiBaseUrlOverride(force: true);
+      } catch (_) {}
 
       try {
         String url = '$_baseUrlWithVersion/auth/login';
@@ -902,7 +876,7 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
                 'password': password,
               },
             )
-            .timeout(const Duration(seconds: 12));
+            .timeout(isProdLike ? const Duration(seconds: 5) : const Duration(seconds: 12));
 
         bool looksHtml(http.Response r) {
           final ct = (r.headers['content-type'] ?? '').toLowerCase();
@@ -911,14 +885,14 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         }
 
         if (looksHtml(raw) || raw.statusCode == 502 || raw.statusCode == 503 || raw.statusCode == 504) {
-          response = ApiResponse.error('Backend still warming up. Please try again.', 0);
+          response = ApiResponse.error('Login failed. Please try again.', raw.statusCode);
         } else {
           response = _handleResponse(raw);
         }
       } on TimeoutException {
-        response = ApiResponse.error('Backend still warming up. Please try again.', 0);
+        response = ApiResponse.error('Login failed. Please try again.', 0);
       } catch (_) {
-        response = ApiResponse.error('Backend still warming up. Please try again.', 0);
+        response = ApiResponse.error('Login failed. Please try again.', 0);
       }
 
       // Any HTTP response (2xx/4xx/5xx) should stop retrying immediately.
@@ -926,18 +900,13 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         break;
       }
 
-      // statusCode == 0 means transport-level failure (e.g. Failed to fetch).
       if (attempt < maxAttempts) {
-        if (isProdLike) {
-          await warmUpBackend(maxWait: const Duration(seconds: 2));
-        }
-        final backoffSeconds = (attempt <= 6) ? 2 : 4;
-        await Future.delayed(Duration(seconds: backoffSeconds));
+        await Future.delayed(const Duration(seconds: 2));
       }
     }
 
     if (response.statusCode == 0 && DateTime.now().difference(startedAt) > maxTotalWait) {
-      response = ApiResponse.error('Backend still warming up. Please try again.', 0);
+      response = ApiResponse.error('Login failed. Please try again.', 0);
     }
 
     if (response.isSuccess && response.data != null) {
@@ -1002,20 +971,12 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
   }
 
   Future<ApiResponse> logout() async {
-
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
-
     final response = await post('/auth/logout');
     await clearTokens();
     return response;
   }
 
   Future<ApiResponse> getCurrentUser() async {
-
-    // BYPASSES DISABLED: Backend is now working correctly on Render
-    // The deployed app should use real API calls to backend-532p.onrender.com
-
     // Don't call /auth/me if we don't have an access token
     if (_accessToken == null) {
       return ApiResponse.error('No access token available. Please login first.');

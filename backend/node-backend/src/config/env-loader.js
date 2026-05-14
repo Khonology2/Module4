@@ -65,7 +65,7 @@ console.log('='.repeat(50));
 console.log('Environment variables loaded from:', loadedPaths[0] || 'process.env (none found)');
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? '*** (set)' : 'undefined');
 console.log('NODE_ENV:', process.env.NODE_ENV || 'undefined');
-console.log('PORT:', process.env.PORT || '3001 (default)');
+console.log('PORT:', process.env.PORT || '8000 (default)');
 console.log('='.repeat(50));
 
 module.exports = process.env;
