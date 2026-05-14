@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD40 SIT",
+  "version": "Ver 2026.05BD42 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T09:22:55Z",
+  "generated_at": "2026-05-14T09:40:18Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix(frontend): refine document preview and sprint report logic",
+      "timestamp": "2026-05-14T11:39:37+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:22:55Z"
+    },
     {
       "author": "GitHub Action",
       "message": "Update version data [2026-05-14]",
@@ -204,6 +214,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 40,
+  "total_commits": 42,
   "date_range": "2026-05-14"
 }
