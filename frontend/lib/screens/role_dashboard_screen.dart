@@ -541,6 +541,10 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             : null);
   }
 
+  /// Top banner title for the active role (e.g. "System Admin Dashboard").
+  String get _roleDashboardTitle =>
+      '${_currentUser?.roleDisplayName ?? 'Member'} Dashboard';
+
   @override
   Widget build(BuildContext context) {
     if (_currentUser == null) {
@@ -602,6 +606,8 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildAdminTopHeader(),
+                  const SizedBox(height: 10),
                   _buildTeamQuickActionsPanel(compact: compact),
                   const SizedBox(height: 10),
                   Text(
@@ -1423,7 +1429,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           child: Row(
             children: [
               Text(
-                'Delivery Manager Dashboard',
+                _roleDashboardTitle,
                 style: _dashboardTextStyle(size: 28, weight: FontWeight.w700),
               ),
               const SizedBox(width: 14),
@@ -2069,7 +2075,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           child: Row(
             children: [
               Text(
-                'Client Reviewer Dashboard',
+                _roleDashboardTitle,
                 style: _dashboardTextStyle(size: 20, weight: FontWeight.w700),
               ),
               const SizedBox(width: 14),
@@ -2732,8 +2738,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           },
         ),
         title: Text('Welcome, ${_currentUser?.name ?? 'User'}'),
-        subtitle:
-            Text('${_currentUser?.roleDisplayName ?? 'Member'} Dashboard'),
+        subtitle: Text(_roleDashboardTitle),
       ),
     );
   }
