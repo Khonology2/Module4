@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD3 SIT",
+  "version": "Ver 2026.05BD5 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T00:33:45Z",
+  "generated_at": "2026-05-14T06:41:10Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "refactor: update default port, production API URL, clean up old code",
+      "timestamp": "2026-05-14T08:40:20+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T00:33:45Z"
+    },
     {
       "author": "thabang127",
       "message": "perf: optimize backend warmup and login flow",
@@ -19,6 +29,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 3,
+  "total_commits": 5,
   "date_range": "2026-05-14"
 }
