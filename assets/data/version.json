@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD31 SIT",
+  "version": "Ver 2026.05BD33 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T08:50:05Z",
+  "generated_at": "2026-05-14T08:54:28Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix(config): update local backend port from 3001 to 8000",
+      "timestamp": "2026-05-14T10:53:33+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T08:50:06Z"
+    },
     {
       "author": "thabang127",
       "message": "fix(sprint report): parse sprint data correctly",
@@ -159,6 +169,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 31,
+  "total_commits": 33,
   "date_range": "2026-05-14"
 }
