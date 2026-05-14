@@ -1594,6 +1594,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
 // SSO login endpoint for token exchange (encrypted or signed upstream tokens)
 app.post('/api/v1/auth/sso-login', async (req, res) => {
   try {
+    console.log('🔐 SSO login: request received (POST /api/v1/auth/sso-login)');
     const token = req.body?.token || req.headers['x-sso-token'] || req.query?.token;
     if (!token) {
       return res.status(400).json({ error: 'Token is required', code: 'TOKEN_MISSING' });
@@ -1607,6 +1608,7 @@ app.post('/api/v1/auth/sso-login', async (req, res) => {
 
     const roleClaim = claims.persona || claims.role || (Array.isArray(claims.roles) ? claims.roles[0] : claims.roles);
     const mappedRole = normalizeSsoRole(roleClaim);
+    console.log(`🔐 SSO login: token OK for ${email} (mapped role: ${mappedRole})`);
     const name = String(claims.name || claims.full_name || claims.display_name || '').trim();
     const nameParts = name.split(/\s+/).filter(Boolean);
     const firstName = nameParts[0] || email.split('@')[0];

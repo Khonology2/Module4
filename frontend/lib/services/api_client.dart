@@ -102,10 +102,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       return trimmed;
     }
 
+    const canonicalProdApi = 'https://flow-space.onrender.com/api/v1';
+
     final candidates = <String>[
       if (envBase.isNotEmpty) normalize(envBase),
-      'https://flow-space.onrender.com/api/v1',
-      'https://flow-space-backend.onrender.com/api/v1',
+      normalize(canonicalProdApi),
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
     final uniqueCandidates = <String>[];
@@ -138,11 +139,16 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
         final prefs = await SharedPreferences.getInstance();
         final cached = (prefs.getString('resolved_api_base_url') ?? '').trim();
         if (cached.isNotEmpty) {
-          if (await isHealthy(cached)) {
+          final isLegacyHost =
+              cached.contains('flow-space-backend.onrender.com');
+          if (isLegacyHost) {
+            await prefs.remove('resolved_api_base_url');
+          } else if (await isHealthy(cached)) {
             Environment.setOverrideApiBaseUrl(cached);
             return;
+          } else {
+            await prefs.remove('resolved_api_base_url');
           }
-          await prefs.remove('resolved_api_base_url');
         }
       } catch (_) {}
     }
@@ -176,10 +182,11 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       return trimmed;
     }
 
+    const canonicalProdApi = 'https://flow-space.onrender.com/api/v1';
+
     final candidates = <String>[
       if (envBase.isNotEmpty) normalize(envBase),
-      'https://flow-space.onrender.com/api/v1',
-      'https://flow-space-backend.onrender.com/api/v1',
+      normalize(canonicalProdApi),
     ].map(normalize).where((u) => u.isNotEmpty).toList();
 
     void pokeOnce() {

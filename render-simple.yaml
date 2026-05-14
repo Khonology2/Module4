@@ -24,7 +24,7 @@ services:
     name: flow-space-frontend
     env: static
     rootDir: frontend
-    buildCommand: flutter build web --release --base-href /
+    buildCommand: flutter build web --release --base-href / --dart-define=API_BASE_URL=https://flow-space.onrender.com/api/v1 --dart-define=IS_PRODUCTION=true --dart-define=DEBUG_MODE=false
     publishDirectory: build/web
     envVars:
       - key: FLUTTER_WEB_CANVASKIT_URL
