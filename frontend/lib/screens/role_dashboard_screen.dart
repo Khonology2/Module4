@@ -21,6 +21,11 @@ import '../providers/service_providers.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 
+const String _kRoleDashboardFontFamily = 'Poppins';
+
+const TextStyle _kRoleDashboardSnackBarTextStyle =
+    TextStyle(fontFamily: _kRoleDashboardFontFamily);
+
 class RoleDashboardScreen extends ConsumerStatefulWidget {
   const RoleDashboardScreen({super.key});
 
@@ -322,9 +327,11 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             final messenger = ScaffoldMessenger.of(context);
             final router = GoRouter.of(context);
             messenger.showSnackBar(
-              const SnackBar(
-                content:
-                    Text('Your account is inactive. Please contact support.'),
+              SnackBar(
+                content: Text(
+                  'Your account is inactive. Please contact support.',
+                  style: const TextStyle(fontFamily: _kRoleDashboardFontFamily),
+                ),
                 backgroundColor: Colors.red,
               ),
             );
@@ -551,17 +558,20 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: _buildRoleSpecificContent(),
-        ),
-        Positioned(
-          right: 16,
-          bottom: 12,
-          child: _buildBottomRightExpandableFab(),
-        ),
-      ],
+    return DefaultTextStyle.merge(
+      style: const TextStyle(fontFamily: _kRoleDashboardFontFamily),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: _buildRoleSpecificContent(),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 12,
+            child: _buildBottomRightExpandableFab(),
+          ),
+        ],
+      ),
     );
   }
 
@@ -613,6 +623,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                   Text(
                     'Review Metrics Overview',
                     style: TextStyle(
+                      fontFamily: _kRoleDashboardFontFamily,
                       color: textColor,
                       fontSize: headingSize,
                       fontWeight: FontWeight.w700,
@@ -720,6 +731,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
   }) {
     final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return TextStyle(
+      fontFamily: _kRoleDashboardFontFamily,
       color: isDarkMode ? Colors.white : Colors.black,
       fontSize: size,
       fontWeight: weight,
@@ -1140,6 +1152,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         child: Text(
           label,
           style: const TextStyle(
+            fontFamily: _kRoleDashboardFontFamily,
             fontSize: 8.5,
             fontWeight: FontWeight.w700,
             color: Colors.white,
@@ -1174,6 +1187,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           child: Text(
             label,
             style: TextStyle(
+              fontFamily: _kRoleDashboardFontFamily,
               color: isActive ? Colors.white : textColor,
               fontSize: 9,
               fontWeight: FontWeight.w700,
@@ -1210,6 +1224,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       child: Text(
         text,
         style: const TextStyle(
+          fontFamily: _kRoleDashboardFontFamily,
           color: Colors.white,
           fontSize: 9,
           fontWeight: FontWeight.w700,
@@ -1231,6 +1246,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         child: Text(
           label,
           style: const TextStyle(
+            fontFamily: _kRoleDashboardFontFamily,
             color: Colors.white,
             fontSize: 9,
             fontWeight: FontWeight.w700,
@@ -1774,6 +1790,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
         Text(
           'Velocity Trend',
           style: TextStyle(
+            fontFamily: _kRoleDashboardFontFamily,
             color: textColor,
             fontSize: compact ? 22 : 26,
             fontWeight: FontWeight.w700,
@@ -1824,6 +1841,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                   Text(
                     'Team Metrics Overview',
                     style: TextStyle(
+                      fontFamily: _kRoleDashboardFontFamily,
                       color: textColor,
                       fontSize: headingSize,
                       fontWeight: FontWeight.w700,
@@ -1835,6 +1853,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                   Text(
                     'Review Metrics Overview',
                     style: TextStyle(
+                      fontFamily: _kRoleDashboardFontFamily,
                       color: textColor,
                       fontSize: headingSize,
                       fontWeight: FontWeight.w700,
@@ -1900,6 +1919,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
                   Text(
                     'Review Metrics Overview',
                     style: TextStyle(
+                      fontFamily: _kRoleDashboardFontFamily,
                       color: textColor,
                       fontSize: compact ? 22 : 26,
                       fontWeight: FontWeight.w700,
@@ -2515,6 +2535,7 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           child: Text(
             label,
             style: TextStyle(
+              fontFamily: _kRoleDashboardFontFamily,
               color: isActive ? Colors.white : textColor,
               fontSize: 9,
               fontWeight: FontWeight.w700,
@@ -2593,13 +2614,25 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       final resp = await _backendService.triggerEscalation(force: true);
       if (resp.isSuccess) {
         messenger.showSnackBar(const SnackBar(
-            content: Text('Escalation process triggered successfully')));
+            content: Text(
+              'Escalation process triggered successfully',
+              style: _kRoleDashboardSnackBarTextStyle,
+            ),
+          ),
+        );
       } else {
         messenger.showSnackBar(SnackBar(
-            content: Text('Failed to trigger escalation: ${resp.error}')));
+            content: Text(
+              'Failed to trigger escalation: ${resp.error}',
+              style: _kRoleDashboardSnackBarTextStyle,
+            ),
+          ),
+        );
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+      messenger.showSnackBar(SnackBar(
+        content: Text('Error: $e', style: _kRoleDashboardSnackBarTextStyle),
+      ));
     }
   }
 
@@ -3348,9 +3381,20 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: Theme.of(context).textTheme.bodyMedium),
-              Text(value is String ? value : value.toString(),
-                  style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontFamily: _kRoleDashboardFontFamily,
+                    ) ??
+                    const TextStyle(fontFamily: _kRoleDashboardFontFamily),
+              ),
+              Text(
+                value is String ? value : value.toString(),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontFamily: _kRoleDashboardFontFamily,
+                    ) ??
+                    const TextStyle(fontFamily: _kRoleDashboardFontFamily),
+              ),
             ],
           ),
         ],
@@ -3499,7 +3543,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       debugPrint('Error navigating to deliverable detail: $e');
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error opening deliverable: $e')),
+        SnackBar(
+          content: Text(
+            'Error opening deliverable: $e',
+            style: _kRoleDashboardSnackBarTextStyle,
+          ),
+        ),
       );
     }
   }
@@ -3519,10 +3568,23 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
           return d;
         }).toList();
       });
-      messenger
-          .showSnackBar(SnackBar(content: Text('Status updated to $status')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Status updated to $status',
+            style: _kRoleDashboardSnackBarTextStyle,
+          ),
+        ),
+      );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Failed to update: $e',
+            style: _kRoleDashboardSnackBarTextStyle,
+          ),
+        ),
+      );
     }
   }
 
@@ -3722,7 +3784,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       if (confirmed != true) return;
       final signature = await signatureKey.currentState?.getSignature();
       if (signature == null || signature.trim().isEmpty) {
-        messenger.showSnackBar(const SnackBar(content: Text('Digital signature is required')));
+        messenger.showSnackBar(const SnackBar(
+          content: Text(
+            'Digital signature is required',
+            style: _kRoleDashboardSnackBarTextStyle,
+          ),
+        ));
         return;
       }
 
@@ -3736,15 +3803,29 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
               .toList();
         });
         await _notifyReportSender(reportId, approved: true);
-        messenger
-            .showSnackBar(const SnackBar(content: Text('Report approved')));
+        messenger.showSnackBar(const SnackBar(
+          content: Text(
+            'Report approved',
+            style: _kRoleDashboardSnackBarTextStyle,
+          ),
+        ));
         _loadClientReviewMetrics();
       } else {
         messenger.showSnackBar(
-            SnackBar(content: Text(resp.error ?? 'Failed to approve report')));
+          SnackBar(
+            content: Text(
+              resp.error ?? 'Failed to approve report',
+              style: _kRoleDashboardSnackBarTextStyle,
+            ),
+          ),
+        );
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error: $e', style: _kRoleDashboardSnackBarTextStyle),
+        ),
+      );
     }
   }
 
@@ -3753,7 +3834,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
     try {
       if (details.trim().isEmpty) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('Change request details are required')),
+          const SnackBar(
+            content: Text(
+              'Change request details are required',
+              style: _kRoleDashboardSnackBarTextStyle,
+            ),
+          ),
         );
         return;
       }
@@ -3782,7 +3868,12 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
       if (confirmed != true) return;
       final signature = await signatureKey.currentState?.getSignature();
       if (signature == null || signature.trim().isEmpty) {
-        messenger.showSnackBar(const SnackBar(content: Text('Digital signature is required')));
+        messenger.showSnackBar(const SnackBar(
+          content: Text(
+            'Digital signature is required',
+            style: _kRoleDashboardSnackBarTextStyle,
+          ),
+        ));
         return;
       }
 
@@ -3800,15 +3891,29 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
               .toList();
         });
         await _notifyReportSender(reportId, approved: false, details: details);
-        messenger
-            .showSnackBar(const SnackBar(content: Text('Change request sent')));
+        messenger.showSnackBar(const SnackBar(
+          content: Text(
+            'Change request sent',
+            style: _kRoleDashboardSnackBarTextStyle,
+          ),
+        ));
         _loadClientReviewMetrics();
       } else {
         messenger.showSnackBar(
-            SnackBar(content: Text(resp.error ?? 'Failed to request changes')));
+          SnackBar(
+            content: Text(
+              resp.error ?? 'Failed to request changes',
+              style: _kRoleDashboardSnackBarTextStyle,
+            ),
+          ),
+        );
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error: $e', style: _kRoleDashboardSnackBarTextStyle),
+        ),
+      );
     }
   }
 
@@ -4025,7 +4130,10 @@ class _RoleDashboardScreenState extends ConsumerState<RoleDashboardScreen> {
             style: Theme.of(context)
                 .textTheme
                 .titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold)),
+                ?.copyWith(
+                  fontFamily: _kRoleDashboardFontFamily,
+                  fontWeight: FontWeight.bold,
+                )),
       ],
     );
     if (route == null) return row;

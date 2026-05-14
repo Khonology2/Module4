@@ -491,6 +491,15 @@ class BackendApiService {
     return await _apiClient.post('/projects', body: projectData);
   }
 
+  /// AI-assisted draft for create-project form (description, status, priority, type, tags).
+  Future<ApiResponse> generateProjectDraftWithAi(String projectTitle) async {
+    return await _apiClient.post(
+      '/ai/generate-project-draft',
+      body: {'projectTitle': projectTitle.trim()},
+      timeout: const Duration(seconds: 90),
+    );
+  }
+
   Future<ApiResponse> updateProject(String projectId, Map<String, dynamic> updates) async {
     return await _apiClient.put('/projects/$projectId', body: updates);
   }
