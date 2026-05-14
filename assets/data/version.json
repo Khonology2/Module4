@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD17 SIT",
+  "version": "Ver 2026.05BD19 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T07:43:04Z",
+  "generated_at": "2026-05-14T08:05:15Z",
   "commits": [
+    {
+      "author": "Nathi2266",
+      "message": "chore: update API base URLs and build commands",
+      "timestamp": "2026-05-14T10:04:41+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T07:43:04Z"
+    },
     {
       "author": "thabang127",
       "message": "fix: update prod api urls, improve login retries",
@@ -89,6 +99,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 17,
+  "total_commits": 19,
   "date_range": "2026-05-14"
 }
