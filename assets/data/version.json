@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD5 SIT",
+  "version": "Ver 2026.05BD7 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T06:41:10Z",
+  "generated_at": "2026-05-14T06:48:37Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "build: simplify and correct Render frontend deployment config",
+      "timestamp": "2026-05-14T08:47:42+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T06:41:10Z"
+    },
     {
       "author": "thabang127",
       "message": "refactor: update default port, production API URL, clean up old code",
@@ -29,6 +39,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 5,
+  "total_commits": 7,
   "date_range": "2026-05-14"
 }
