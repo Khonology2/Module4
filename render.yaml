@@ -3,6 +3,7 @@ services:
   - type: web
     name: flow-space-backend
     env: node
+    plan: starter
     rootDir: backend/node-backend
     buildCommand: npm install
     startCommand: node src/app.js
@@ -22,6 +23,7 @@ services:
   - type: cron
     name: flow-space-backend-keepalive
     env: node
+    plan: starter
     schedule: '*/2 * * * *'
     buildCommand: 'true'
     startCommand: "node -e \"const https=require('https'); const url='https://flow-space-backend.onrender.com/api/v1/health'; const req=https.get(url,{headers:{accept:'application/json','user-agent':'flow-space-keepalive'}},res=>{res.on('data',()=>{}); res.on('end',()=>process.exit(0));}); req.on('error',()=>process.exit(0)); req.setTimeout(8000,()=>{try{req.destroy();}catch(_){} process.exit(0);});\""
@@ -29,6 +31,7 @@ services:
   - type: worker
     name: flow-space-backend-keepalive-worker
     env: node
+    plan: starter
     rootDir: backend/node-backend
     buildCommand: npm install
     startCommand: "node -e \"const https=require('https'); const url='https://flow-space-backend.onrender.com/api/v1/health'; const ping=()=>{try{const req=https.get(url,{headers:{accept:'application/json','user-agent':'flow-space-keepalive-worker'}},res=>{res.on('data',()=>{}); res.on('end',()=>{});}); req.on('error',()=>{}); req.setTimeout(8000,()=>{try{req.destroy();}catch(_){};});}catch(_){}}; ping(); setInterval(ping, 120000);\""
