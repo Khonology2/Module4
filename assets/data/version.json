@@ -1,8 +1,18 @@
 {
-  "version": "Ver 2026.05BD29 SIT",
+  "version": "Ver 2026.05BD31 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T08:38:57Z",
+  "generated_at": "2026-05-14T08:50:05Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "fix(sprint report): parse sprint data correctly",
+      "timestamp": "2026-05-14T10:49:26+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T08:38:58Z"
+    },
     {
       "author": "thabang127",
       "message": "fix(signoff): improve error handling and validation for sprint reports",
@@ -149,6 +159,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 29,
+  "total_commits": 31,
   "date_range": "2026-05-14"
 }
