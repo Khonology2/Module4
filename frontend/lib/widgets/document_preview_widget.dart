@@ -102,38 +102,40 @@ class _DocumentPreviewWidgetState extends State<DocumentPreviewWidget> {
       }
 
       if (kIsWeb) {
+        bool loaded = false;
+
+        // First try public URL if available
         final publicUrl = _resolvePublicDocumentUrl();
         if (publicUrl != null) {
           setState(() {
             _pdfUrl = publicUrl;
             _isLoading = false;
           });
-          return;
+          loaded = true;
         }
 
-        final officeUrl = _buildOfficeViewerUrlIfPossible();
-        if (officeUrl != null) {
-          setState(() {
-            _pdfUrl = officeUrl;
-            _isLoading = false;
-          });
-          return;
+        // If public URL didn't work, try authenticated bytes
+        if (!loaded) {
+          final bytes = await _getAuthenticatedDocumentBytes();
+          if (bytes != null && bytes.isNotEmpty) {
+            web_impl.createBlobUrl(bytes, widget.document.id, _mimeTypeForFileType(type));
+            final blobUrl = web_impl.getBlobUrl(widget.document.id);
+            if (blobUrl != null) {
+              setState(() {
+                _pdfUrl = blobUrl;
+                _isLoading = false;
+              });
+              loaded = true;
+            }
+          }
         }
 
-        final bytes = await _getAuthenticatedDocumentBytes();
-        if (bytes == null || bytes.isEmpty) {
+        if (!loaded) {
           setState(() {
             _error = 'Failed to load document preview';
             _isLoading = false;
           });
-          return;
         }
-
-        web_impl.createBlobUrl(bytes, widget.document.id, _mimeTypeForFileType(type));
-        setState(() {
-          _pdfUrl = 'blob:${widget.document.id}';
-          _isLoading = false;
-        });
         return;
       }
 
