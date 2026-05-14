@@ -3,9 +3,9 @@ services:
   - type: web
     name: flow-space-backend
     env: node
-    rootDir: backend
-    buildCommand: npm install && echo "🔄 Installing dependencies at $(date)"
-    startCommand: node server.js
+    rootDir: backend/node-backend
+    buildCommand: npm install
+    startCommand: node src/app.js
     envVars:
       - key: DB_CONNECTION_MODE
         value: external
