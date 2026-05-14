@@ -39,7 +39,7 @@ class SprintDatabaseService {
   // ===== SPRINT MANAGEMENT =====
 
   /// Get all sprints for the current user
-  Future<List<Map<String, dynamic>>> getSprints({String? projectId, String? projectKey}) async {
+  Future<List<Map<String, dynamic>>> getSprints({String? projectId, String? projectKey, bool forceRefresh = true}) async {
     try {
       await _apiClient.initialize();
       final uri = Uri.parse('$_baseUrl/sprints').replace(queryParameters: {
