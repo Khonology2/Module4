@@ -1,8 +1,23 @@
 {
-  "version": "Ver 2026.05BD44 SIT",
+  "version": "Ver 2026.05BD47 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T09:52:08Z",
+  "generated_at": "2026-05-14T10:08:24Z",
   "commits": [
+    {
+      "author": "Nathi2266",
+      "message": "Update pubspec.lock with dependency version upgrades",
+      "timestamp": "2026-05-14T12:07:44+02:00"
+    },
+    {
+      "author": "Nathi2266",
+      "message": "refactor(report): enhance PDF generation and branding assets",
+      "timestamp": "2026-05-14T12:05:40+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:52:08Z"
+    },
     {
       "author": "thabang127",
       "message": "feat: add forceRefresh parameter to getSprints",
@@ -224,6 +239,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 44,
+  "total_commits": 47,
   "date_range": "2026-05-14"
 }
