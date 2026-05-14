@@ -1,8 +1,43 @@
 {
-  "version": "Ver 2026.05BD35 SIT",
+  "version": "Ver 2026.05BD44 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-14T09:05:50Z",
+  "generated_at": "2026-05-14T09:52:08Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "feat: add forceRefresh parameter to getSprints",
+      "timestamp": "2026-05-14T11:51:11+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:40:19Z"
+    },
+    {
+      "author": "thabang127",
+      "message": "fix(frontend): refine document preview and sprint report logic",
+      "timestamp": "2026-05-14T11:39:37+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:22:55Z"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:17:55Z"
+    },
+    {
+      "author": "Nathi2266",
+      "message": "refactor: enhance export feedback and error handling in report generation",
+      "timestamp": "2026-05-14T11:17:19+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T09:05:51Z"
+    },
     {
       "author": "thabang127",
       "message": "fix(sign-off-reports): handle invalid sprint IDs, update API params",
@@ -82,6 +117,16 @@
       "author": "Nathi2266",
       "message": "chore: update dependencies and improve authentication flow",
       "timestamp": "2026-05-14T09:37:30+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-14]",
+      "timestamp": "2026-05-14T07:26:59Z"
+    },
+    {
+      "author": "Nathi2266",
+      "message": "feat: implement AI project draft generation feature",
+      "timestamp": "2026-05-14T09:26:35+02:00"
     },
     {
       "author": "GitHub Action",
@@ -179,6 +224,6 @@
       "timestamp": "2026-05-14T02:11:21+02:00"
     }
   ],
-  "total_commits": 35,
+  "total_commits": 44,
   "date_range": "2026-05-14"
 }

@@ -12,6 +12,7 @@ import '../services/backend_api_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_data_service.dart';
 import '../providers/service_providers.dart';
+import '../widgets/ai_project_generate_dialog.dart';
 
 class ProjectWorkspaceScreen extends ConsumerStatefulWidget {
   final String? projectId;
@@ -76,6 +77,44 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
     _clientProjectOwnerController.dispose();
     _tagsController.dispose();
     super.dispose();
+  }
+
+  ProjectStatus _parseAiProjectStatus(String raw) {
+    final n = raw.trim().replaceAll(RegExp(r'[\s_-]'), '').toLowerCase();
+    for (final v in ProjectStatus.values) {
+      final vn = v.name.replaceAll('_', '').toLowerCase();
+      if (vn == n) return v;
+    }
+    return ProjectStatus.planning;
+  }
+
+  ProjectPriority _parseAiProjectPriority(String raw) {
+    final n = raw.trim().toLowerCase();
+    return ProjectPriority.values.firstWhere(
+      (e) => e.name == n,
+      orElse: () => ProjectPriority.medium,
+    );
+  }
+
+  String _normalizeAiProjectType(String raw) {
+    const allowed = {'software', 'hardware', 'research', 'consulting', 'other'};
+    final n = raw.trim().toLowerCase();
+    return allowed.contains(n) ? n : 'other';
+  }
+
+  Future<void> _openAiGenerateDialog() async {
+    final backend = ref.read(backendApiServiceProvider);
+    final draft = await showAiProjectGenerateDialog(context, backend: backend);
+    if (!mounted || draft == null) return;
+    setState(() {
+      _nameController.text = draft.projectTitle;
+      _descriptionController.text = draft.description;
+      _selectedStatus = _parseAiProjectStatus(draft.status);
+      _selectedPriority = _parseAiProjectPriority(draft.priority);
+      _selectedProjectType = _normalizeAiProjectType(draft.projectType);
+      _tagsController.text = draft.tags.join(', ');
+    });
+    _showSuccessSnackBar('AI filled the project fields. Review and edit before saving.');
   }
 
   Future<void> _loadProject() async {
@@ -725,7 +764,23 @@ class _ProjectWorkspaceScreenState extends ConsumerState<ProjectWorkspaceScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Basic Information'),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: _buildSectionHeader('Basic Information')),
+            if (!_isEditing)
+              OutlinedButton.icon(
+                onPressed: _openAiGenerateDialog,
+                icon: const Icon(Icons.auto_awesome, size: 18, color: _brandRed),
+                label: const Text('AI Generate'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: FlownetColors.pureWhite,
+                  side: const BorderSide(color: _brandRed, width: 1.2),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: 16),
         TextFormField(
           controller: _nameController,

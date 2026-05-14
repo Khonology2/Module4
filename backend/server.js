@@ -2619,6 +2619,113 @@ app.get('/api/v1/projects', authenticateToken, async (req, res) => {
   }
 });
 
+// --- AI: generate project form draft from title (OpenAI) ---
+const PROJECT_DRAFT_AI_SYSTEM = `You are a senior delivery manager assistant for Khonology's "Deliverable & Sprint Sign-Off Hub".
+
+The user provides only a proposed project name or title. Infer sensible, professional project metadata for internal planning and portfolio tracking.
+
+You MUST respond with a single JSON object and no markdown or prose. Use exactly these keys:
+- "description": string, 2–5 sentences. Summarize likely scope, goals, deliverables, and success criteria implied by the title. Professional tone. Do not invent real company or person names; use generic wording if needed.
+- "status": exactly one of: "planning", "active", "onHold", "completed", "cancelled". Brand-new or unclear initiatives MUST be "planning". Use "active" only if the title clearly indicates work already underway. Use "onHold" only if the title suggests paused work. "completed" / "cancelled" only if the title explicitly indicates that state.
+- "priority": exactly one of: "low", "medium", "high", "critical". Default "medium". Use "high" for time-sensitive or customer-facing delivery implied by the title. Use "critical" only for clear production-down, security, or compliance emergency wording.
+- "projectType": exactly one of: "software", "hardware", "research", "consulting", "other". Pick the best fit from the title.
+- "tags": JSON array of 3–8 short strings for filtering (lowercase, single words or kebab-case, e.g. "api", "data-pipeline", "mobile"). Must relate to the title and description.
+
+Rules:
+- Do not add any other top-level keys.
+- Do not use null for string fields; "description" must be non-empty.
+- "tags" must be a JSON array of strings, not a comma-separated string.`;
+
+function normalizeAiProjectDraft(parsed) {
+  const allowedStatus = new Set(['planning', 'active', 'onHold', 'completed', 'cancelled']);
+  const allowedPriority = new Set(['low', 'medium', 'high', 'critical']);
+  const allowedType = new Set(['software', 'hardware', 'research', 'consulting', 'other']);
+
+  let status = String(parsed?.status ?? 'planning').trim();
+  const stNorm = status.replace(/[\s_-]+/g, '').toLowerCase();
+  if (stNorm === 'onhold') status = 'onHold';
+  else if (stNorm === 'planning') status = 'planning';
+  else if (stNorm === 'active') status = 'active';
+  else if (stNorm === 'completed') status = 'completed';
+  else if (stNorm === 'cancelled') status = 'cancelled';
+  if (!allowedStatus.has(status)) status = 'planning';
+
+  let priority = String(parsed?.priority ?? 'medium').trim().toLowerCase();
+  if (!allowedPriority.has(priority)) priority = 'medium';
+
+  let projectType = String(parsed?.projectType ?? parsed?.project_type ?? 'software')
+    .trim()
+    .toLowerCase();
+  if (!allowedType.has(projectType)) projectType = 'other';
+
+  let description = String(parsed?.description ?? '').trim();
+  if (!description) {
+    description = 'Project scope and objectives to be refined with stakeholders.';
+  }
+
+  let tags = parsed?.tags;
+  if (!Array.isArray(tags)) tags = [];
+  tags = tags
+    .map((t) => String(t).trim())
+    .filter((t) => t.length > 0)
+    .slice(0, 12);
+
+  return { description, status, priority, projectType, tags };
+}
+
+app.post('/api/v1/ai/generate-project-draft', authenticateToken, async (req, res) => {
+  try {
+    const title = String(req.body?.projectTitle ?? req.body?.title ?? '').trim();
+    if (!title) {
+      return res.status(400).json({ success: false, error: 'projectTitle is required' });
+    }
+
+    await initializeOpenAI();
+    if (!openai) {
+      return res.status(503).json({
+        success: false,
+        error:
+          'AI is not configured on this server. Add OPENAI_API_KEY to enable project draft generation.',
+      });
+    }
+
+    const userMessage = `Proposed project name/title:\n"${title}"\n\nProduce the JSON object as specified in your system instructions.`;
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: PROJECT_DRAFT_AI_SYSTEM },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.35,
+      max_tokens: 900,
+      response_format: { type: 'json_object' },
+    });
+
+    const raw = completion?.choices?.[0]?.message?.content;
+    if (!raw || typeof raw !== 'string') {
+      return res.status(502).json({ success: false, error: 'Empty AI response' });
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (parseErr) {
+      console.error('AI project draft JSON parse error:', parseErr?.message);
+      return res.status(502).json({ success: false, error: 'Invalid AI response format' });
+    }
+
+    const data = normalizeAiProjectDraft(parsed);
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('generate-project-draft error:', error?.message || error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Failed to generate project draft',
+    });
+  }
+});
+
 app.post('/api/v1/projects', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -3991,18 +4098,11 @@ app.get('/api/v1/sprints/:sprintId', authenticateToken, async (req, res) => {
         [sprintId],
       );
     } catch (e) {
-      if (e && e.code === '42P01') {
-        result = await pool.query(
-          `
-          SELECT s.*
-          FROM sprints s
-          WHERE s.id::text = $1::text
-        `,
-          [sprintId],
-        );
-      } else {
-        throw e;
-      }
+      console.warn('[GET /sprints/:id] detail query failed; falling back to SELECT s.*:', e?.code, e?.message);
+      result = await pool.query(
+        `SELECT s.* FROM sprints s WHERE s.id::text = $1::text`,
+        [sprintId],
+      );
     }
     
     if (result.rows.length === 0) {

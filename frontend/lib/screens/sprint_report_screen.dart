@@ -663,13 +663,20 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
                           try {
                             Future<Map<String, dynamic>> loadSprint() async {
                               final sprintResp = await _backend.getSprint(widget.sprintId);
-                              final raw = sprintResp.isSuccess ? sprintResp.data : null;
+                              if (!sprintResp.isSuccess) {
+                                print('loadSprint failed: ${sprintResp.error}');
+                                return <String, dynamic>{};
+                              }
+                              final raw = sprintResp.data;
                               if (raw is Map) {
-                                // Try different paths: data.data, data
+                                // Backend returns {"success": true, "data": sprint}
                                 if (raw['data'] is Map) {
-                                  return Map<String, dynamic>.from(raw['data'] as Map);
+                                  final dataMap = Map<String, dynamic>.from(raw['data'] as Map);
+                                  if (dataMap.isNotEmpty) {
+                                    return dataMap;
+                                  }
                                 }
-                                // If it has success: true and data, or just the sprint itself
+                                // Fallback: if raw itself is the sprint
                                 if (raw.containsKey('id') || raw.containsKey('name')) {
                                   return Map<String, dynamic>.from(raw);
                                 }
@@ -743,13 +750,13 @@ class _SprintReportScreenState extends State<SprintReportScreen> {
                             Future<bool> metricsAreReady() async {
                               final sprintMap = await loadSprint();
                               if (sprintMap.isEmpty) {
-                                throw Exception('Failed to load sprint details. Please refresh and try again.');
+                                print('Warning: sprintMap is empty, trying to proceed...');
+                              } else {
+                                if (!isSprintCompleted(sprintMap)) {
+                                  throw Exception('Complete the sprint before publishing a sprint sign-off report.');
+                                }
+                                if (hasRequiredMetrics(sprintMap)) return true;
                               }
-                              if (!isSprintCompleted(sprintMap)) {
-                                throw Exception('Complete the sprint before publishing a sprint sign-off report.');
-                              }
-
-                              if (hasRequiredMetrics(sprintMap)) return true;
 
                               final metricsList = await loadSprintMetrics();
                               return hasRequiredMetricsInSavedMetrics(metricsList);

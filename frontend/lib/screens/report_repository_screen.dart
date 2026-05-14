@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +17,7 @@ import '../theme/flownet_theme.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/document_preview_widget.dart';
 import '../widgets/signature_capture_widget.dart';
+import '../utils/export_feedback.dart';
 import 'report_editor_screen.dart';
 import 'client_review_workflow_screen.dart';
 
@@ -1876,6 +1878,25 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
     }
   }
 
+  Future<void> _runPdfExportInBackground(SignOffReport report, ScaffoldMessengerState messenger) async {
+    try {
+      await _exportService.exportReportAsPDFFromServer(report);
+      if (!mounted) return;
+      showDismissibleExportSnackBar(
+        messenger,
+        'PDF download started. Check your downloads folder.',
+        backgroundColor: Colors.green,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showDismissibleExportSnackBar(
+        messenger,
+        'Error exporting report: $e',
+        backgroundColor: Colors.red,
+      );
+    }
+  }
+
   Future<void> _exportReport(SignOffReport report) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -1910,32 +1931,13 @@ class _ReportRepositoryScreenState extends ConsumerState<ReportRepositoryScreen>
 
       if (format == 'pdf') {
         if (!mounted) return;
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Preparing your PDF in the background…'),
-            backgroundColor: Colors.blue,
-          ),
+        showDismissibleExportSnackBar(
+          messenger,
+          'Preparing your PDF in the background. You can open other screens while it completes.',
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 14),
         );
-        Future<void>(() async {
-          try {
-            await _exportService.exportReportAsPDFFromServer(report);
-            if (!mounted) return;
-            messenger.showSnackBar(
-              const SnackBar(
-                content: Text('PDF download started'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          } catch (e) {
-            if (!mounted) return;
-            messenger.showSnackBar(
-              SnackBar(
-                content: Text('Error exporting report: $e'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        });
+        unawaited(_runPdfExportInBackground(report, messenger));
       } else if (format == 'print') {
         await _exportService.printReport(report);
       }

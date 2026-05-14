@@ -11,6 +11,7 @@ import '../services/backend_api_service.dart';
 import '../services/report_export_service.dart';
 import '../services/api_client.dart';
 import '../models/sign_off_report.dart';
+import '../utils/export_feedback.dart';
 import '../widgets/signature_capture_widget.dart';
 
 class AIAssistantScreen extends StatefulWidget {
@@ -342,7 +343,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       if (reportId == null || reportId.isEmpty) continue;
       if (_reportCache.containsKey(reportId)) continue;
 
-      Future<void>(() async {
+      unawaited(Future(() async {
         final meta = m['metadata'];
         final metaMap = meta is Map ? Map<String, dynamic>.from(meta) : const <String, dynamic>{};
         final suggestedTitle = _pickSuggestedTitle(action: m, meta: metaMap);
@@ -386,7 +387,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
             BackendApiService().updateSignOffReport(reportId, updates);
           } catch (_) {}
         }
-      });
+      }));
     }
   }
 
@@ -768,35 +769,37 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                                   }
 
                                   if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Preparing your PDF in the background. You can keep using the app.'),
-                                      duration: Duration(seconds: 2),
-                                    ),
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  showDismissibleExportSnackBar(
+                                    messenger,
+                                    'Preparing your PDF in the background. You can use other screens while it completes.',
+                                    backgroundColor: Colors.blue,
+                                    duration: const Duration(seconds: 12),
                                   );
 
-                                  Future<void>(() async {
-                                  try {
-                                    await WidgetsBinding.instance.endOfFrame;
-                                    await _downloadAssistantPdfFromAction(a);
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('PDF download started. Check your downloads.'),
-                                        duration: Duration(seconds: 3),
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(e.toString())),
-                                    );
-                                  } finally {
-                                    if (mounted && reportId.isNotEmpty) {
-                                      setState(() => _downloadsInProgress.remove(reportId));
+                                  unawaited(Future(() async {
+                                    try {
+                                      await WidgetsBinding.instance.endOfFrame;
+                                      await _downloadAssistantPdfFromAction(a);
+                                      if (!mounted) return;
+                                      showDismissibleExportSnackBar(
+                                        messenger,
+                                        'PDF download started. Check your downloads folder.',
+                                        backgroundColor: Colors.green,
+                                      );
+                                    } catch (e) {
+                                      if (!mounted) return;
+                                      showDismissibleExportSnackBar(
+                                        messenger,
+                                        e.toString(),
+                                        backgroundColor: Colors.red,
+                                      );
+                                    } finally {
+                                      if (mounted && reportId.isNotEmpty) {
+                                        setState(() => _downloadsInProgress.remove(reportId));
+                                      }
                                     }
-                                  }
-                                  });
+                                  }));
                                 } catch (e) {
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
