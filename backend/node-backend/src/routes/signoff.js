@@ -76,7 +76,33 @@ async function buildSprintReportDataBySprintIds(sprintIds) {
       where: { id: { [Op.in]: numericIds } },
       order: [['start_date', 'ASC'], ['created_at', 'ASC']],
     });
-    if (!sprints || sprints.length === 0) return null;
+    if (!sprints || sprints.length === 0) {
+      // Return basic structure even if no sprints found to avoid errors
+      return {
+        project: null,
+        sprint: {
+          id: ids.join(','),
+          name: 'Sprint Details Not Found',
+          startDate: null,
+          endDate: null,
+          status: 'unknown',
+          sprintCount: 0,
+        },
+        summary: {
+          sprintCount: 0,
+          totalCommittedPoints: 0,
+          totalCompletedPoints: 0,
+          totalCarriedOverPoints: 0,
+          totalDefectsOpened: 0,
+          totalDefectsClosed: 0,
+          averageTestPassRate: 0,
+          scopeChanges: [],
+        },
+        team: null,
+        deliverables: [],
+        performanceMetrics: [],
+      };
+    }
     const performanceMetrics = await generatePerformanceMetrics(numericIds);
     const totalCommitted = performanceMetrics.reduce((sum, item) => sum + Number(item.committed_points || 0), 0);
     const totalCompleted = performanceMetrics.reduce((sum, item) => sum + Number(item.completed_points || 0), 0);
@@ -124,7 +150,31 @@ async function buildSprintReportDataBySprintIds(sprintIds) {
       performanceMetrics,
     };
   } catch (_) {
-    return null;
+    // Return basic structure on error to avoid errors
+    return {
+      project: null,
+      sprint: {
+        id: ids.join(','),
+        name: 'Sprint Details Not Found',
+        startDate: null,
+        endDate: null,
+        status: 'unknown',
+        sprintCount: 0,
+      },
+      summary: {
+        sprintCount: 0,
+        totalCommittedPoints: 0,
+        totalCompletedPoints: 0,
+        totalCarriedOverPoints: 0,
+        totalDefectsOpened: 0,
+        totalDefectsClosed: 0,
+        averageTestPassRate: 0,
+        scopeChanges: [],
+      },
+      team: null,
+      deliverables: [],
+      performanceMetrics: [],
+    };
   }
 }
 
@@ -1228,8 +1278,11 @@ router.post('/', async (req, res) => {
         status
       } = req.body || {};
       
-      if (!deliverableId || typeof deliverableId !== 'string' || deliverableId.trim().length === 0) {
-        return res.status(400).json({ error: 'deliverableId is required' });
+      const hasDeliverableId = deliverableId && typeof deliverableId === 'string' && deliverableId.trim().length > 0;
+      const hasSprintIds = Array.isArray(sprintIds) && sprintIds.length > 0;
+      
+      if (!hasDeliverableId && !hasSprintIds) {
+        return res.status(400).json({ error: 'Either deliverableId or sprintIds is required' });
       }
       if (!reportTitle || typeof reportTitle !== 'string' || reportTitle.trim().length === 0) {
         return res.status(400).json({ error: 'reportTitle is required' });
@@ -1238,20 +1291,24 @@ router.post('/', async (req, res) => {
         return res.status(400).json({ error: 'reportContent is required' });
       }
 
-      const sprintValidation = await validateCompletedSprintIds(sprintIds);
-      if (sprintValidation) {
-        return res.status(400).json(sprintValidation);
-      }
-
       const actor = await resolveActorIdentity({ userId: String(req.user.id), email: req.user.email });
       const actorRole = actor.role ? String(actor.role) : (req.user && req.user.role ? String(req.user.role) : null);
       const normalizedStatus = (typeof status === 'string' && status.trim().length > 0) ? status.trim() : 'draft';
+
+      // Only validate sprint completion status if not a draft
+      if (normalizedStatus !== 'draft') {
+        const sprintValidation = await validateCompletedSprintIds(sprintIds);
+        if (sprintValidation) {
+          return res.status(400).json(sprintValidation);
+        }
+      }
       const sprintReportData = await buildSprintReportDataBySprintIds(sprintIds);
+      const hasValidSprintIds = Array.isArray(sprintIds) && sprintIds.length > 0;
       let content = {
         reportTitle: reportTitle.trim(),
         reportContent: reportContent.trim(),
         sprintIds: sprintIds || [],
-        sprintPerformanceData: sprintPerformanceData || (Array.isArray(sprintIds) && sprintIds.length > 0
+        sprintPerformanceData: sprintPerformanceData || (hasValidSprintIds
           ? JSON.stringify(await generatePerformanceMetrics(sprintIds))
           : null),
         sprintReportData,
@@ -1267,7 +1324,7 @@ router.post('/', async (req, res) => {
       const contentExpr = dialect === 'postgres' ? '$4::jsonb' : '$4';
       const [results] = await sequelize.query(
         `INSERT INTO sign_off_reports (deliverable_id, created_by, status, content) VALUES ($1, $2, $3, ${contentExpr}) RETURNING id, deliverable_id, created_by, status, content, created_at, updated_at`,
-        { bind: [deliverableId.trim(), String(req.user.id), normalizedStatus, JSON.stringify(content)] }
+        { bind: [hasDeliverableId ? deliverableId.trim() : null, String(req.user.id), normalizedStatus, JSON.stringify(content)] }
       );
       const row = results[0];
       const c = typeof row.content === 'string' ? safeParseJson(row.content) : (row.content || {});
@@ -1355,7 +1412,8 @@ router.put('/:id', async (req, res) => {
       const nextSprintIds = Object.prototype.hasOwnProperty.call(updates, 'sprintIds')
         ? updates.sprintIds
         : (Object.prototype.hasOwnProperty.call(updates, 'sprint_ids') ? updates.sprint_ids : null);
-      if (nextSprintIds != null) {
+      // Only validate sprint completion status if not a draft
+      if (nextSprintIds != null && currentStatus !== 'draft') {
         const sprintValidation = await validateCompletedSprintIds(nextSprintIds);
         if (sprintValidation) {
           return res.status(400).json(sprintValidation);
@@ -3089,7 +3147,11 @@ async function generatePerformanceMetrics(sprintIds) {
     const { Sprint, sequelize } = require('../models');
     const metrics = [];
     
-    for (const sprintId of sprintIds) {
+    // Handle case where sprintIds is null or not an array
+    const safeSprintIds = Array.isArray(sprintIds) ? sprintIds : [];
+    if (safeSprintIds.length === 0) return metrics;
+    
+    for (const sprintId of safeSprintIds) {
       try {
         // Fetch sprint
         const sprint = await Sprint.findByPk(parseInt(sprintId));

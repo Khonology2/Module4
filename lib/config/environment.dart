@@ -8,26 +8,25 @@ class Environment {
       'A social learning platform built with Flutter';
 
   // API Configuration - Use const for production URL from build
-  // Reverting to localhost
   static const String _apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: "http://localhost:3001/api/v1",
+    defaultValue: '',
   );
 
   // Production fallback detection
   static String get apiBaseUrl {
     // First try build-time variable
-    if (_apiBaseUrl != "http://localhost:3001/api/v1") {
+    if (_apiBaseUrl.trim().isNotEmpty) {
       return _apiBaseUrl;
     }
 
     // Fallback if deployed but build-time URL wasn't provided
     if (isRenderDeployed) {
-      return "https://backend-532p.onrender.com/api/v1";
+      return 'https://flow-space.onrender.com/api/v1';
     }
 
     // Default to localhost for development
-    return _apiBaseUrl;
+    return "http://localhost:8000/api/v1";
   }
 
   // Base URL without version for endpoints that already include version

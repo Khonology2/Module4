@@ -24,14 +24,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _keyboardFocusNode = FocusNode();
   bool _isPasswordVisible = false;
   bool _isLoading = false;
-  bool _isCheckingBackend = false;
-  bool _backendReady = false;
-  String? _backendStatusMessage;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(_warmUpBackend);
   }
 
   @override
@@ -42,30 +38,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _warmUpBackend() async {
-    if (_isCheckingBackend) return;
-
-    if (mounted) {
-      setState(() {
-        _isCheckingBackend = true;
-        _backendStatusMessage = 'Starting backend connection...';
-      });
-    }
-
-    final ready = await ApiClient().warmUpBackend(
-      maxWait: const Duration(seconds: 5),
-    );
-
-    if (!mounted) return;
-    setState(() {
-      _isCheckingBackend = false;
-      _backendReady = ready;
-      _backendStatusMessage = ready
-          ? null
-          : 'Backend is still waking up. You can try signing in again in a few seconds.';
-    });
-  }
-
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -74,21 +46,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     try {
-      if (!_backendReady) {
-        await _warmUpBackend();
-      }
-
-      if (!_backendReady) {
-        if (mounted) {
-          ErrorHandler().showErrorSnackBar(
-            context,
-            _backendStatusMessage ??
-                'Backend is still waking up. Please try again in a few seconds.',
-          );
-        }
-        return;
-      }
-
       final authService = AuthService();
       final success = await authService.signIn(
         _emailController.text.trim(),
@@ -359,15 +316,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             width: double.infinity,
                             height: 56,
                             child: ElevatedButton(
-                              onPressed:
-                                  (_isLoading || _isCheckingBackend) ? null : _handleLogin,
+                              onPressed: _isLoading ? null : _handleLogin,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFC10D00),
                                 foregroundColor: Colors.white,
                                 shape: const StadiumBorder(),
                                 elevation: 2,
                               ),
-                              child: (_isLoading || _isCheckingBackend)
+                              child: _isLoading
                                   ? const SizedBox(
                                       height: 20,
                                       width: 20,
@@ -388,17 +344,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     ),
                             ),
                           ),
-                          if (_backendStatusMessage != null) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              _backendStatusMessage!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.8),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
                           const SizedBox(height: 24),
 
                           // Register Link

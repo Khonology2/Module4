@@ -131,7 +131,14 @@ app.use(morgan('combined'));
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return next();
   const p = req.path || req.url || '';
-  if (p === '/' || p === '/health' || p === '/api/v1/health' || p === '/api/health') return next();
+  if (p === '/' ||
+      p === '/health' ||
+      p === '/api/v1' ||
+      p === '/api/v1/' ||
+      p === '/api/v1/health' ||
+      p === '/api/health') {
+    return next();
+  }
   if (dbReady) return next();
   return res.status(503).json({
     error: 'Backend warming up',
@@ -323,6 +330,14 @@ app.use('/system', systemRoutes);
 // Health check endpoints
 app.get('/', (req, res) => {
   res.json({ message: 'Hackathon Backend API is running' });
+});
+
+app.get('/api/v1', (req, res) => {
+  res.redirect(302, '/api/v1/health');
+});
+
+app.get('/api/v1/', (req, res) => {
+  res.redirect(302, '/api/v1/health');
 });
 
 app.get('/health', (req, res) => {

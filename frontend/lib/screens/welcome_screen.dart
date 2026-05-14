@@ -1,5 +1,9 @@
+import 'dart:async' show unawaited;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:universal_html/html.dart' as html;
 import '../widgets/fixed_footer_version_display.dart';
 import '../services/auth_service.dart';
 import '../services/backend_api_service.dart';
@@ -35,6 +39,24 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     super.dispose();
   }
 
+  void _stripAuthQueryFromBrowserUrl() {
+    if (!kIsWeb) return;
+    try {
+      final loc = html.window.location;
+      final search = loc.search ?? '';
+      if (search.isEmpty) return;
+      final hasAuthQuery = search.contains('token=') ||
+          search.contains('ssoToken=') ||
+          search.contains('access_token=') ||
+          search.contains('refresh_token=');
+      if (!hasAuthQuery) return;
+      final path = (loc.pathname != null && loc.pathname!.isNotEmpty)
+          ? loc.pathname!
+          : '/';
+      html.window.history.replaceState(null, '', path);
+    } catch (_) {}
+  }
+
   Future<void> _consumeTokenFromUrl() async {
     final appAccessToken = Uri.base.queryParameters['access_token'];
     if (appAccessToken != null && appAccessToken.trim().isNotEmpty) {
@@ -43,16 +65,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         _pendingRefreshToken = (Uri.base.queryParameters['refresh_token'] ?? '').trim();
         _pendingDashboard = Uri.base.queryParameters['dashboard'] ?? '/dashboard';
       });
+      _stripAuthQueryFromBrowserUrl();
       await _attemptAutoLogin();
       return;
     }
 
     final token = Uri.base.queryParameters['token'] ?? Uri.base.queryParameters['ssoToken'];
     if (token != null && token.trim().isNotEmpty) {
+      final trimmed = token.trim();
       setState(() {
-        _pendingSsoToken = token.trim();
-        _tokenController.text = token.trim();
+        _pendingSsoToken = trimmed;
+        _tokenController.text = trimmed;
       });
+      _stripAuthQueryFromBrowserUrl();
       await _attemptAutoLogin();
     }
   }
@@ -95,6 +120,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   void _onGetStartedPressed() {
     if (_isSsoLoading) return;
+    final manual = _tokenController.text.trim();
+    final pending = _pendingSsoToken?.trim() ?? '';
+    final token = manual.isNotEmpty ? manual : pending;
+    if (token.isNotEmpty) {
+      unawaited(_handleSsoLogin(token));
+      return;
+    }
     context.go('/login');
   }
 

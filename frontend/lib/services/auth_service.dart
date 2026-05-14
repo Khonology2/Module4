@@ -4,8 +4,11 @@ import 'package:khono/models/user_role.dart';
 import 'backend_api_service.dart';
 import 'api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:khono/config/environment.dart';
 
 class AuthService {
+  static final Map<String, Future<Map<String, dynamic>>> _ssoExchangeInFlight = {};
+
   static final AuthService _instance = AuthService._internal();
   factory AuthService() {
     // Automatically initialize when first accessed
@@ -127,31 +130,50 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>> loginWithSsoToken(String token) async {
-    try {
-      final response = await _apiService.ssoLogin(token);
-      if (!response.isSuccess || response.data == null) {
-        return {
-          'success': false,
-          'error': response.error ?? 'SSO login failed',
-        };
-      }
-
-      _currentUser = _apiService.parseUserFromResponse(response);
-      if (_currentUser == null) {
-        return {'success': false, 'error': 'Unable to parse user profile'};
-      }
-      _isAuthenticated = true;
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('role', _currentUser!.role.name);
-        await prefs.setString('user', _currentUser!.toJson().toString());
-      } catch (_) {}
-
-      final dashboard = response.data['dashboard']?.toString() ?? '/dashboard';
-      return {'success': true, 'dashboard': dashboard, 'role': _currentUser!.role.name};
-    } catch (e) {
-      return {'success': false, 'error': 'SSO login failed: $e'};
+    final trimmed = token.trim();
+    if (trimmed.isEmpty) {
+      return {'success': false, 'error': 'Token is required'};
     }
+
+    return _ssoExchangeInFlight.putIfAbsent(trimmed, () async {
+      try {
+        await _apiService.initialize();
+        if (Environment.isRenderDeployed) {
+          await _apiService.warmUpBackend(maxWait: const Duration(seconds: 12));
+        }
+
+        final response = await _apiService.ssoLogin(trimmed);
+        if (!response.isSuccess || response.data == null) {
+          return {
+            'success': false,
+            'error': response.error ?? 'SSO login failed',
+          };
+        }
+
+        _currentUser = _apiService.parseUserFromResponse(response);
+        if (_currentUser == null) {
+          return {'success': false, 'error': 'Unable to parse user profile'};
+        }
+        _isAuthenticated = true;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('role', _currentUser!.role.name);
+          await prefs.setString('user', _currentUser!.toJson().toString());
+        } catch (_) {}
+
+        final dashboard =
+            response.data!['dashboard']?.toString() ?? '/dashboard';
+        return {
+          'success': true,
+          'dashboard': dashboard,
+          'role': _currentUser!.role.name,
+        };
+      } catch (e) {
+        return {'success': false, 'error': 'SSO login failed: $e'};
+      } finally {
+        _ssoExchangeInFlight.remove(trimmed);
+      }
+    });
   }
 
   Future<Map<String, dynamic>> signUp(

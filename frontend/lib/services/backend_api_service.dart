@@ -31,6 +31,10 @@ class BackendApiService {
     return future;
   }
 
+  Future<bool> warmUpBackend({Duration maxWait = const Duration(seconds: 12)}) {
+    return _apiClient.warmUpBackend(maxWait: maxWait);
+  }
+
   // Authentication endpoints
   Future<ApiResponse> signIn(String email, String password) async {
     return await _apiClient.login(email, password);
