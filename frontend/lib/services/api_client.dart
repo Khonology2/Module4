@@ -31,6 +31,17 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
     return endpoint;
   }
 
+  static List<String> _fallbackSystemEndpoints(String endpoint) {
+    if (endpoint.startsWith('/system/')) {
+      return [
+        endpoint,
+        '/api/v1$endpoint',
+        '/api$endpoint',
+      ];
+    }
+    return [endpoint];
+  }
+
   bool _initialized = false;
   Future<void>? _initFuture;
   String? _accessToken;
@@ -601,9 +612,16 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
       String currentEndpoint = endpoint;
       bool didResolve = false;
       bool didFallback = false;
+      List<String> endpointsToTry = [endpoint];
+      if (endpoint.startsWith('/system/')) {
+        endpointsToTry = _fallbackSystemEndpoints(endpoint);
+      }
+      int currentEndpointIndex = 0;
 
-      while (true) {
+      while (currentEndpointIndex < endpointsToTry.length) {
+        currentEndpoint = endpointsToTry[currentEndpointIndex];
         url = buildUrl(currentEndpoint);
+        debugPrint('🌐 Trying endpoint: $url');
         http.Response response;
         try {
           response = await send(url);
@@ -632,8 +650,16 @@ static String get _baseUrlWithVersion => Environment.apiBaseUrl;
           continue;
         }
 
+        if (response.statusCode == 404 && currentEndpointIndex < endpointsToTry.length - 1) {
+          debugPrint('🌐 Endpoint not found, trying next fallback...');
+          currentEndpointIndex++;
+          continue;
+        }
+
         return _handleResponse(response);
       }
+      
+      return ApiResponse.error('Endpoint not found (404). Check the API endpoint path.', 404);
     } on SocketException {
       return ApiResponse.error('No internet connection. Please check your network.');
     } on TimeoutException {

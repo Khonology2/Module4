@@ -593,6 +593,7 @@ class BackendApiService {
     if (force) body['force'] = true;
     if (recipientRole != null && recipientRole.isNotEmpty) body['recipientRole'] = recipientRole;
     if (recipientId != null && recipientId.isNotEmpty) body['recipientId'] = recipientId;
+    debugPrint('📧 Calling simulate-report-reminder with body: $body');
     return await _apiClient.post('/system/simulate-report-reminder', body: body);
   }
 

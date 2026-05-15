@@ -46,6 +46,9 @@ router.get('/settings', authenticateToken, requireRole(['system_admin']), async 
 
 // Simulate pending approval reminder for reports (admin, delivery lead, or client reviewer)
 router.post('/simulate-report-reminder', authenticateToken, requireRole(['system_admin', 'delivery_lead', 'client_reviewer']), async (req, res) => {
+  console.log('📧 simulate-report-reminder endpoint called!');
+  console.log('📧 Request body:', req.body);
+  console.log('📧 Request user:', req.user);
   try {
     const { reportId, force, recipientRole, recipientId } = req.body || {};
 
