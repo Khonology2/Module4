@@ -72,6 +72,8 @@ const approvalsRoutes = require('./routes/approvals');
 const documentsRoutes = require('./routes/documents');
 const epicFeaturesRoutes = require('./routes/epicFeatures');
 const timelineRoutes = require('./routes/timeline');
+const ticketsRoutes = require('./routes/tickets');
+const signaturesRoutes = require('./routes/signatures');
 
 // Import services
 const { presenceService } = require('./services/presenceService');
@@ -186,6 +188,8 @@ app.use('/api/v1/audit-logs', auditRoutes);
 app.use('/api/v1/documents', documentsRoutes);
 app.use('/api/v1/epic-features', epicFeaturesRoutes);
 app.use('/api/v1/timeline', timelineRoutes);
+app.use('/api/v1/tickets', ticketsRoutes);
+app.use('/api/v1/signatures', signaturesRoutes);
 app.post('/api/v1/iot/ingest', (req, res) => {
   try {
     const { topic, payload, roles, targetRoles, event } = req.body || {};
@@ -326,6 +330,7 @@ app.put('/api/v1/tickets/:ticketId', async (req, res) => {
 
 // Public alias for system routes
 app.use('/system', systemRoutes);
+app.use('/api/system', systemRoutes);
 
 // Health check endpoints
 app.get('/', (req, res) => {

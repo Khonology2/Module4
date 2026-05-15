@@ -6,6 +6,7 @@ import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/backend_settings_service.dart';
 import '../services/error_handler.dart';
+import '../services/realtime_service.dart';
 import '../theme/flownet_theme.dart';
 import '../widgets/app_modal.dart';
 import '../widgets/fixed_footer_version_display.dart';
@@ -56,6 +57,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final user = authService.currentUser;
         if (user != null) {
           await BackendSettingsService.saveUserId(user.id);
+          final token = authService.accessToken;
+          if (token != null) {
+            try {
+              await RealtimeService().initialize(authToken: token);
+              debugPrint('✅ Realtime service initialized after login');
+            } catch (e) {
+              debugPrint('⚠️ Failed to initialize realtime service: $e');
+            }
+          }
         }
         // ignore: use_build_context_synchronously
         ErrorHandler().showSuccessSnackBar(context, 'Login successful!');

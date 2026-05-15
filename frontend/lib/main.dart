@@ -8,6 +8,7 @@ import 'screens/welcome_screen.dart';
 // import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/backend_api_service.dart';
+import 'services/realtime_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/email_verification_screen.dart';
@@ -71,6 +72,17 @@ void main() async {
     try {
       await BackendApiService().initialize();
       await AuthService().initialize();
+      
+      final authService = AuthService();
+      final token = authService.accessToken;
+      if (token != null) {
+        try {
+          await RealtimeService().initialize(authToken: token);
+          debugPrint('✅ Realtime service initialized on app startup');
+        } catch (e) {
+          debugPrint('⚠️ Failed to initialize realtime service on startup: $e');
+        }
+      }
     } catch (e) {
       debugPrint('API Service initialization failed: $e');
     }
