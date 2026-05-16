@@ -1,14 +1,24 @@
 {
-  "version": "Ver 2026.05CE1 SIT",
+  "version": "Ver 2026.05CE3 SIT",
   "branch": "thabang1",
-  "generated_at": "2026-05-15T13:38:09Z",
+  "generated_at": "2026-05-15T13:47:20Z",
   "commits": [
+    {
+      "author": "thabang127",
+      "message": "feat: add debug logging and API endpoint fallbacks",
+      "timestamp": "2026-05-15T15:46:38+02:00"
+    },
+    {
+      "author": "GitHub Action",
+      "message": "Update version data [2026-05-15]",
+      "timestamp": "2026-05-15T13:38:10Z"
+    },
     {
       "author": "thabang127",
       "message": "feat: add realtime service and backend API updates",
       "timestamp": "2026-05-15T15:37:17+02:00"
     }
   ],
-  "total_commits": 1,
+  "total_commits": 3,
   "date_range": "2026-05-15"
 }
